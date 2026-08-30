@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memoria - Mandaue City Public Cemetery</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+
+    <link rel="stylesheet" href="assets/css/root.css">
+    <link rel="stylesheet" href="assets/css/dashboard.css">
+</head>
+<body>
+    <div class="dashboardContainer">
+        <section class="statsGrid">
+            <div class="statCard accentPrimary">
+                <div class="statTop">
+                    <span class="statTitle">Total Interments</span>
+                    <div class="iconBadge"><i class="fas fa-monument"></i></div>
+                </div>
+                <div class="statBottom">
+                    <h2 class="statValue">1,245</h2>
+                </div>
+            </div>
+
+            <div class="statCard accentSuccess">
+                <div class="statTop">
+                    <span class="statTitle">Available Graves</span>
+                    <div class="iconBadge"><i class="fas fa-border-all"></i></div>
+                </div>
+                <div class="statBottom">
+                    <h2 class="statValue">312</h2>
+                </div>
+            </div>
+
+            <div class="statCard accentWarning">
+                <div class="statTop">
+                    <span class="statTitle">Expiring Leases</span>
+                    <div class="iconBadge"><i class="fas fa-clock"></i></div>
+                </div>
+                <div class="statBottom">
+                    <h2 class="statValue">48</h2>
+                    <span class="badge badgeWarning">Next 30 Days</span>
+                </div>
+            </div>
+
+            <div class="statCard accentDanger">
+                <div class="statTop">
+                    <span class="statTitle">Unverified Accounts</span>
+                    <div class="iconBadge"><i class="fas fa-user-shield"></i></div>
+                </div>
+                <div class="statBottom">
+                    <h2 class="statValue">15</h2>
+                    <span class="badge badgeDanger">Action Req.</span>
+                </div>
+            </div>
+        </section>
+
+        <section class="chartsGrid">
+            <div class="pieChartCard">
+                <div class="chartHeader">
+                    <div>
+                        <h3>Grave Status Distribution</h3>
+                        <span class="chartSubtext">Real-time allotment status breakdown</span>
+                    </div>
+                </div>
+                <div class="chartWrapper">
+                    <canvas id="graveStatusChart"></canvas>
+                </div>
+            </div>
+
+            <div class="barChartCard">
+                <div class="chartHeader">
+                    <div>
+                        <h3>Monthly Lease Expiration</h3>
+                        <span class="chartSubtext">Scheduled expirations for the next 12 months</span>
+                    </div>
+                </div>
+                <div class="chartWrapper">
+                    <canvas id="monthlyExpirationChart"></canvas>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="assets/js/dashboard.js"></script>
+</body>
+</html>
