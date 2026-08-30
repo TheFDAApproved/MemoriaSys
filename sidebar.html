@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memoria - Mandaue City Public Cemetery</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+
+    <link rel="stylesheet" href="assets/css/root.css">
+    <link rel="stylesheet" href="assets/css/sidebar.css">
+</head>
+<body>
+    <div class="sidebar" id="sidebar">
+        <div class="sidebarTop">
+            <div class="memoriaLogo" id="logoToggle">
+                <img src="assets/images/MemoriaLogo.png" alt="Memoria Logo" class="fullLogo">
+                <img src="assets/images/MLogo.png" alt="M Logo" class="collapsedLogo">
+            </div>
+            <div class="sidebarDateTime" id="dateTimeDisplay"></div>
+        </div>
+        
+        <div class="sidebarNav">
+            <div class="sidebarSection">Main</div>
+            <a href="dashboard.html" class="menu active" target="contentFrame"><i class="fas fa-chart-pie"></i><span>Dashboard</span></a>
+            <a href="records.html" class="menu" target="contentFrame"><i class="fas fa-folder-open"></i><span>Records</span></a>
+            <a href="map.html" class="menu" target="contentFrame"><i class="fas fa-map"></i><span>Map</span></a>
+    
+            <div class="sidebarSection">Management</div>
+            <a href="reserve.html" class="menu" target="contentFrame"><i class="fas fa-thumbtack"></i><span>Reserve</span></a>
+            <a href="monitor.html" class="menu" target="contentFrame"><i class="fas fa-bell"></i><span>Monitor</span></a>
+            <a href="payments.html" class="menu" target="contentFrame"><i class="fa-solid fa-receipt"></i><span>Payments</span></a>
+            <a href="accounts.html" class="menu" target="contentFrame"><i class="fas fa-user"></i><span>Accounts</span></a>
+            <a href="reports.html" class="menu" target="contentFrame"><i class="fas fa-file-alt"></i><span>Reports</span></a>
+
+            <div class="sidebarSection">System</div>
+            <a href="site_content.html" class="menu" target="contentFrame"><i class="fa-solid fa-pen-to-square"></i><span>Site Content</span></a>
+            <a href="logs.html" class="menu" target="contentFrame"><i class="fas fa-history"></i><span>Logs</span></a>
+            <a href="settings.html" class="menu" target="contentFrame"><i class="fas fa-cog"></i><span>Settings</span></a>
+        </div>
+
+        <div class="sidebarFooter">
+            <div class="userCard">
+                <div class="userAvatar">
+                    <div class="avatarBox">AD</div>
+                    <div class="statusIndicator"></div>
+                </div>
+            
+                <div class="userDetails">
+                    <span class="username">Admin</span>
+                    <span class="userRole">Administrator</span>
+                </div>
+            
+                <button class="logout">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <main class="mainContent">
+        <iframe name="contentFrame" src="dashboard.html" title="Main Content Area"></iframe>
+    </main>
+
+    <script src="assets/js/sidebar.js"></script>
+</body>
+</html>
