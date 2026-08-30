@@ -1,0 +1,950 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>404 — Lost in the Void</title>
+
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --bg: #080812;
+        --text: #ffffff;
+        --pink: #ff2bd6;
+        --cyan: #00f5ff;
+        --yellow: #ffe600;
+        --purple: #8b5cf6;
+        --green: #39ff88;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+
+      body {
+        font-family: Arial, Helvetica, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        cursor: crosshair;
+        position: relative;
+      }
+
+      /* =========================================================
+       CHAOTIC BACKGROUND
+    ========================================================= */
+
+      body::before {
+        content: "";
+        position: fixed;
+        inset: -50%;
+        z-index: -10;
+
+        background:
+          radial-gradient(
+            circle at 20% 30%,
+            rgba(255, 43, 214, 0.3),
+            transparent 22%
+          ),
+          radial-gradient(
+            circle at 80% 20%,
+            rgba(0, 245, 255, 0.25),
+            transparent 25%
+          ),
+          radial-gradient(
+            circle at 50% 80%,
+            rgba(139, 92, 246, 0.28),
+            transparent 28%
+          ),
+          radial-gradient(
+            circle at 90% 90%,
+            rgba(57, 255, 136, 0.18),
+            transparent 20%
+          );
+
+        filter: blur(50px);
+        animation: bgChaos 12s infinite alternate ease-in-out;
+      }
+
+      @keyframes bgChaos {
+        0% {
+          transform: rotate(0deg) scale(1);
+        }
+
+        50% {
+          transform: rotate(8deg) scale(1.2);
+        }
+
+        100% {
+          transform: rotate(-8deg) scale(1.1);
+        }
+      }
+
+      /* Animated color wash */
+
+      .color-wash {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: -9;
+
+        background: linear-gradient(
+          115deg,
+          transparent 20%,
+          rgba(255, 0, 153, 0.08),
+          transparent 40%,
+          rgba(0, 255, 255, 0.07),
+          transparent 70%
+        );
+
+        background-size: 300% 300%;
+        animation: wash 7s linear infinite;
+      }
+
+      @keyframes wash {
+        0% {
+          background-position: 0% 50%;
+        }
+
+        50% {
+          background-position: 100% 50%;
+        }
+
+        100% {
+          background-position: 0% 50%;
+        }
+      }
+
+      /* =========================================================
+       NOISE
+    ========================================================= */
+
+      .noise {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 20;
+        opacity: 0.07;
+
+        background-image: repeating-radial-gradient(
+          circle at 0 0,
+          #fff 0,
+          transparent 1px,
+          transparent 3px
+        );
+
+        background-size: 7px 7px;
+        mix-blend-mode: overlay;
+      }
+
+      /* =========================================================
+       MAIN
+    ========================================================= */
+
+      .page {
+        width: 100%;
+        height: 100%;
+        display: grid;
+        place-items: center;
+        padding: 25px;
+        position: relative;
+        isolation: isolate;
+      }
+
+      .content {
+        width: min(900px, 100%);
+        text-align: center;
+        position: relative;
+        z-index: 5;
+      }
+
+      /* =========================================================
+       TOP LABEL
+    ========================================================= */
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+
+        padding: 9px 15px;
+
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 999px;
+
+        background: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(15px);
+
+        font-size: 0.75rem;
+        font-weight: 800;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+
+        animation: floating 3s ease-in-out infinite;
+      }
+
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--green);
+        box-shadow:
+          0 0 8px var(--green),
+          0 0 20px var(--green);
+
+        animation: blink 0.8s infinite alternate;
+      }
+
+      @keyframes blink {
+        from {
+          opacity: 0.3;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+
+      @keyframes floating {
+        0%,
+        100% {
+          transform: translateY(0) rotate(-1deg);
+        }
+
+        50% {
+          transform: translateY(-7px) rotate(1deg);
+        }
+      }
+
+      /* =========================================================
+       404
+    ========================================================= */
+
+      .error-number {
+        position: relative;
+
+        font-size: clamp(7rem, 25vw, 17rem);
+        line-height: 0.8;
+
+        font-weight: 1000;
+        letter-spacing: -0.09em;
+
+        margin: 40px 0 30px;
+
+        color: white;
+
+        text-shadow:
+          5px 0 var(--pink),
+          -5px 0 var(--cyan);
+
+        animation: numberChaos 4s infinite steps(1);
+        user-select: none;
+      }
+
+      .error-number::before,
+      .error-number::after {
+        content: "404";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+
+      .error-number::before {
+        color: var(--pink);
+        transform: translate(-5px, 3px);
+        clip-path: inset(20% 0 55% 0);
+        animation: glitchA 2.2s infinite steps(2);
+        opacity: 0.8;
+      }
+
+      .error-number::after {
+        color: var(--cyan);
+        transform: translate(5px, -3px);
+        clip-path: inset(55% 0 15% 0);
+        animation: glitchB 1.8s infinite steps(2);
+        opacity: 0.8;
+      }
+
+      @keyframes numberChaos {
+        0%,
+        85%,
+        100% {
+          transform: rotate(0deg) skewX(0);
+        }
+
+        87% {
+          transform: rotate(-1deg) skewX(4deg);
+        }
+
+        89% {
+          transform: rotate(1deg) skewX(-7deg);
+        }
+
+        91% {
+          transform: rotate(0deg);
+        }
+      }
+
+      @keyframes glitchA {
+        0%,
+        75%,
+        100% {
+          transform: translate(-5px, 3px);
+        }
+
+        77% {
+          transform: translate(12px, -4px);
+        }
+
+        79% {
+          transform: translate(-15px, 5px);
+        }
+      }
+
+      @keyframes glitchB {
+        0%,
+        65%,
+        100% {
+          transform: translate(5px, -3px);
+        }
+
+        68% {
+          transform: translate(-13px, 6px);
+        }
+
+        71% {
+          transform: translate(15px, -5px);
+        }
+      }
+
+      /* =========================================================
+       TEXT
+    ========================================================= */
+
+      h1 {
+        font-size: clamp(1.6rem, 4vw, 3rem);
+        font-weight: 950;
+        margin-bottom: 12px;
+
+        transform: rotate(-1deg);
+      }
+
+      h1 span {
+        display: inline-block;
+        animation: textWobble 2.5s infinite ease-in-out;
+      }
+
+      @keyframes textWobble {
+        0%,
+        100% {
+          transform: rotate(0);
+        }
+
+        50% {
+          transform: rotate(2deg) translateY(-2px);
+        }
+      }
+
+      .description {
+        max-width: 550px;
+        margin: auto;
+
+        color: rgba(255, 255, 255, 0.62);
+        font-size: clamp(0.9rem, 2vw, 1.05rem);
+        line-height: 1.7;
+      }
+
+      /* =========================================================
+       BUTTONS
+    ========================================================= */
+
+      .actions {
+        display: flex;
+        justify-content: center;
+        gap: 12px;
+        flex-wrap: wrap;
+
+        margin-top: 30px;
+      }
+
+      .btn {
+        border: 0;
+        padding: 13px 21px;
+
+        border-radius: 14px;
+
+        color: white;
+        text-decoration: none;
+
+        font-size: 0.85rem;
+        font-weight: 900;
+
+        cursor: pointer;
+
+        transition:
+          transform 0.2s ease,
+          box-shadow 0.2s ease;
+
+        position: relative;
+        overflow: hidden;
+      }
+
+      .btn:hover {
+        transform: translateY(-5px) rotate(-2deg) scale(1.05);
+      }
+
+      .btn-home {
+        background: linear-gradient(135deg, #ff2bd6, #8b5cf6);
+        box-shadow: 0 10px 35px rgba(255, 43, 214, 0.25);
+      }
+
+      .btn-random {
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.15);
+        backdrop-filter: blur(12px);
+      }
+
+      /* =========================================================
+       RANDOM FLOATING OBJECTS
+    ========================================================= */
+
+      .objects {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        overflow: hidden;
+        z-index: 1;
+      }
+
+      .object {
+        position: absolute;
+
+        display: grid;
+        place-items: center;
+
+        width: var(--size);
+        height: var(--size);
+
+        font-size: calc(var(--size) * 0.55);
+
+        opacity: 0.8;
+
+        animation:
+          drift var(--duration) infinite ease-in-out,
+          spin var(--spin) infinite linear;
+
+        filter: drop-shadow(0 0 12px currentColor);
+      }
+
+      @keyframes drift {
+        0%,
+        100% {
+          transform: translate3d(0, 0, 0) rotate(0deg);
+        }
+
+        25% {
+          transform: translate3d(30px, -50px, 0) rotate(20deg);
+        }
+
+        50% {
+          transform: translate3d(-40px, -20px, 0) rotate(-20deg);
+        }
+
+        75% {
+          transform: translate3d(50px, 30px, 0) rotate(35deg);
+        }
+      }
+
+      @keyframes spin {
+        to {
+          rotate: 360deg;
+        }
+      }
+
+      /* =========================================================
+       CHAOS RINGS
+    ========================================================= */
+
+      .ring {
+        position: fixed;
+
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 50%;
+
+        pointer-events: none;
+
+        animation: ringMove 15s infinite alternate ease-in-out;
+      }
+
+      .ring.one {
+        width: 350px;
+        height: 350px;
+        left: -160px;
+        top: 10%;
+      }
+
+      .ring.two {
+        width: 550px;
+        height: 550px;
+        right: -260px;
+        bottom: -150px;
+        animation-duration: 22s;
+      }
+
+      .ring.three {
+        width: 180px;
+        height: 180px;
+        right: 10%;
+        top: 8%;
+        animation-duration: 9s;
+      }
+
+      @keyframes ringMove {
+        from {
+          transform: rotate(0deg) scale(1);
+        }
+
+        to {
+          transform: rotate(180deg) scale(1.25);
+        }
+      }
+
+      /* =========================================================
+       PARTICLES
+    ========================================================= */
+
+      .particle {
+        position: fixed;
+
+        width: 3px;
+        height: 3px;
+
+        border-radius: 50%;
+
+        background: white;
+
+        pointer-events: none;
+
+        animation: particleFloat var(--time) infinite linear;
+      }
+
+      @keyframes particleFloat {
+        from {
+          transform: translateY(110vh) translateX(0);
+          opacity: 0;
+        }
+
+        15% {
+          opacity: 0.8;
+        }
+
+        85% {
+          opacity: 0.8;
+        }
+
+        to {
+          transform: translateY(-10vh) translateX(var(--drift));
+          opacity: 0;
+        }
+      }
+
+      /* =========================================================
+       RANDOM MESSAGE
+    ========================================================= */
+
+      .random-message {
+        margin-top: 25px;
+
+        font-family: monospace;
+        font-size: 0.72rem;
+        color: rgba(255, 255, 255, 0.35);
+
+        min-height: 18px;
+
+        animation: flicker 4s infinite;
+      }
+
+      @keyframes flicker {
+        0%,
+        90%,
+        100% {
+          opacity: 1;
+        }
+
+        92% {
+          opacity: 0.1;
+        }
+
+        94% {
+          opacity: 0.8;
+        }
+      }
+
+      /* =========================================================
+       MOBILE
+    ========================================================= */
+
+      @media (max-width: 600px) {
+        body {
+          cursor: default;
+        }
+
+        .page {
+          padding: 18px;
+        }
+
+        .error-number {
+          margin: 35px 0 25px;
+        }
+
+        .description {
+          padding: 0 10px;
+        }
+
+        .objects .object:nth-child(n + 9) {
+          display: none;
+        }
+
+        .ring.one {
+          width: 220px;
+          height: 220px;
+          left: -130px;
+        }
+
+        .ring.two {
+          width: 300px;
+          height: 300px;
+          right: -180px;
+        }
+
+        .btn {
+          width: 100%;
+          max-width: 240px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.001ms !important;
+          animation-iteration-count: 1 !important;
+          scroll-behavior: auto !important;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="color-wash"></div>
+    <div class="noise"></div>
+
+    <!-- Decorative rings -->
+    <div class="ring one"></div>
+    <div class="ring two"></div>
+    <div class="ring three"></div>
+
+    <!-- Random floating objects -->
+    <div class="objects" id="objects"></div>
+
+    <!-- Random particles -->
+    <div id="particles"></div>
+
+    <main class="page">
+      <section class="content">
+        <div class="status">
+          <span class="status-dot"></span>
+          <span id="statusText">SIGNAL LOST</span>
+        </div>
+
+        <div class="error-number" aria-label="404">404</div>
+
+        <h1>
+          <span id="title">Oops. You wandered somewhere weird.</span>
+        </h1>
+
+        <p class="description" id="description">
+          The page you're looking for has either disappeared, escaped into
+          another dimension, or was never here in the first place.
+        </p>
+
+        <div class="actions">
+          <a href="/" class="btn btn-home"> 🏠 TAKE ME HOME </a>
+
+          <button class="btn btn-random" id="randomBtn">
+            🎲 MAKE IT WORSE
+          </button>
+        </div>
+
+        <div class="random-message" id="randomMessage">
+          SYSTEM MESSAGE: reality.exe is still running
+        </div>
+      </section>
+    </main>
+
+    <script>
+      /* ============================================================
+   CHAOS ENGINE
+============================================================ */
+
+      const titles = [
+        "Oops. You wandered somewhere weird.",
+        "Congratulations. You broke the internet.",
+        "This page has left the building.",
+        "Reality has encountered an error.",
+        "Well... this wasn't supposed to happen.",
+        "404? More like 4-OH-NO.",
+        "You found the forbidden hallway.",
+        "The page is currently on vacation.",
+        "Houston, we have a missing page.",
+        "Nothing to see here. Definitely.",
+        "You have entered the void.",
+        "This URL has chosen violence.",
+        "The server blinked. It's gone.",
+        "Somewhere, a developer is crying.",
+        "Achievement unlocked: Lost.",
+        "The page escaped containment.",
+      ];
+
+      const descriptions = [
+        "The page you're looking for has either disappeared, escaped into another dimension, or was never here in the first place.",
+        "We searched everywhere. Under the server. Behind the database. Even inside the CSS. Nothing.",
+        "This route appears to have been eaten by a highly suspicious digital creature.",
+        "The requested page is currently unavailable because it has apparently developed free will.",
+        "Your browser arrived at the correct address. Unfortunately, the address did not arrive at the correct page.",
+        "We have absolutely no idea where that page went.",
+        "Something went wrong. Something colorful. Something probably unnecessary.",
+        "The URL exists only in the dreams of the server.",
+        "You've reached a place that technically exists, but definitely shouldn't.",
+      ];
+
+      const messages = [
+        "SYSTEM MESSAGE: reality.exe is still running",
+        "ERROR: page.exe has stopped responding",
+        "WARNING: excessive amounts of nonsense detected",
+        "STATUS: absolutely no idea what happened",
+        "TRACE: user → void → confusion",
+        "404_HANDLER: screaming internally...",
+        "SERVER: 'bro I don't know either'",
+        "DATABASE: page not found. vibes found.",
+        "ERROR CODE: WHERE_AM_I",
+        "DEBUG: have you tried turning reality off and on?",
+        "MEMORIA://lost-and-confused",
+        "COSMIC ROUTER: destination unknown",
+        "PING: void responded with 'lol'",
+        "SYSTEM: chaos level acceptable",
+        "WARNING: unauthorized silliness detected",
+      ];
+
+      const statusTexts = [
+        "SIGNAL LOST",
+        "ROUTE MISSING",
+        "VOID DETECTED",
+        "PAGE ESCAPED",
+        "REALITY ERROR",
+        "404 INCIDENT",
+        "CHAOS ACTIVE",
+        "NOTHING HERE",
+        "SERVER CONFUSED",
+      ];
+
+      const symbols = [
+        "✦",
+        "✧",
+        "✹",
+        "✺",
+        "✸",
+        "◆",
+        "◇",
+        "●",
+        "○",
+        "▲",
+        "△",
+        "★",
+        "☆",
+        "⚡",
+        "☄",
+        "?",
+        "!",
+        "404",
+        "∞",
+        "⊙",
+        "⌁",
+        "※",
+        "⟡",
+        "☠",
+        "◈",
+      ];
+
+      const colors = ["#ff2bd6", "#00f5ff", "#ffe600", "#8b5cf6", "#39ff88"];
+
+      const title = document.getElementById("title");
+      const description = document.getElementById("description");
+      const randomMessage = document.getElementById("randomMessage");
+      const statusText = document.getElementById("statusText");
+
+      function random(array) {
+        return array[Math.floor(Math.random() * array.length)];
+      }
+
+      function randomRange(min, max) {
+        return Math.random() * (max - min) + min;
+      }
+
+      /* ============================================================
+   RANDOMIZE TEXT
+============================================================ */
+
+      function randomizeText() {
+        title.textContent = random(titles);
+        description.textContent = random(descriptions);
+        randomMessage.textContent = random(messages);
+        statusText.textContent = random(statusTexts);
+      }
+
+      document.getElementById("randomBtn").addEventListener("click", () => {
+        randomizeText();
+
+        document.querySelector(".error-number").style.transform =
+          `rotate(${randomRange(-5, 5)}deg) skewX(${randomRange(-8, 8)}deg)`;
+
+        document.body.animate(
+          [
+            { filter: "hue-rotate(0deg)" },
+            { filter: "hue-rotate(180deg)" },
+            { filter: "hue-rotate(360deg)" },
+          ],
+          {
+            duration: 700,
+            easing: "ease-in-out",
+          },
+        );
+      });
+
+      /* Automatically change message */
+      setInterval(() => {
+        randomMessage.textContent = random(messages);
+      }, 3500);
+
+      /* Occasionally change the title */
+      setInterval(() => {
+        if (Math.random() > 0.45) {
+          title.textContent = random(titles);
+        }
+      }, 7000);
+
+      /* ============================================================
+   FLOATING OBJECTS
+============================================================ */
+
+      const objectContainer = document.getElementById("objects");
+
+      for (let i = 0; i < 18; i++) {
+        const object = document.createElement("div");
+
+        object.className = "object";
+
+        object.textContent = random(symbols);
+
+        const size = randomRange(20, 65);
+
+        object.style.setProperty("--size", `${size}px`);
+        object.style.setProperty("--duration", `${randomRange(6, 16)}s`);
+
+        object.style.setProperty("--spin", `${randomRange(4, 15)}s`);
+
+        object.style.left = `${randomRange(-3, 97)}%`;
+        object.style.top = `${randomRange(-5, 100)}%`;
+
+        object.style.color = random(colors);
+
+        object.style.animationDelay = `${randomRange(-15, 0)}s`;
+
+        objectContainer.appendChild(object);
+      }
+
+      /* ============================================================
+   PARTICLES
+============================================================ */
+
+      const particleContainer = document.getElementById("particles");
+
+      for (let i = 0; i < 55; i++) {
+        const particle = document.createElement("div");
+
+        particle.className = "particle";
+
+        particle.style.left = `${randomRange(0, 100)}%`;
+
+        particle.style.setProperty("--time", `${randomRange(5, 18)}s`);
+
+        particle.style.setProperty("--drift", `${randomRange(-150, 150)}px`);
+
+        particle.style.animationDelay = `${randomRange(-18, 0)}s`;
+
+        particle.style.opacity = randomRange(0.2, 0.8);
+
+        particleContainer.appendChild(particle);
+      }
+
+      /* ============================================================
+   MOUSE CHAOS
+============================================================ */
+
+      let mouseX = 0;
+      let mouseY = 0;
+
+      document.addEventListener("mousemove", (event) => {
+        mouseX = event.clientX;
+        mouseY = event.clientY;
+
+        const x = (mouseX / window.innerWidth - 0.5) * 2;
+        const y = (mouseY / window.innerHeight - 0.5) * 2;
+
+        document.querySelector(".content").style.transform =
+          `translate(${x * 5}px, ${y * 5}px)`;
+
+        document.querySelector(".ring.three").style.transform =
+          `translate(${x * 25}px, ${y * 25}px) rotate(${x * 30}deg)`;
+      });
+
+      /* ============================================================
+   RANDOM HUE SHIFT
+============================================================ */
+
+      setInterval(() => {
+        if (Math.random() > 0.6) {
+          const hue = Math.floor(randomRange(0, 360));
+
+          document.querySelector(".color-wash").style.filter =
+            `hue-rotate(${hue}deg)`;
+        }
+      }, 5000);
+
+      /* ============================================================
+   CONSOLE EASTER EGG
+============================================================ */
+
+      console.log("%c404", "font-size:80px;font-weight:bold;color:#ff2bd6;");
+
+      console.log(
+        "%cYou found the developer void.",
+        "font-size:18px;color:#00f5ff;",
+      );
+
+      console.log(
+        "%cThere is absolutely nothing useful here.",
+        "font-size:12px;color:#ffe600;",
+      );
+
+      /* Initial chaos */
+      randomizeText();
+    </script>
+  </body>
+</html>

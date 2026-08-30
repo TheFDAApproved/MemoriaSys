@@ -1,0 +1,1299 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>REST API Tester</title>
+    <style>
+      /* ---------- Reset & Base ---------- */
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      :root {
+        --bg: #0d1117;
+        --surface: #161b22;
+        --surface2: #1c2333;
+        --border: #30363d;
+        --text: #e6edf3;
+        --text-secondary: #8b949e;
+        --accent: #58a6ff;
+        --accent-hover: #79c0ff;
+        --green: #3fb950;
+        --red: #f85149;
+        --yellow: #d29922;
+        --purple: #bc8cff;
+        --radius: 10px;
+        --shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        --font: "Segoe UI", system-ui, -apple-system, sans-serif;
+        --transition: 0.2s ease;
+      }
+
+      body {
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font);
+        min-height: 100vh;
+        padding: 24px;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+      }
+
+      /* ---------- Container ---------- */
+      .container {
+        max-width: 1200px;
+        width: 100%;
+        background: var(--surface);
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow);
+        padding: 28px 32px 32px;
+        transition: var(--transition);
+      }
+
+      h1 {
+        font-size: 24px;
+        font-weight: 700;
+        letter-spacing: -0.3px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 24px;
+      }
+      h1 small {
+        font-weight: 400;
+        font-size: 14px;
+        color: var(--text-secondary);
+        margin-left: 6px;
+      }
+
+      /* ---------- Layout ---------- */
+      .two-col {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 28px;
+        margin-top: 6px;
+      }
+
+      @media (max-width: 900px) {
+        .two-col {
+          grid-template-columns: 1fr;
+          gap: 24px;
+        }
+        body {
+          padding: 12px;
+        }
+        .container {
+          padding: 18px 16px 20px;
+        }
+      }
+
+      /* ---------- Request Panel ---------- */
+      .panel {
+        background: var(--surface2);
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        padding: 20px 22px 22px;
+      }
+
+      .panel-title {
+        font-size: 14px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+        color: var(--text-secondary);
+        margin-bottom: 16px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      /* URL + Method row */
+      .url-row {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+      }
+
+      .url-row select {
+        background: var(--bg);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 10px 14px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        outline: none;
+        transition: var(--transition);
+        flex-shrink: 0;
+        min-width: 100px;
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%238b949e' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 12px center;
+      }
+      .url-row select:focus {
+        border-color: var(--accent);
+      }
+
+      .url-row input {
+        flex: 1;
+        background: var(--bg);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 10px 14px;
+        font-size: 14px;
+        outline: none;
+        transition: var(--transition);
+        min-width: 180px;
+      }
+      .url-row input:focus {
+        border-color: var(--accent);
+      }
+      .url-row input::placeholder {
+        color: var(--text-secondary);
+        opacity: 0.6;
+      }
+
+      /* Send Button */
+      .send-btn {
+        background: var(--accent);
+        color: #fff;
+        border: none;
+        border-radius: 6px;
+        padding: 10px 28px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: var(--transition);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      .send-btn:hover {
+        background: var(--accent-hover);
+        transform: scale(1.02);
+      }
+      .send-btn:active {
+        transform: scale(0.97);
+      }
+      .send-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      /* ---------- Headers ---------- */
+      .headers-section {
+        margin: 14px 0 12px;
+      }
+      .headers-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-bottom: 10px;
+        max-height: 180px;
+        overflow-y: auto;
+        padding-right: 4px;
+      }
+      .headers-list::-webkit-scrollbar {
+        width: 4px;
+      }
+      .headers-list::-webkit-scrollbar-track {
+        background: var(--bg);
+        border-radius: 4px;
+      }
+      .headers-list::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 4px;
+      }
+
+      .header-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+      .header-row input {
+        flex: 1;
+        background: var(--bg);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 5px;
+        padding: 8px 12px;
+        font-size: 13px;
+        outline: none;
+        transition: var(--transition);
+      }
+      .header-row input:focus {
+        border-color: var(--accent);
+      }
+      .header-row input::placeholder {
+        color: var(--text-secondary);
+        opacity: 0.5;
+        font-size: 12px;
+      }
+      .header-row .del-header {
+        background: transparent;
+        color: var(--red);
+        border: none;
+        font-size: 18px;
+        cursor: pointer;
+        line-height: 1;
+        padding: 0 4px;
+        transition: var(--transition);
+        opacity: 0.5;
+      }
+      .header-row .del-header:hover {
+        opacity: 1;
+        transform: scale(1.2);
+      }
+
+      .add-header-btn {
+        background: transparent;
+        color: var(--accent);
+        border: 1px dashed var(--border);
+        border-radius: 5px;
+        padding: 6px 14px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: var(--transition);
+        width: 100%;
+        text-align: center;
+      }
+      .add-header-btn:hover {
+        border-color: var(--accent);
+        background: rgba(88, 166, 255, 0.06);
+      }
+
+      /* ---------- Body ---------- */
+      .body-section {
+        margin-top: 14px;
+      }
+      .body-section textarea {
+        width: 100%;
+        background: var(--bg);
+        color: var(--text);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        padding: 12px 14px;
+        font-size: 13px;
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        resize: vertical;
+        min-height: 120px;
+        outline: none;
+        transition: var(--transition);
+        line-height: 1.5;
+      }
+      .body-section textarea:focus {
+        border-color: var(--accent);
+      }
+      .body-section textarea::placeholder {
+        color: var(--text-secondary);
+        opacity: 0.5;
+        font-family: var(--font);
+      }
+
+      .body-actions {
+        display: flex;
+        gap: 10px;
+        margin-top: 8px;
+        flex-wrap: wrap;
+      }
+      .body-actions button {
+        background: transparent;
+        color: var(--text-secondary);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 4px 14px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: var(--transition);
+      }
+      .body-actions button:hover {
+        border-color: var(--accent);
+        color: var(--text);
+      }
+
+      /* ---------- Response Panel ---------- */
+      .response-status {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 12px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--border);
+      }
+      .status-badge {
+        font-weight: 700;
+        font-size: 15px;
+        padding: 4px 16px;
+        border-radius: 20px;
+        background: var(--bg);
+        border: 1px solid var(--border);
+      }
+      .status-badge.ok {
+        border-color: var(--green);
+        color: var(--green);
+      }
+      .status-badge.error {
+        border-color: var(--red);
+        color: var(--red);
+      }
+      .status-badge.pending {
+        border-color: var(--yellow);
+        color: var(--yellow);
+      }
+
+      .response-time {
+        font-size: 13px;
+        color: var(--text-secondary);
+      }
+
+      .response-tabs {
+        display: flex;
+        gap: 2px;
+        margin-bottom: 10px;
+        background: var(--bg);
+        border-radius: 6px;
+        padding: 3px;
+      }
+      .response-tabs button {
+        flex: 1;
+        background: transparent;
+        color: var(--text-secondary);
+        border: none;
+        border-radius: 4px;
+        padding: 6px 0;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: var(--transition);
+      }
+      .response-tabs button.active {
+        background: var(--surface2);
+        color: var(--text);
+      }
+      .response-tabs button:hover:not(.active) {
+        color: var(--text);
+      }
+
+      .response-content {
+        background: var(--bg);
+        border-radius: 6px;
+        padding: 14px 16px;
+        min-height: 180px;
+        max-height: 380px;
+        overflow: auto;
+        font-family: "JetBrains Mono", "Fira Code", monospace;
+        font-size: 13px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+        word-break: break-word;
+        border: 1px solid var(--border);
+        position: relative;
+      }
+      .response-content::-webkit-scrollbar {
+        width: 6px;
+      }
+      .response-content::-webkit-scrollbar-track {
+        background: var(--bg);
+      }
+      .response-content::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 4px;
+      }
+
+      .response-content .placeholder {
+        color: var(--text-secondary);
+        opacity: 0.5;
+        font-family: var(--font);
+        font-size: 14px;
+      }
+
+      .response-content .json-key {
+        color: var(--purple);
+      }
+      .response-content .json-string {
+        color: var(--yellow);
+      }
+      .response-content .json-number {
+        color: var(--accent);
+      }
+      .response-content .json-boolean {
+        color: var(--accent);
+      }
+      .response-content .json-null {
+        color: var(--red);
+      }
+
+      .copy-btn {
+        position: absolute;
+        top: 8px;
+        right: 10px;
+        background: var(--surface2);
+        color: var(--text-secondary);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 4px 12px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: var(--transition);
+        font-family: var(--font);
+      }
+      .copy-btn:hover {
+        border-color: var(--accent);
+        color: var(--text);
+      }
+
+      /* ---------- History ---------- */
+      .history-section {
+        margin-top: 20px;
+        border-top: 1px solid var(--border);
+        padding-top: 16px;
+      }
+      .history-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+      }
+      .history-header h3 {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.3px;
+      }
+      .history-header button {
+        background: transparent;
+        color: var(--text-secondary);
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        padding: 2px 14px;
+        font-size: 12px;
+        cursor: pointer;
+        transition: var(--transition);
+      }
+      .history-header button:hover {
+        border-color: var(--red);
+        color: var(--red);
+      }
+
+      .history-list {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        max-height: 120px;
+        overflow-y: auto;
+      }
+      .history-list::-webkit-scrollbar {
+        width: 4px;
+      }
+      .history-list::-webkit-scrollbar-track {
+        background: var(--bg);
+        border-radius: 4px;
+      }
+      .history-list::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 4px;
+      }
+
+      .history-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: var(--bg);
+        padding: 6px 14px;
+        border-radius: 4px;
+        font-size: 13px;
+        cursor: pointer;
+        transition: var(--transition);
+        border-left: 3px solid transparent;
+      }
+      .history-item:hover {
+        background: var(--surface2);
+      }
+      .history-item .h-method {
+        font-weight: 700;
+        font-size: 12px;
+        min-width: 50px;
+        color: var(--accent);
+      }
+      .history-item .h-url {
+        color: var(--text-secondary);
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .history-item .h-status {
+        font-weight: 600;
+        font-size: 12px;
+        padding: 0 6px;
+      }
+      .history-item .h-status.ok {
+        color: var(--green);
+      }
+      .history-item .h-status.error {
+        color: var(--red);
+      }
+      .history-item .h-time {
+        color: var(--text-secondary);
+        font-size: 11px;
+        opacity: 0.6;
+      }
+
+      /* ---------- Utilities ---------- */
+      .flex-row {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+
+      .mt-2 {
+        margin-top: 8px;
+      }
+
+      .badge {
+        font-size: 11px;
+        padding: 2px 10px;
+        border-radius: 12px;
+        background: var(--border);
+        color: var(--text-secondary);
+      }
+
+      /* ---------- Loading spinner ---------- */
+      .spinner {
+        display: inline-block;
+        width: 18px;
+        height: 18px;
+        border: 2px solid var(--border);
+        border-top: 2px solid var(--accent);
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* ---------- Scrollbar global ---------- */
+      ::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      ::-webkit-scrollbar-track {
+        background: var(--bg);
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container" id="app">
+      <h1>
+        ⚡ REST Tester
+        <small>— test your backend with fetch</small>
+      </h1>
+
+      <div class="two-col">
+        <!-- ========== REQUEST PANEL ========== -->
+        <div class="panel">
+          <div class="panel-title">📤 Request</div>
+
+          <!-- URL + Method -->
+          <div class="url-row">
+            <select id="methodSelect">
+              <option value="GET">GET</option>
+              <option value="POST">POST</option>
+              <option value="PUT">PUT</option>
+              <option value="PATCH">PATCH</option>
+              <option value="DELETE">DELETE</option>
+              <option value="HEAD">HEAD</option>
+              <option value="OPTIONS">OPTIONS</option>
+            </select>
+            <input
+              type="text"
+              id="urlInput"
+              placeholder="https://api.example.com/users"
+              value="https://jsonplaceholder.typicode.com/posts/1"
+            />
+            <button class="send-btn" id="sendBtn">
+              <span id="sendLabel">Send</span>
+              <span
+                id="sendSpinner"
+                style="display: none"
+                class="spinner"
+              ></span>
+            </button>
+          </div>
+
+          <!-- Headers -->
+          <div class="headers-section">
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 6px;
+              "
+            >
+              <span
+                style="
+                  font-size: 13px;
+                  font-weight: 500;
+                  color: var(--text-secondary);
+                "
+                >Headers</span
+              >
+              <span
+                style="
+                  font-size: 11px;
+                  color: var(--text-secondary);
+                  opacity: 0.5;
+                "
+                id="headerCount"
+                >0</span
+              >
+            </div>
+            <div class="headers-list" id="headersList">
+              <!-- dynamic header rows -->
+            </div>
+            <button class="add-header-btn" id="addHeaderBtn">
+              + Add header
+            </button>
+          </div>
+
+          <!-- Body -->
+          <div class="body-section">
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 4px;
+              "
+            >
+              <span
+                style="
+                  font-size: 13px;
+                  font-weight: 500;
+                  color: var(--text-secondary);
+                "
+                >Body</span
+              >
+              <div class="body-actions">
+                <button id="formatJsonBtn">Format JSON</button>
+                <button id="clearBodyBtn">Clear</button>
+              </div>
+            </div>
+            <textarea
+              id="bodyInput"
+              placeholder="Request body (JSON, form-data, text, etc.)"
+            >
+{
+                        "title": "foo",
+                        "body": "bar",
+                        "userId": 1
+                    }</textarea
+            >
+          </div>
+
+          <!-- Quick presets -->
+          <div
+            style="margin-top: 14px; display: flex; gap: 6px; flex-wrap: wrap"
+          >
+            <span
+              style="
+                font-size: 12px;
+                color: var(--text-secondary);
+                opacity: 0.6;
+                margin-right: 4px;
+              "
+              >Presets:</span
+            >
+            <button
+              class="preset-btn"
+              data-url="https://jsonplaceholder.typicode.com/posts/1"
+              data-method="GET"
+            >
+              GET /posts/1
+            </button>
+            <button
+              class="preset-btn"
+              data-url="https://jsonplaceholder.typicode.com/posts"
+              data-method="GET"
+            >
+              GET /posts
+            </button>
+            <button
+              class="preset-btn"
+              data-url="https://jsonplaceholder.typicode.com/posts"
+              data-method="POST"
+              data-body='{"title":"foo","body":"bar","userId":1}'
+            >
+              POST /posts
+            </button>
+            <button
+              class="preset-btn"
+              data-url="https://jsonplaceholder.typicode.com/posts/1"
+              data-method="PUT"
+              data-body='{"id":1,"title":"foo","body":"bar","userId":1}'
+            >
+              PUT /posts/1
+            </button>
+          </div>
+        </div>
+
+        <!-- ========== RESPONSE PANEL ========== -->
+        <div class="panel">
+          <div class="panel-title">📥 Response</div>
+
+          <div class="response-status">
+            <span class="status-badge" id="statusBadge">—</span>
+            <span class="response-time" id="responseTime"></span>
+            <span style="flex: 1"></span>
+            <span
+              style="
+                font-size: 12px;
+                color: var(--text-secondary);
+                opacity: 0.5;
+              "
+              id="responseSize"
+            ></span>
+          </div>
+
+          <div class="response-tabs">
+            <button class="active" data-tab="body">Body</button>
+            <button data-tab="headers">Headers</button>
+          </div>
+
+          <div class="response-content" id="responseContent">
+            <span class="placeholder"
+              >Send a request to see the response here.</span
+            >
+            <button class="copy-btn" id="copyResponseBtn" style="display: none">
+              Copy
+            </button>
+          </div>
+
+          <!-- History -->
+          <div class="history-section">
+            <div class="history-header">
+              <h3>📜 History</h3>
+              <button id="clearHistoryBtn">Clear all</button>
+            </div>
+            <div class="history-list" id="historyList">
+              <span
+                style="
+                  color: var(--text-secondary);
+                  font-size: 13px;
+                  opacity: 0.4;
+                  padding: 4px 0;
+                "
+                >No requests yet.</span
+              >
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- /two-col -->
+    </div>
+
+    <script>
+      (function () {
+        "use strict";
+
+        // ---------- DOM refs ----------
+        const methodSelect = document.getElementById("methodSelect");
+        const urlInput = document.getElementById("urlInput");
+        const sendBtn = document.getElementById("sendBtn");
+        const sendLabel = document.getElementById("sendLabel");
+        const sendSpinner = document.getElementById("sendSpinner");
+        const headersList = document.getElementById("headersList");
+        const addHeaderBtn = document.getElementById("addHeaderBtn");
+        const headerCount = document.getElementById("headerCount");
+        const bodyInput = document.getElementById("bodyInput");
+        const statusBadge = document.getElementById("statusBadge");
+        const responseTime = document.getElementById("responseTime");
+        const responseSize = document.getElementById("responseSize");
+        const responseContent = document.getElementById("responseContent");
+        const copyBtn = document.getElementById("copyResponseBtn");
+        const historyList = document.getElementById("historyList");
+        const clearHistoryBtn = document.getElementById("clearHistoryBtn");
+        const formatJsonBtn = document.getElementById("formatJsonBtn");
+        const clearBodyBtn = document.getElementById("clearBodyBtn");
+
+        const tabBtns = document.querySelectorAll(".response-tabs button");
+        const presetBtns = document.querySelectorAll(".preset-btn");
+
+        // ---------- State ----------
+        let currentResponse = null; // { status, statusText, headers, body, time, size }
+        let history = [];
+        const MAX_HISTORY = 30;
+        let isFetching = false;
+        let activeTab = "body";
+
+        // ---------- Helpers ----------
+        function getHeaders() {
+          const rows = headersList.querySelectorAll(".header-row");
+          const headers = {};
+          rows.forEach((row) => {
+            const key = row.querySelector(".h-key")?.value?.trim();
+            const val = row.querySelector(".h-value")?.value?.trim();
+            if (key) headers[key] = val || "";
+          });
+          return headers;
+        }
+
+        function setHeaders(headersObj) {
+          headersList.innerHTML = "";
+          if (!headersObj || typeof headersObj !== "object") {
+            updateHeaderCount();
+            return;
+          }
+          for (const [key, val] of Object.entries(headersObj)) {
+            if (key && val !== undefined) {
+              addHeaderRow(key, val);
+            }
+          }
+          updateHeaderCount();
+        }
+
+        function addHeaderRow(key = "", value = "") {
+          const row = document.createElement("div");
+          row.className = "header-row";
+          row.innerHTML = `
+                    <input class="h-key" type="text" placeholder="Header name" value="${escapeHtml(key)}" />
+                    <input class="h-value" type="text" placeholder="Value" value="${escapeHtml(value)}" />
+                    <button class="del-header" title="Remove header">✕</button>
+                `;
+          row.querySelector(".del-header").addEventListener("click", () => {
+            row.remove();
+            updateHeaderCount();
+          });
+          // auto-update count on input change
+          row.querySelectorAll("input").forEach((inp) => {
+            inp.addEventListener("input", updateHeaderCount);
+          });
+          headersList.appendChild(row);
+          updateHeaderCount();
+        }
+
+        function updateHeaderCount() {
+          const count = headersList.querySelectorAll(".header-row").length;
+          headerCount.textContent = count;
+        }
+
+        function escapeHtml(str) {
+          if (!str) return "";
+          return str
+            .replace(/&/g, "&amp;")
+            .replace(/"/g, "&quot;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+        }
+
+        function formatJSON(str) {
+          try {
+            const parsed = JSON.parse(str);
+            return JSON.stringify(parsed, null, 2);
+          } catch (_) {
+            return str;
+          }
+        }
+
+        function prettyPrintJSON(jsonStr) {
+          try {
+            const obj = JSON.parse(jsonStr);
+            return syntaxHighlight(JSON.stringify(obj, null, 2));
+          } catch (_) {
+            return escapeHtml(jsonStr);
+          }
+        }
+
+        function syntaxHighlight(json) {
+          return json
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(
+              /("(?:[^"\\]|\\.)*"):/g,
+              '<span class="json-key">$1</span>:',
+            )
+            .replace(
+              /: ("(?:[^"\\]|\\.)*")/g,
+              ': <span class="json-string">$1</span>',
+            )
+            .replace(/: (\d+\.?\d*)/g, ': <span class="json-number">$1</span>')
+            .replace(
+              /: (true|false)/g,
+              ': <span class="json-boolean">$1</span>',
+            )
+            .replace(/: (null)/g, ': <span class="json-null">$1</span>');
+        }
+
+        function getBodyForMethod(method) {
+          const body = bodyInput.value;
+          if (method === "GET" || method === "HEAD" || method === "OPTIONS")
+            return undefined;
+          if (!body || body.trim() === "") return undefined;
+          return body;
+        }
+
+        // ---------- Send request ----------
+        async function sendRequest() {
+          if (isFetching) return;
+
+          const method = methodSelect.value;
+          let url = urlInput.value.trim();
+          if (!url) {
+            alert("Please enter a URL.");
+            return;
+          }
+          // Auto-add protocol if missing
+          if (!/^https?:\/\//i.test(url)) {
+            url = "https://" + url;
+            urlInput.value = url;
+          }
+
+          const headers = getHeaders();
+          const body = getBodyForMethod(method);
+
+          // Disable UI
+          isFetching = true;
+          sendBtn.disabled = true;
+          sendLabel.textContent = "Sending...";
+          sendSpinner.style.display = "inline-block";
+          statusBadge.textContent = "⏳ Pending";
+          statusBadge.className = "status-badge pending";
+          responseTime.textContent = "";
+          responseSize.textContent = "";
+          responseContent.innerHTML =
+            '<span class="placeholder">⏳ Waiting for response...</span>';
+          copyBtn.style.display = "none";
+
+          const startTime = performance.now();
+
+          try {
+            const fetchOptions = {
+              method,
+              headers,
+              credentials: "include",
+            };
+            if (body !== undefined) {
+              // if headers contain Content-Type, use as-is; otherwise default to JSON
+              const hasContentType = Object.keys(headers).some(
+                (k) => k.toLowerCase() === "content-type",
+              );
+              if (!hasContentType) {
+                fetchOptions.headers["Content-Type"] = "application/json";
+              }
+              fetchOptions.body = body;
+            }
+
+            const response = await fetch(url, fetchOptions);
+            const endTime = performance.now();
+            const elapsed = (endTime - startTime).toFixed(1);
+
+            // Read response
+            const contentType = response.headers.get("content-type") || "";
+            let responseBody;
+            if (contentType.includes("application/json")) {
+              responseBody = await response.text();
+            } else if (contentType.includes("text/")) {
+              responseBody = await response.text();
+            } else {
+              // Try text, but could be binary
+              responseBody = await response.text();
+            }
+
+            const size = new Blob([responseBody]).size;
+
+            // Build headers object
+            const headersObj = {};
+            response.headers.forEach((val, key) => {
+              headersObj[key] = val;
+            });
+
+            currentResponse = {
+              status: response.status,
+              statusText: response.statusText,
+              headers: headersObj,
+              body: responseBody,
+              time: elapsed,
+              size: size,
+              ok: response.ok,
+              url: url,
+              method: method,
+            };
+
+            // Update UI
+            const isOk = response.status >= 200 && response.status < 300;
+            statusBadge.textContent = `${response.status} ${response.statusText}`;
+            statusBadge.className = `status-badge ${isOk ? "ok" : "error"}`;
+            responseTime.textContent = `⏱ ${elapsed}ms`;
+            responseSize.textContent = size > 0 ? `${size} B` : "";
+
+            // Show body in active tab
+            renderResponseTab(activeTab);
+
+            // Add to history
+            addHistory({
+              method,
+              url,
+              status: response.status,
+              ok: response.ok,
+              time: elapsed,
+              body: responseBody,
+              headers: headersObj,
+              size: size,
+            });
+          } catch (err) {
+            statusBadge.textContent = "❌ Error";
+            statusBadge.className = "status-badge error";
+            responseTime.textContent = "";
+            responseSize.textContent = "";
+            responseContent.innerHTML = `<span style="color:var(--red);">⚠️ ${escapeHtml(err.message)}</span>`;
+            copyBtn.style.display = "none";
+            currentResponse = null;
+          } finally {
+            isFetching = false;
+            sendBtn.disabled = false;
+            sendLabel.textContent = "Send";
+            sendSpinner.style.display = "none";
+          }
+        }
+
+        // ---------- Render response tab ----------
+        function renderResponseTab(tab) {
+          if (!currentResponse) {
+            responseContent.innerHTML =
+              '<span class="placeholder">Send a request to see the response here.</span>';
+            copyBtn.style.display = "none";
+            return;
+          }
+
+          if (tab === "body") {
+            const body = currentResponse.body;
+            if (body === null || body === undefined || body === "") {
+              responseContent.innerHTML =
+                '<span style="color:var(--text-secondary);opacity:0.5;">(empty response body)</span>';
+            } else {
+              // Try to pretty-print JSON
+              const trimmed = body.trim();
+              let html;
+              try {
+                const parsed = JSON.parse(trimmed);
+                html = syntaxHighlight(JSON.stringify(parsed, null, 2));
+              } catch (_) {
+                html = escapeHtml(body);
+              }
+              responseContent.innerHTML = html;
+            }
+            copyBtn.style.display = "block";
+          } else if (tab === "headers") {
+            const h = currentResponse.headers || {};
+            const lines = Object.entries(h)
+              .map(([k, v]) => `${k}: ${v}`)
+              .join("\n");
+            responseContent.textContent = lines || "(no headers)";
+            copyBtn.style.display = "block";
+          }
+        }
+
+        // ---------- History ----------
+        function addHistory(entry) {
+          history.unshift(entry);
+          if (history.length > MAX_HISTORY) history.pop();
+          renderHistory();
+        }
+
+        function renderHistory() {
+          if (history.length === 0) {
+            historyList.innerHTML =
+              '<span style="color:var(--text-secondary);font-size:13px;opacity:0.4;padding:4px 0;">No requests yet.</span>';
+            return;
+          }
+          let html = "";
+          history.forEach((item, idx) => {
+            const statusClass = item.ok ? "ok" : "error";
+            const methodColor =
+              item.method === "GET"
+                ? "#58a6ff"
+                : item.method === "POST"
+                  ? "#3fb950"
+                  : item.method === "PUT"
+                    ? "#d29922"
+                    : item.method === "PATCH"
+                      ? "#bc8cff"
+                      : item.method === "DELETE"
+                        ? "#f85149"
+                        : "#8b949e";
+            html += `
+                        <div class="history-item" data-index="${idx}">
+                            <span class="h-method" style="color:${methodColor};">${item.method}</span>
+                            <span class="h-url">${escapeHtml(item.url)}</span>
+                            <span class="h-status ${statusClass}">${item.status}</span>
+                            <span class="h-time">${item.time}ms</span>
+                        </div>
+                    `;
+          });
+          historyList.innerHTML = html;
+
+          // Click to re-run
+          historyList.querySelectorAll(".history-item").forEach((el) => {
+            el.addEventListener("click", function () {
+              const idx = parseInt(this.dataset.index, 10);
+              const entry = history[idx];
+              if (entry) {
+                methodSelect.value = entry.method;
+                urlInput.value = entry.url;
+                // Optionally restore body & headers from history entry?
+                // We'll just set body from entry if it exists
+                if (entry.body && entry.body !== "") {
+                  try {
+                    const parsed = JSON.parse(entry.body);
+                    bodyInput.value = JSON.stringify(parsed, null, 2);
+                  } catch (_) {
+                    bodyInput.value = entry.body;
+                  }
+                } else {
+                  bodyInput.value = "";
+                }
+                if (entry.headers) {
+                  setHeaders(entry.headers);
+                }
+                // Auto-send?
+                // We'll just populate, user clicks send.
+              }
+            });
+          });
+        }
+
+        function clearHistory() {
+          history = [];
+          renderHistory();
+        }
+
+        // ---------- Tab switching ----------
+        tabBtns.forEach((btn) => {
+          btn.addEventListener("click", function () {
+            tabBtns.forEach((b) => b.classList.remove("active"));
+            this.classList.add("active");
+            activeTab = this.dataset.tab;
+            renderResponseTab(activeTab);
+          });
+        });
+
+        // ---------- Copy ----------
+        copyBtn.addEventListener("click", function () {
+          const text = responseContent.textContent || "";
+          if (!text) return;
+          navigator.clipboard?.writeText(text).catch(() => {
+            // fallback
+            const range = document.createRange();
+            range.selectNode(responseContent);
+            window.getSelection()?.removeAllRanges();
+            window.getSelection()?.addRange(range);
+            document.execCommand("copy");
+          });
+          const orig = this.textContent;
+          this.textContent = "✓ Copied!";
+          setTimeout(() => {
+            this.textContent = orig;
+          }, 1500);
+        });
+
+        // ---------- Presets ----------
+        presetBtns.forEach((btn) => {
+          btn.addEventListener("click", function () {
+            const url = this.dataset.url;
+            const method = this.dataset.method || "GET";
+            const body = this.dataset.body || "";
+            if (url) urlInput.value = url;
+            methodSelect.value = method;
+            if (body) {
+              try {
+                const parsed = JSON.parse(body);
+                bodyInput.value = JSON.stringify(parsed, null, 2);
+              } catch (_) {
+                bodyInput.value = body;
+              }
+            } else {
+              bodyInput.value = "";
+            }
+            // Optionally auto-send?
+            sendRequest();
+          });
+        });
+
+        // ---------- Add header ----------
+        addHeaderBtn.addEventListener("click", () => addHeaderRow());
+
+        // ---------- Format JSON ----------
+        formatJsonBtn.addEventListener("click", function () {
+          try {
+            const parsed = JSON.parse(bodyInput.value);
+            bodyInput.value = JSON.stringify(parsed, null, 2);
+          } catch (_) {
+            alert("Invalid JSON. Please check your syntax.");
+          }
+        });
+
+        clearBodyBtn.addEventListener("click", () => {
+          bodyInput.value = "";
+        });
+
+        // ---------- Clear history ----------
+        clearHistoryBtn.addEventListener("click", clearHistory);
+
+        // ---------- Send on Enter (Ctrl+Enter) ----------
+        bodyInput.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            sendRequest();
+          }
+        });
+        urlInput.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            sendRequest();
+          }
+        });
+
+        // ---------- Send button ----------
+        sendBtn.addEventListener("click", sendRequest);
+
+        // ---------- Init ----------
+        // Add a default header row (Content-Type: application/json)
+        addHeaderRow("Content-Type", "application/json");
+
+        // Pre-fill with a sample
+        // done via HTML
+
+        // Initial history render
+        renderHistory();
+
+        // Auto-send on load? No, wait for user.
+
+        console.log("🚀 REST Tester ready!");
+      })();
+    </script>
+  </body>
+</html>

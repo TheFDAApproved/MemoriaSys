@@ -1,0 +1,131 @@
+--  ----------------------------------------------------------------------
+--  BLOCKS (sections / areas)
+--  ----------------------------------------------------------------------
+CREATE TABLE blocks (
+    block_id INT AUTO_INCREMENT PRIMARY KEY,
+    block_name VARCHAR(100) UNIQUE NOT NULL,
+    block_type ENUM(
+        'Niche', 'Bone Chamber', 'Lawn/Grounds',
+        'Unmapped Area', 'Private', 'Mausoleum',
+        'Mass Grave', 'Cluster', 'Block'
+    ) NOT NULL,
+    coordinates JSON, -- for mapping visuals in the UI
+    remarks TEXT
+);
+
+--  ----------------------------------------------------------------------
+--  GRAVES (individual slots inside a block)
+--      Status is manual: 'Vacant' or 'Occupied'.
+--      If a grave is not usable, set status = 'Occupied' and add a remark.
+--  ----------------------------------------------------------------------
+CREATE TABLE graves (
+    grave_id INT AUTO_INCREMENT PRIMARY KEY,
+    block_id INT NOT NULL,
+    grave_code VARCHAR(50) UNIQUE,
+    row_num INT,
+    col_num INT,
+    status ENUM('Vacant', 'Occupied') DEFAULT 'Vacant',
+    remarks TEXT,
+    FOREIGN KEY (block_id) REFERENCES blocks(block_id) ON DELETE RESTRICT
+);
+
+--  ----------------------------------------------------------------------
+--  INTERMENTS (burial records)
+--      Pending means that the burial is not yet executed.
+--      Inactive means not in the cemetery anymore, maybe moved to family or others in remarks
+--      Active means in the cemetery
+--      To reserve, fill what is needed, and their status is Pending
+--      The current occupant is needed to be find a new grave or location so they will still be active if in the cemetery
+--      After the current occupant is transfered, then the pending can be now active
+--  ----------------------------------------------------------------------
+CREATE TABLE interments (
+    interment_id INT AUTO_INCREMENT PRIMARY KEY,
+
+    -- Reference / control
+    control_number VARCHAR(100) UNIQUE NOT NULL,
+
+    -- Deceased details
+    deceased_name VARCHAR(255) NOT NULL,
+    last_known_address TEXT,
+    death_certificate VARCHAR(100),
+    deceased_date_of_birth DATE,
+    deceased_date_of_death DATE,
+
+    -- Grave (current location)
+    -- Can be null if not yet found or maybe in somewhere in the cemetery but forgotten or something 
+    grave_id INT,
+
+    -- Contact person (stored directly)
+    contact_person_name VARCHAR(255),
+    contact_person_phone_number VARCHAR(50),
+    contact_person_email VARCHAR(150),
+
+    -- Assistance type
+    assistance_type ENUM('Burial', 'Transfer the remains of the late', 'Other')
+        NOT NULL DEFAULT 'Burial',
+
+    -- Permits
+    burial_permit_number VARCHAR(100),
+    burial_permit_date DATE,
+    transfer_permit_number VARCHAR(100),
+    transfer_permit_issued_by VARCHAR(150),
+    transfer_permit_date DATE,
+    exhumation_permit_number VARCHAR(100),
+    exhumation_permit_date DATE,
+
+    -- Important dates
+    date_buried DATE,
+    date_exhumed DATE,
+    burial_clearance_date DATE,
+    lease_expiration_date DATE,
+
+    -- Status: Pending → Active → Inactive
+    status ENUM('Pending', 'Active', 'Inactive') NOT NULL DEFAULT 'Pending',
+
+    -- Free‑text remarks
+    remarks TEXT,
+
+    FOREIGN KEY (grave_id) REFERENCES graves(grave_id) ON DELETE RESTRICT
+);
+
+CREATE TABLE settings (
+    setting_id INT AUTO_INCREMENT PRIMARY KEY,
+    setting_key VARCHAR(50) NOT NULL UNIQUE,
+    setting_value TEXT,
+    description VARCHAR(255) NULL
+);
+
+CREATE TABLE users (
+    user_id INT PRIMARY KEY AUTO_INCREMENT, 
+    username VARCHAR(50) UNIQUE NOT NULL,
+    role ENUM('Administrator', 'Office Staff', 'Grounds Staff') NOT NULL DEFAULT 'Grounds Staff',
+    status ENUM('Verified', 'Unverified') NOT NULL DEFAULT 'Unverified',
+    email VARCHAR(255) UNIQUE NOT NULL,
+    phone_number VARCHAR(20) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    name VARCHAR(255) NOT NULL
+);
+
+CREATE TABLE payments(
+    payment_id INT AUTO_INCREMENT PRIMARY KEY,
+    reference_number VARCHAR(100) UNIQUE NOT NULL,
+    payment_channel VARCHAR(100) NOT NULL, 
+    amount DECIMAL(10,2) NOT NULL,
+    deceased_name  VARCHAR(255),
+    payers_phone_number VARCHAR(20),
+    payers_email VARCHAR(255), 
+    payers_name VARCHAR(255),
+   
+    purpose VARCHAR(100) NOT NULL, 
+    image_link VARCHAR(255) NOT NULL, 
+    
+    -- Audit & Approvals
+    confirmed_office_staff INT NULL,
+    confirmed_ground_staff INT NULL,
+    remarks_payer TEXT,
+    remarks_office TEXT,
+    remarks_grounds TEXT,
+    
+    FOREIGN KEY (confirmed_office_staff) REFERENCES users(user_id) ON DELETE SET NULL,
+    FOREIGN KEY (confirmed_ground_staff) REFERENCES users(user_id) ON DELETE SET NULL
+);

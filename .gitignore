@@ -1,0 +1,7 @@
+# Security
+.env
+/api/logs.txt
+/api/config.php
+/api/cache/*
+/api/images/*
+/api/test.php
