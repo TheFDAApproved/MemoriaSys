@@ -2,7 +2,8 @@
 
 require_once 'notallowed.php';
 
-function formatPhNumber($number,$strict=true) {
+function formatPhNumber($number, $strict = true)
+{
     $clean = preg_replace('/[^0-9]/', '', $number);
     if (strlen($clean) == 11 && substr($clean, 0, 2) == '09') {
         $clean = '63' . substr($clean, 1);
@@ -15,4 +16,3 @@ function formatPhNumber($number,$strict=true) {
     if (!$strict) return $number;
     return false;
 }
-?>

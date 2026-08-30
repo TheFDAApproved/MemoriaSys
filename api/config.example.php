@@ -15,7 +15,7 @@ define('JWT_ALGO', 'HS256');
 define('JWT_EXPIRATION', 3600);
 define('APP_URL', 'http://yourdomain.com');
 define('LOG_SECRET_KEY', 'your_log_secret_key');
-define('ENCRYPTION_KEY', 'SIR_PAPASARAMIINTAWNPLEASEHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHU!'); 
+define('ENCRYPTION_KEY', 'SIR_PAPASARAMIINTAWNPLEASEHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHU!');
 
 // --- ENUM CONSTANTS ---
 // Manually update these if the database schema ever changes
@@ -28,4 +28,3 @@ const STATUS_UNVERIFIED = 'Unverified'; // Default Status I guess
 
 const ALLOWED_ROLES = [ROLE_ADMIN, ROLE_OFFICE, ROLE_GROUNDS]; //database
 const ALLOWED_STATUSES = [STATUS_VERIFIED, STATUS_UNVERIFIED]; //database
-?>

@@ -5,5 +5,3 @@ if (!defined('ITS_ME_JUSTTOVERIFY')) {
     require $_SERVER['DOCUMENT_ROOT'] . '/404.html'; // Load a custom 404 page '/memoria/404.html If not in rootest root folder LOL'
     exit();
 }
-
-?>

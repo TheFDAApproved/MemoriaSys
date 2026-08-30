@@ -2,7 +2,8 @@
 
 require_once 'notallowed.php';
 
-class ImageManager {
+class ImageManager
+{
     private $uploadDir;
     private $baseUrl;
     private $maxFileSize;
@@ -13,7 +14,8 @@ class ImageManager {
     // Max filename length (leave room for added suffixes and extension)
     private $maxFilenameLength = 150;
 
-    public function __construct($uploadDirPath = null, $baseUrlPath = null, $maxFileSize = 10485760) {
+    public function __construct($uploadDirPath = null, $baseUrlPath = null, $maxFileSize = 10485760)
+    {
         $this->uploadDir = $uploadDirPath ?? __DIR__ . '/images/';
         $this->maxFileSize = $maxFileSize;
 
@@ -46,7 +48,8 @@ class ImageManager {
         }
     }
 
-    private function getExtensionFromMime($mimeType) {
+    private function getExtensionFromMime($mimeType)
+    {
         $map = [
             'image/jpeg' => 'jpg',
             'image/png'  => 'png',
@@ -56,12 +59,13 @@ class ImageManager {
         return $map[$mimeType] ?? false;
     }
 
-    private function getSafeFilename($filename) {
+    private function getSafeFilename($filename)
+    {
         // Prevent null deprecation errors
         if (empty($filename)) {
             return false;
         }
-        
+
         // Cast to string just to be absolutely safe
         $safe = preg_replace('/[^a-zA-Z0-9_\.-]/', '', basename((string)$filename));
         if ($safe === '' || $safe === '.' || $safe === '..') {
@@ -70,7 +74,8 @@ class ImageManager {
         return $safe;
     }
 
-    private function validateImage($filePath, $originalName) {
+    private function validateImage($filePath, $originalName)
+    {
         if (!file_exists($filePath)) {
             return 'Source file does not exist.';
         }
@@ -102,7 +107,8 @@ class ImageManager {
      * Get an exclusive lock on a .lock file for a given target path.
      * Returns an array with handle and path on success, false on failure.
      */
-    private function acquireLock($targetPath) {
+    private function acquireLock($targetPath)
+    {
         $lockFile = $targetPath . '.lock';
         $fp = fopen($lockFile, 'c+');
         if (!$fp) {
@@ -123,12 +129,13 @@ class ImageManager {
         ];
     }
 
-    private function releaseLock($lock) {
+    private function releaseLock($lock)
+    {
         // Ensure we received the correct lock array structure
         if (!is_array($lock) || !isset($lock['handle'])) {
             return;
         }
-        
+
         $lockHandle = $lock['handle'];
         $lockFile = $lock['lock_file'];
 
@@ -140,7 +147,8 @@ class ImageManager {
         }
     }
 
-    public function getAllImages($page = 1, $limit = 20, $search = '') {
+    public function getAllImages($page = 1, $limit = 20, $search = '')
+    {
         $allFiles = @scandir($this->uploadDir);
         if ($allFiles === false) {
             return [
@@ -246,7 +254,8 @@ class ImageManager {
      * @param string $requestedName   Optional custom base name
      * @param bool   $replaceIfExists If true and file exists, replace it; otherwise add uniqid.
      */
-    public function uploadImage($tmpFilePath, $originalName, $requestedName = '', $replaceIfExists = false) {
+    public function uploadImage($tmpFilePath, $originalName, $requestedName = '', $replaceIfExists = false)
+    {
         if (!file_exists($tmpFilePath)) {
             return ['success' => false, 'error' => 'Source file does not exist.'];
         }
@@ -341,7 +350,8 @@ class ImageManager {
         }
     }
 
-    public function replaceImage($targetFilename, $sourceStreamOrFile) {
+    public function replaceImage($targetFilename, $sourceStreamOrFile)
+    {
         $safeOldFile = $this->getSafeFilename($targetFilename);
         if (!$safeOldFile) {
             return ['success' => false, 'error' => 'No target filename provided.'];
@@ -464,7 +474,8 @@ class ImageManager {
         }
     }
 
-    public function deleteImage($targetFilename) {
+    public function deleteImage($targetFilename)
+    {
         $safeFile = $this->getSafeFilename($targetFilename);
 
         if (!$safeFile) {
@@ -509,7 +520,8 @@ class ImageManager {
      * @param string $newRequestedName New base name (without extension)
      * @param bool   $replaceIfExists If true and target exists, replace it; otherwise add uniqid.
      */
-    public function renameImage($oldFilename, $newRequestedName, $replaceIfExists = false) {
+    public function renameImage($oldFilename, $newRequestedName, $replaceIfExists = false)
+    {
         $safeOldFile = $this->getSafeFilename($oldFilename);
         if (!$safeOldFile) {
             return ['success' => false, 'error' => 'No target filename provided.'];
@@ -611,4 +623,3 @@ class ImageManager {
         }
     }
 }
-?>

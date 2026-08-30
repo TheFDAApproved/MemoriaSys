@@ -20,7 +20,7 @@ $rawData = array_merge(
 );
 
 $role = $userData['role'];
-if ( !in_array( $role , [ ROLE_ADMIN, ROLE_OFFICE ] ) ){
+if (!in_array($role, [ROLE_ADMIN, ROLE_OFFICE])) {
     Response::error("Forbidden. You do not have permission to perform this action.", 403);
 }
 
@@ -62,4 +62,3 @@ if ($method === 'POST') {
 }
 
 Response::error("Method Not Allowed", 405);
-?>

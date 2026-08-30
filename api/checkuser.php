@@ -1,10 +1,11 @@
 <?php
-require_once 'database.php'; 
+require_once 'database.php';
 
 use Firebase\JWT\JWT;
 use Firebase\JWT\Key;
 
-function checkuser($force_exit = true) {
+function checkuser($force_exit = true)
+{
     global $pdo;
     $jwt = null;
 
@@ -18,7 +19,7 @@ function checkuser($force_exit = true) {
 
     if (preg_match('/Bearer\s(\S+)/', $authHeader, $matches)) {
         $jwt = $matches[1];
-    } 
+    }
     // 2. SECOND: Fallback to checking the HttpOnly Cookie
     else if (isset($_COOKIE['auth_token'])) {
         $jwt = $_COOKIE['auth_token'];
@@ -39,7 +40,7 @@ function checkuser($force_exit = true) {
         if (count($jwtParts) !== 3) {
             throw new Exception("Malformed token");
         }
-        
+
         // Base64Url decode the payload (the middle part of the JWT)
         $payloadRaw = json_decode(base64_decode(str_replace(['-', '_'], ['+', '/'], $jwtParts[1])));
         $userId = $payloadRaw->data->user_id ?? null;
@@ -55,7 +56,7 @@ function checkuser($force_exit = true) {
 
         // If user was deleted or unverified by admin, kill the session
         if (!$dbUser || $dbUser['status'] !== STATUS_VERIFIED) {
-            setcookie('auth_token', '', time() - JWT_EXPIRATION, '/'); 
+            setcookie('auth_token', '', time() - JWT_EXPIRATION, '/');
             if ($force_exit) {
                 Response::error("Account is unverified or restricted.", 401);
             }
@@ -75,8 +76,7 @@ function checkuser($force_exit = true) {
         $userData['role'] = $dbUser['role'];
 
         return $userData;
-    }
-    catch (Exception $e) {
+    } catch (Exception $e) {
         setcookie('auth_token', '', time() - JWT_EXPIRATION, '/');
         if ($force_exit) {
             // Optional: you can check if $e is a SignatureInvalidException to log "forced logout due to password change"
@@ -85,4 +85,3 @@ function checkuser($force_exit = true) {
         return false;
     }
 }
-?>

@@ -2,10 +2,12 @@
 
 require_once 'notallowed.php';
 
-class Response {
-    
-    public static function send($status, $success, $message, $data = null,) {
-        
+class Response
+{
+
+    public static function send($status, $success, $message, $data = null,)
+    {
+
         http_response_code($status);
         header('Content-Type: application/json; charset=UTF-8');
         header('Access-Control-Allow-Origin: *'); // If needed for CORS
@@ -25,13 +27,13 @@ class Response {
     }
 
 
-    public static function success($message, $data = null, $status = 200) {
+    public static function success($message, $data = null, $status = 200)
+    {
         self::send($status, true, $message, $data);
     }
 
-    public static function error($message, $status = 400) {
+    public static function error($message, $status = 400)
+    {
         self::send($status, false, $message);
     }
-
 }
-?>

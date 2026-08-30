@@ -13,7 +13,7 @@ $method = $_SERVER['REQUEST_METHOD'] ?? null;
 
 if ($method === 'DELETE') {
     if ($userData) {
-        systemLog($userData['name'] . " (" . $userData['username'] . ") logged out", $userData['user_id']); 
+        systemLog($userData['name'] . " (" . $userData['username'] . ") logged out", $userData['user_id']);
         setcookie('auth_token', '', time() - JWT_EXPIRATION, '/');
         Response::success("Logged out successfully");
     }
@@ -21,13 +21,13 @@ if ($method === 'DELETE') {
 }
 
 if ($method === 'GET') {
-    if (!$userData) Response::error("Not logged in",401);
+    if (!$userData) Response::error("Not logged in", 401);
     Response::success("Logged in",  $userData);
 }
 
 
 if ($method !== 'POST') {
-    Response::error("Method not allowed", 405); 
+    Response::error("Method not allowed", 405);
 }
 
 if ($userData) {
@@ -37,7 +37,7 @@ if ($userData) {
 
 // --- HYBRID INPUT PARSER ---
 $rawData = array_merge(
-    json_decode(file_get_contents("php://input"), true) ?: [], 
+    json_decode(file_get_contents("php://input"), true) ?: [],
     $_POST ?? []
 );
 
@@ -57,7 +57,7 @@ try {
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if ($user && password_verify($password, $user['password_hash'])) {
-        
+
         // --- NEW: Save the hash before unsetting it ---
         $currentPasswordHash = $user['password_hash'];
         unset($user['password_hash']);
@@ -82,7 +82,7 @@ try {
                 "name" => $user['name'],
                 "email" => $user['email'],
                 "phone_number" => $user['phone_number']
-            ]   
+            ]
         ];
 
         $jwt = JWT::encode($payload, $JWT_SECRET . $currentPasswordHash, $JWT_ALGO);
@@ -103,15 +103,13 @@ try {
         //     "user" => $user,
         //     "token" => $jwt 
         // ]);
-        
-    } else { 
+
+    } else {
         systemLog("Failed login attempt with username: " . $username, null);
         Response::error("Invalid username and password", 401);
     }
-
 } catch (PDOException $e) {
     error_log($e->getMessage());
     systemLog("Database error during login attempt for username: " . $username . " " . $e->getMessage(), null);
     Response::error("An error occurred while logging in " . $e->getMessage(), 500);
 }
-?>

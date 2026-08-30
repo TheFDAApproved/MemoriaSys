@@ -98,7 +98,7 @@ function handleRateLimit($limit, $period, $bucket = 'default')
 
         systemLog(
             "Rate limit exceeded for IP: $userIp and username: $username. " .
-            "$limit requests in $period seconds. Retry in $retryAfter seconds.",
+                "$limit requests in $period seconds. Retry in $retryAfter seconds.",
             $userId
         );
 
@@ -127,5 +127,3 @@ function applyDefaultRateLimit()
 }
 
 applyDefaultRateLimit();
-
-?>
