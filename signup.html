@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memoria - Mandaue City Public Cemetery</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+
+    <link rel="stylesheet" href="assets/css/root.css">
+    <link rel="stylesheet" href="assets/css/auth.css">
+</head>
+<body>
+    <header>
+        <div class="headerContainer">
+            <div class="logoSection">
+                <img src="assets/images/MandaueLogo.png" alt="Mandaue City Logo">
+                <img src="assets/images/DGSLogo.png" alt="Department of General Services Logo">
+                <div class="headerText">
+                    <h1>Department of General Services</h1>
+                    <h2>Mandaue City</h2>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="signup">
+        <section>
+            <div class="banner">
+                <img src="assets/images/MemoriaLogo.png" alt="Memoria Logo">
+                <p class="cemeteryName">Mandaue City Public Cemetery</p>
+            </div>
+        </section>
+
+        <section>
+            <div class="inputWrapper">
+                <div class="inputHeader">
+                    <h2>Register Account</h2>
+                    <p>Register for access to Memoria system.</p>
+                </div>
+
+                <form action="#">
+                    <div class="inputBox">
+                        <input type="text" placeholder="Fullname" required>
+                    </div>
+                    <div class="inputBox">
+                        <input type="text" placeholder="Username" required>
+                    </div>
+                    <div class="inputBox">
+                        <input type="email" placeholder="Email Address" required>
+                    </div>
+                    <div class="inputBox">
+                        <input type="tel" placeholder="Phone Number" required>
+                    </div>
+                    <div class="inputBox">
+                        <input type="password" placeholder="Password" required>
+                    </div>
+                    <label class="termsConditions">
+                        <input type="checkbox" required>
+                        <span>I agree to <a href="#" id="termsLink">terms & conditions</a></span>
+                    </label>
+                    <button type="submit" class="btnSignup signupPage">Sign Up</button>
+                </form>
+
+                <div class="loginLink">
+                    Back to <a href="login.html">Log In</a>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <div class="termsAndConditions hidden" id="terms">
+        <div class="termsContainer">
+            <button class="btnCloseCorner" type="button" id="btnClose" title="Decline and close">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+
+            <div class="headerWrapper">
+                <h3>Terms and Conditions</h3>
+                <div class="dateSubtitle">Last updated June 2026</div>
+            </div>
+
+            <div class="termsContent">
+                <div class="policySection">
+                    <span class="sectionTag">Section 01</span>
+                    <h4>Accuracy of Cemetery Records</h4>
+                    <p>As an authorized user of this system, you bear the strict responsibility of ensuring data integrity. Plot mapping updates, deceased identities, interments, and ownership deed links must be double-verified before database commitment. Erroneous data entry directly compromises physical ground layout operations.</p>
+                </div>
+
+                <div class="policySection">
+                    <span class="sectionTag">Section 02</span>
+                    <h4>Transaction Records and Accountability</h4>
+                    <p>Every modification, deletion, financial entry, or deed transfer executed under your credentials will generate a permanent system audit log linked directly to your profile. Falsifying administrative details, transaction dates, or financial logs will trigger an immediate administrative inquiry and suspension of system clearance.</p>
+                </div>
+
+                <div class="policySection">
+                    <span class="sectionTag">Section 03</span>
+                    <h4>Confidentiality of Family Data</h4>
+                    <p>The personal information, financial payments, and contact addresses of deed holders stored in this system are strictly confidential. Staff members are expressly forbidden from downloading, exporting, or printing customer profiles for unauthorized use or distribution outside official office administrative pipelines.</p>
+                </div>
+                
+                <div class="policySection">
+                    <span class="sectionTag">Section 04</span>
+                    <h4>Restricted Access & Security Hygiene</h4>
+                    <p>Accounts are personal and strictly non-transferable. Staff members must never share system credentials or perform actions on behalf of another office colleague. Terminals must be logged out or locked immediately when leaving an office desk to prevent unauthorized database access by third parties.</p>
+                </div>
+
+                <div class="policySection">
+                    <span class="sectionTag">Section 05</span>
+                    <h4>Modifications to Terms</h4>
+                    <p>The administration reserves the right to update, alter, or modify these administrative policies and system protocols at any time without prior notice. Continued utilization of your system credentials following any updates constitutes definitive acceptance of the revised operational mandates.</p>
+                </div>
+            </div>
+
+            <div class="termsAction">
+                <button type="button" class="btnAccept" id="btnTermAccept" disabled>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    Accept
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="assets/js/auth.js"></script>
+</body>
+</html>

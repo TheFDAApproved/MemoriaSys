@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memoria - Mandaue City Public Cemetery</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet">
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+
+    <link rel="stylesheet" href="assets/css/root.css">
+    <link rel="stylesheet" href="assets/css/auth.css">
+</head>
+<body>
+    <header>
+        <div class="headerContainer">
+            <div class="logoSection">
+                <img src="assets/images/MandaueLogo.png" alt="Mandaue City Logo">
+                <img src="assets/images/DGSLogo.png" alt="Department of General Services Logo">
+                <div class="headerText">
+                    <h1>Department of General Services</h1>
+                    <h2>Mandaue City Public Cemetery</h2>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="login">
+        <section>
+            <div class="banner">
+                <img src="assets/images/MemoriaLogo.png" alt="Memoria Logo">
+                <p class="cemeteryName">Mandaue City Public Cemetery</p>
+            </div>
+        </section>
+
+        <section>
+            <div class="inputWrapper">
+                <h2 class="inputHeader">Log into Memoria</h2>
+                <form action="#">
+                    <div class="inputBox">
+                        <input type="text" placeholder="Username" required>
+                    </div>
+                    <div class="inputBox">
+                        <input type="password" placeholder="Password" required>
+                    </div>
+                    <button class="btnLogin" type="submit">Log In</button>
+                    <div class="forgotPassword">
+                        <a href="forgot_password.html">Forgot Password?</a>
+                    </div>
+                    <a href="signup.html" class="btnSignup loginPage">Sign Up</a>
+                </form>
+
+                <div class="footer">
+                    <p>System access is restricted to authorized personnel only.</p>
+                    <a href="javascript:void(0)" id="btnOpenContact">Contact Administrator</a>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <div class="contactAdministrator" id="contactAdmin">
+        <div class="contactContent">
+            <h3>Contact Us</h3>
+            <form action="#" class="contactForm" method="POST">
+                <div class="formGroup">
+                    <label>Name <span class="required">*</span></label>
+                    <input type="text" required>
+                </div>
+                <div class="formGroup">
+                    <label>Email Address <span class="required">*</span></label>
+                    <input type="email" required>
+                </div>
+                <div class="formGroup">
+                    <label>Contact Number <span class="required">*</span></label>
+                    <input type="tel" required>
+                </div>
+                <div class="formGroup">
+                    <label>Subject</label>
+                    <input type="text">
+                </div>
+                <div class="formGroup">
+                    <label>Message <span class="required">*</span></label>
+                    <textarea placeholder="Write your message here..." rows="4" required></textarea>
+                </div>
+
+                <div class="formActions">
+                    <button class="btnCancel" type="button" id="btnCancelContact">Cancel</button>
+                    <button class="btnSend" type="submit">Send</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="assets/js/auth.js"></script>
+</body>
+</html>
