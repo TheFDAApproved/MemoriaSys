@@ -5,7 +5,6 @@ define('ITS_ME_JUSTTOVERIFY', true);
 require_once 'checkuser.php';
 
 use Firebase\JWT\JWT;
-use Firebase\JWT\Key;
 
 $userData = checkuser(false);
 
