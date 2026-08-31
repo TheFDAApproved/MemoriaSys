@@ -6,8 +6,6 @@ require_once 'checkuser.php';
 require_once 'textbee.php';
 require_once 'logger.php';
 
-header('Content-Type: application/json');
-
 $userData = checkuser();
 
 $method = $_SERVER['REQUEST_METHOD'] ?? null;
