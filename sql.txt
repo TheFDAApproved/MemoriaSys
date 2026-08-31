@@ -50,15 +50,18 @@ CREATE TABLE interments (
     death_certificate VARCHAR(100),
     deceased_date_of_birth DATE,
     deceased_date_of_death DATE,
+    deceased_sex ENUM('Male', 'Female', 'Unknown') DEFAULT 'Unknown',
 
     -- Grave (current location)
     -- Can be null if not yet found or maybe in somewhere in the cemetery but forgotten or something 
-    grave_id INT,
+    current_grave_id INT,
+    transfer_to_grave INT,
 
     -- Contact person (stored directly)
     contact_person_name VARCHAR(255),
     contact_person_phone_number VARCHAR(50),
     contact_person_email VARCHAR(150),
+    contact_person_address TEXT,
 
     -- Assistance type
     assistance_type ENUM('Burial', 'Transfer the remains of the late', 'Other')
@@ -85,7 +88,8 @@ CREATE TABLE interments (
     -- Free‑text remarks
     remarks TEXT,
 
-    FOREIGN KEY (grave_id) REFERENCES graves(grave_id) ON DELETE RESTRICT
+    FOREIGN KEY (current_grave_id) REFERENCES graves(grave_id) ON DELETE RESTRICT,
+    FOREIGN KEY (transfer_to_grave) REFERENCES graves(grave_id) ON DELETE RESTRICT
 );
 
 CREATE TABLE settings (
