@@ -9,6 +9,7 @@ CREATE TABLE blocks (
         'Unmapped Area', 'Private', 'Mausoleum',
         'Mass Grave', 'Cluster', 'Block'
     ) NOT NULL,
+    image_link VARCHAR(255),
     coordinates JSON, -- for mapping visuals in the UI
     remarks TEXT
 );

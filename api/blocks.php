@@ -56,7 +56,7 @@ if ($method === 'GET') {
         if ($isStaff) {
             $blockStmt = $pdo->prepare("SELECT * FROM blocks WHERE block_id = ?");
         } else {
-            $blockStmt = $pdo->prepare("SELECT block_id, block_name, block_type, coordinates FROM blocks WHERE block_id = ?");
+            $blockStmt = $pdo->prepare("SELECT block_id, block_name, block_type, coordinates, image_link FROM blocks WHERE block_id = ?");
         }
         $blockStmt->execute([$resourceId]);
         $block = $blockStmt->fetch(PDO::FETCH_ASSOC);
@@ -191,9 +191,10 @@ if ($method === 'GET') {
                 ORDER BY b.block_id
             ";
         } else {
+            // Public: include image_link
             $sql = "
                 SELECT 
-                    b.block_id, b.block_name, b.block_type, b.coordinates,
+                    b.block_id, b.block_name, b.block_type, b.coordinates, b.image_link,
                     (SELECT COUNT(*) FROM graves WHERE block_id = b.block_id) AS total_graves,
                     (SELECT COUNT(*) FROM graves WHERE block_id = b.block_id AND status = 'Vacant') AS vacant,
                     (SELECT COUNT(*) FROM graves WHERE block_id = b.block_id AND status = 'Occupied') AS occupied
@@ -223,6 +224,7 @@ if ($method === 'POST') {
     $blockType = trim($rawData['block_type']);
     $coordinates = $rawData['coordinates'] ?? null;
     $remarks = trim($rawData['remarks'] ?? '');
+    $image_link = trim($rawData['image_link'] ?? '');
 
     $validTypes = ['Niche', 'Bone Chamber', 'Lawn/Grounds', 'Unmapped Area', 'Private', 'Mausoleum', 'Mass Grave', 'Cluster', 'Block'];
     if (!in_array($blockType, $validTypes)) {
@@ -244,10 +246,10 @@ if ($method === 'POST') {
     $pdo->beginTransaction();
     try {
         $stmt = $pdo->prepare("
-            INSERT INTO blocks (block_name, block_type, coordinates, remarks)
-            VALUES (?, ?, ?, ?)
+            INSERT INTO blocks (block_name, block_type, coordinates, remarks, image_link)
+            VALUES (?, ?, ?, ?, ?)
         ");
-        $stmt->execute([$blockName, $blockType, $coordinates, $remarks]);
+        $stmt->execute([$blockName, $blockType, $coordinates, $remarks, $image_link]);
         $blockId = $pdo->lastInsertId();
 
         if ($rows > 0 && $cols > 0) {
@@ -303,7 +305,7 @@ if ($method === 'PUT') {
     $updates = [];
     $params = [];
 
-    $allowedFields = ['block_type', 'coordinates', 'remarks'];
+    $allowedFields = ['block_type', 'coordinates', 'remarks', 'image_link'];
     foreach ($allowedFields as $field) {
         if (array_key_exists($field, $rawData)) {
             $updates[] = "$field = ?";
