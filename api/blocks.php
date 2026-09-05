@@ -298,12 +298,36 @@ if ($method === 'PUT') {
         Response::error("Block not found.", 404);
     }
 
-    $graveCountStmt = $pdo->prepare("SELECT COUNT(*) FROM graves WHERE block_id = ?");
-    $graveCountStmt->execute([$blockId]);
-    $hasGraves = (int) $graveCountStmt->fetchColumn() > 0;
+    // Get current max rows/cols
+    $maxStmt = $pdo->prepare("SELECT MAX(row_num) AS max_r, MAX(col_num) AS max_c FROM graves WHERE block_id = ?");
+    $maxStmt->execute([$blockId]);
+    $max = $maxStmt->fetch(PDO::FETCH_ASSOC);
+    $currentMaxRows = (int)($max['max_r'] ?? 0);
+    $currentMaxCols = (int)($max['max_c'] ?? 0);
 
+    // Check if there are any graves at all
+    $hasGraves = ($currentMaxRows > 0 && $currentMaxCols > 0);
+
+    // --- Build update fields (block_name, type, coordinates, remarks, image_link) ---
     $updates = [];
     $params = [];
+
+    // Block name handling: only allow change if no graves exist
+    if (isset($rawData['block_name'])) {
+        $newName = trim($rawData['block_name']);
+        if ($newName !== $current['block_name']) {
+            if ($hasGraves) {
+                Response::error("Cannot change block_name because the block already has graves.", 400);
+            }
+            $check = $pdo->prepare("SELECT block_id FROM blocks WHERE block_name = ? AND block_id != ?");
+            $check->execute([$newName, $blockId]);
+            if ($check->fetch()) {
+                Response::error("Block name already exists.", 409);
+            }
+            $updates[] = "block_name = ?";
+            $params[] = $newName;
+        }
+    }
 
     $allowedFields = ['block_type', 'coordinates', 'remarks', 'image_link'];
     foreach ($allowedFields as $field) {
@@ -313,39 +337,35 @@ if ($method === 'PUT') {
         }
     }
 
-    // ---------- BLOCK_NAME HANDLING (FIX) ----------
-    if (isset($rawData['block_name'])) {
-        $newName = trim($rawData['block_name']);
-        $currentName = $current['block_name'];
-
-        // Only treat as a change if the name actually differs.
-        if ($newName !== $currentName) {
-            // Prevent renaming if graves exist (because grave codes embed the block name)
-            if ($hasGraves) {
-                Response::error("Cannot change block_name because the block already has graves.", 400);
-            }
-            // Ensure the new name is unique
-            $check = $pdo->prepare("SELECT block_id FROM blocks WHERE block_name = ? AND block_id != ?");
-            $check->execute([$newName, $blockId]);
-            if ($check->fetch()) {
-                Response::error("Block name already exists.", 409);
-            }
-            $updates[] = "block_name = ?";
-            $params[] = $newName;
-        }
-        // If name is unchanged, do nothing – no error, no update.
-    }
-    // -------------------------------------------------
-
-    if (empty($updates) && !isset($rawData['rows']) && !isset($rawData['cols'])) {
-        Response::error("No fields to update.", 400);
-    }
-
+    // --- Grid adjustment ---
     $newRows = isset($rawData['rows']) ? (int) $rawData['rows'] : null;
     $newCols = isset($rawData['cols']) ? (int) $rawData['cols'] : null;
 
+    // If no fields to update and no grid change, exit early
+    if (empty($updates) && $newRows === null && $newCols === null) {
+        Response::error("No fields to update.", 400);
+    }
+
+    // Validate dimensions if provided
+    if ($newRows !== null && $newRows < 1) Response::error("rows must be at least 1.", 400);
+    if ($newCols !== null && $newCols < 1) Response::error("cols must be at least 1.", 400);
+
+    // Cap dimensions to prevent abuse (optional)
+    $maxAllowed = 500;
+    if (($newRows !== null && $newRows > $maxAllowed) || ($newCols !== null && $newCols > $maxAllowed)) {
+        Response::error("rows and cols cannot exceed $maxAllowed.", 400);
+    }
+
+    // Determine target dimensions
+    $targetRows = $newRows ?? $currentMaxRows;
+    $targetCols = $newCols ?? $currentMaxCols;
+
+    // If grid dimensions unchanged, skip grid adjustment
+    $gridChanged = ($targetRows != $currentMaxRows || $targetCols != $currentMaxCols);
+
     $pdo->beginTransaction();
     try {
+        // Update block meta fields
         if (!empty($updates)) {
             $sql = "UPDATE blocks SET " . implode(', ', $updates) . " WHERE block_id = ?";
             $params[] = $blockId;
@@ -353,68 +373,64 @@ if ($method === 'PUT') {
             $stmt->execute($params);
         }
 
-        if ($newRows !== null || $newCols !== null) {
-            $maxStmt = $pdo->prepare("SELECT MAX(row_num) AS max_r, MAX(col_num) AS max_c FROM graves WHERE block_id = ?");
-            $maxStmt->execute([$blockId]);
-            $max = $maxStmt->fetch(PDO::FETCH_ASSOC);
-            $currentMaxRows = $max['max_r'] ?? 0;
-            $currentMaxCols = $max['max_c'] ?? 0;
-
-            $targetRows = $newRows ?? $currentMaxRows;
-            $targetCols = $newCols ?? $currentMaxCols;
-
-            if ($targetRows < 1 || $targetCols < 1) {
-                $pdo->rollBack();
-                Response::error("rows and cols must be at least 1 if provided.", 400);
-            }
-
-            // Shrink
+        // ---- Grid adjustment ----
+        if ($gridChanged) {
+            // --- Shrink: remove graves outside target dimensions ---
             if ($targetRows < $currentMaxRows || $targetCols < $currentMaxCols) {
-                $removeCheck = $pdo->prepare("
-                    SELECT grave_id FROM graves 
-                    WHERE block_id = ? 
-                      AND (row_num > ? OR col_num > ?)
-                ");
-                $removeCheck->execute([$blockId, $targetRows, $targetCols]);
-                $removedIds = $removeCheck->fetchAll(PDO::FETCH_COLUMN);
-
-                if (!empty($removedIds)) {
-                    $placeholders = implode(',', array_fill(0, count($removedIds), '?'));
-                    $activeCheck = $pdo->prepare("
-                        SELECT 1 FROM interments 
-                        WHERE current_grave_id IN ($placeholders) AND status = 'Active' LIMIT 1
-                    ");
-                    $activeCheck->execute($removedIds);
-                    if ($activeCheck->fetch()) {
-                        $pdo->rollBack();
-                        Response::error("Cannot shrink block: some graves to be removed are occupied.", 400);
-                    }
-                    $delete = $pdo->prepare("DELETE FROM graves WHERE block_id = ? AND (row_num > ? OR col_num > ?)");
-                    $delete->execute([$blockId, $targetRows, $targetCols]);
+                // Check for any interments (not just active) on graves to be removed
+                $checkSql = "
+                    SELECT EXISTS (
+                        SELECT 1
+                        FROM graves g
+                        LEFT JOIN interments i
+                            ON (i.current_grave_id = g.grave_id OR i.transfer_to_grave = g.grave_id)
+                        WHERE g.block_id = ?
+                          AND (g.row_num > ? OR g.col_num > ?)
+                          AND i.interment_id IS NOT NULL
+                    )
+                ";
+                $checkStmt = $pdo->prepare($checkSql);
+                $checkStmt->execute([$blockId, $targetRows, $targetCols]);
+                if ($checkStmt->fetchColumn()) {
+                    $pdo->rollBack();
+                    Response::error("Cannot shrink block: some graves to be removed have interment records.", 400);
                 }
+
+                // Delete the graves outside the new grid
+                $del = $pdo->prepare("DELETE FROM graves WHERE block_id = ? AND (row_num > ? OR col_num > ?)");
+                $del->execute([$blockId, $targetRows, $targetCols]);
             }
 
-            // Expand
+            // --- Expand: add new graves ---
             if ($targetRows > $currentMaxRows || $targetCols > $currentMaxCols) {
-                // Fetch the (possibly updated) block name for new grave codes
+                // Fetch block name for grave codes (once)
                 $nameStmt = $pdo->prepare("SELECT block_name FROM blocks WHERE block_id = ?");
                 $nameStmt->execute([$blockId]);
                 $blockName = $nameStmt->fetchColumn();
 
-                $insertSql = "INSERT INTO graves (block_id, grave_code, row_num, col_num, status)
-                              SELECT ?, ?, ?, ?, 'Vacant'
-                              WHERE NOT EXISTS (
-                                  SELECT 1 FROM graves 
-                                  WHERE block_id = ? AND row_num = ? AND col_num = ?
-                              )";
-                $insertStmt = $pdo->prepare($insertSql);
+                // Build bulk INSERT values for new cells only
+                $values = [];
+                $insertParams = [];
                 for ($r = 1; $r <= $targetRows; $r++) {
                     for ($c = 1; $c <= $targetCols; $c++) {
+                        // Only add if this cell is outside the existing grid
                         if ($r > $currentMaxRows || $c > $currentMaxCols) {
                             $code = $blockName . '-' . str_pad($r, 2, '0', STR_PAD_LEFT) . '-' . str_pad($c, 2, '0', STR_PAD_LEFT);
-                            $insertStmt->execute([$blockId, $code, $r, $c, $blockId, $r, $c]);
+                            $values[] = "(?, ?, ?, ?, 'Vacant')";
+                            $insertParams[] = $blockId;
+                            $insertParams[] = $code;
+                            $insertParams[] = $r;
+                            $insertParams[] = $c;
                         }
                     }
+                }
+
+                if (!empty($values)) {
+                    $insertSql = "INSERT INTO graves (block_id, grave_code, row_num, col_num, status) VALUES " . implode(', ', $values);
+                    // Use INSERT IGNORE to safely skip any duplicates (shouldn't happen with our logic)
+                    $insertSql = str_replace("INSERT INTO", "INSERT IGNORE INTO", $insertSql);
+                    $insertStmt = $pdo->prepare($insertSql);
+                    $insertStmt->execute($insertParams);
                 }
             }
         }
