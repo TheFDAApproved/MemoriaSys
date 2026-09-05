@@ -313,19 +313,29 @@ if ($method === 'PUT') {
         }
     }
 
+    // ---------- BLOCK_NAME HANDLING (FIX) ----------
     if (isset($rawData['block_name'])) {
-        if ($hasGraves) {
-            Response::error("Cannot change block_name because the block already has graves.", 400);
-        }
         $newName = trim($rawData['block_name']);
-        $check = $pdo->prepare("SELECT block_id FROM blocks WHERE block_name = ? AND block_id != ?");
-        $check->execute([$newName, $blockId]);
-        if ($check->fetch()) {
-            Response::error("Block name already exists.", 409);
+        $currentName = $current['block_name'];
+
+        // Only treat as a change if the name actually differs.
+        if ($newName !== $currentName) {
+            // Prevent renaming if graves exist (because grave codes embed the block name)
+            if ($hasGraves) {
+                Response::error("Cannot change block_name because the block already has graves.", 400);
+            }
+            // Ensure the new name is unique
+            $check = $pdo->prepare("SELECT block_id FROM blocks WHERE block_name = ? AND block_id != ?");
+            $check->execute([$newName, $blockId]);
+            if ($check->fetch()) {
+                Response::error("Block name already exists.", 409);
+            }
+            $updates[] = "block_name = ?";
+            $params[] = $newName;
         }
-        $updates[] = "block_name = ?";
-        $params[] = $newName;
+        // If name is unchanged, do nothing – no error, no update.
     }
+    // -------------------------------------------------
 
     if (empty($updates) && !isset($rawData['rows']) && !isset($rawData['cols'])) {
         Response::error("No fields to update.", 400);
@@ -386,6 +396,7 @@ if ($method === 'PUT') {
 
             // Expand
             if ($targetRows > $currentMaxRows || $targetCols > $currentMaxCols) {
+                // Fetch the (possibly updated) block name for new grave codes
                 $nameStmt = $pdo->prepare("SELECT block_name FROM blocks WHERE block_id = ?");
                 $nameStmt->execute([$blockId]);
                 $blockName = $nameStmt->fetchColumn();
