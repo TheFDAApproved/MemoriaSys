@@ -93,6 +93,114 @@ CREATE TABLE interments (
     FOREIGN KEY (transfer_to_grave) REFERENCES graves(grave_id) ON DELETE RESTRICT
 );
 
+-- ----------------------------------------------------------------------
+-- TRANSFER LOG – Audit trail of grave movements for each interment
+-- ----------------------------------------------------------------------
+CREATE TABLE transfer_log (
+    log_id INT AUTO_INCREMENT PRIMARY KEY,
+    interment_id INT NOT NULL,
+    from_grave_id INT NULL,          -- NULL if they had no previous grave (new burial)
+    to_grave_id INT NULL,            -- NULL if they were removed from the cemetery
+    transfer_date DATETIME NOT NULL, -- ⬅️ Exact date + time of the transfer
+    reason TEXT,                     -- captured from interments.remarks at time of move
+
+    FOREIGN KEY (interment_id) REFERENCES interments(interment_id) ON DELETE CASCADE
+);
+
+DELIMITER //
+
+CREATE TRIGGER log_grave_transfer
+BEFORE UPDATE ON interments
+FOR EACH ROW
+BEGIN
+    -- Only fire if the current_grave_id has actually changed
+    IF (OLD.current_grave_id <=> NEW.current_grave_id) = 0 THEN
+        
+        INSERT INTO transfer_log (
+            interment_id,
+            from_grave_id,
+            to_grave_id,
+            transfer_date,    -- ⬅️ Stores the exact moment of the move
+            reason
+        ) VALUES (
+            NEW.interment_id,
+            OLD.current_grave_id,
+            NEW.current_grave_id,
+            NOW(),            -- ⬅️ Exact date + time the trigger ran
+            NEW.remarks
+        );
+
+    END IF;
+END//
+
+DELIMITER ;
+
+-- ----------------------------------------------------------------------
+-- Add comments to existing tables (for clarity in DB tools)
+-- ----------------------------------------------------------------------
+ALTER TABLE blocks COMMENT = 'Cemetery sections/areas (Niche, Lawn, etc.)';
+ALTER TABLE graves COMMENT = 'Individual burial slots inside a block';
+ALTER TABLE interments COMMENT = 'Burial/transfer records with status workflow (Pending → Active → Inactive)';
+ALTER TABLE transfer_log COMMENT = 'Audit trail of grave location changes (auto-logged by trigger)';
+
+-- ----------------------------------------------------------------------
+-- INDEXES for blocks
+-- ----------------------------------------------------------------------
+-- block_name is already UNIQUE (implicit index)
+-- No additional indexes needed on blocks currently.
+
+-- ----------------------------------------------------------------------
+-- INDEXES for graves
+-- ----------------------------------------------------------------------
+-- Foreign key to blocks (commonly used in JOINs)
+CREATE INDEX idx_graves_block_id ON graves(block_id);
+
+-- Filtering by status (Vacant/Occupied) for reservation queries
+CREATE INDEX idx_graves_status ON graves(status);
+
+-- Composite index for quick lookup of vacant graves within a block
+-- Useful in reserve.php when filtering by block_id and status
+CREATE INDEX idx_graves_block_status ON graves(block_id, status);
+
+-- ----------------------------------------------------------------------
+-- INDEXES for interments
+-- ----------------------------------------------------------------------
+-- Foreign keys (already indexed? InnoDB auto-indexes FK columns, but explicit is safer)
+CREATE INDEX idx_interments_current_grave_id ON interments(current_grave_id);
+CREATE INDEX idx_interments_transfer_to_grave ON interments(transfer_to_grave);
+
+-- Status is heavily filtered (Pending, Active, Inactive)
+CREATE INDEX idx_interments_status ON interments(status);
+
+-- control_number is already UNIQUE (implicit index)
+
+-- For searching by deceased_name (supports prefix searches)
+-- If you frequently do LIKE 'name%', this helps; for leading wildcards, consider FULLTEXT.
+CREATE INDEX idx_interments_deceased_name ON interments(deceased_name(100));
+
+-- Critical for reserve.php: finding expiring/expired leases
+CREATE INDEX idx_interments_lease_expiration ON interments(lease_expiration_date);
+
+-- Composite index for common filtering in records.php: status + current_grave_id
+CREATE INDEX idx_interments_status_grave ON interments(status, current_grave_id);
+
+-- Composite index for date range queries (e.g., reports by date_buried)
+CREATE INDEX idx_interments_date_buried ON interments(date_buried);
+
+-- ----------------------------------------------------------------------
+-- INDEXES for transfer_log
+-- ----------------------------------------------------------------------
+-- Foreign key to interments (heavily used to fetch history)
+-- InnoDB auto-indexes FK columns, but we'll add for clarity and documentation.
+CREATE INDEX idx_transfer_log_interment_id ON transfer_log(interment_id);
+
+-- If you often query by transfer_date for reporting
+CREATE INDEX idx_transfer_log_transfer_date ON transfer_log(transfer_date);
+
+-- Composite index for timeline ordering (interment_id + transfer_date)
+-- Speeds up the history fetch for a given interment
+CREATE INDEX idx_transfer_log_interment_date ON transfer_log(interment_id, transfer_date);
+
 CREATE TABLE settings (
     setting_id INT AUTO_INCREMENT PRIMARY KEY,
     setting_key VARCHAR(50) NOT NULL UNIQUE,
