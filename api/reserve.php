@@ -12,7 +12,6 @@
 define('ITS_ME_JUSTTOVERIFY', true);
 
 require_once 'checkuser.php';
-require_once 'textbee.php';     // if used for SMS, keep
 require_once 'logger.php';      // for systemLog
 
 $userData = checkuser();        // Must be authenticated
@@ -208,6 +207,30 @@ if ($method === 'POST') {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // NEW: Helper to resolve grave_code to grave_id
+    // -------------------------------------------------------------------------
+    $resolveGraveCode = function ($code) use ($pdo) {
+        $stmt = $pdo->prepare("SELECT grave_id FROM graves WHERE grave_code = ?");
+        $stmt->execute([$code]);
+        $id = $stmt->fetchColumn();
+        if ($id === false) {
+            Response::error("Grave code '$code' not found.", 400);
+        }
+        return (int) $id;
+    };
+
+    // If 'grave_code' is provided and 'grave_id' is not, convert it
+    if (!empty($rawData['grave_code']) && empty($rawData['grave_id'])) {
+        $rawData['grave_id'] = $resolveGraveCode($rawData['grave_code']);
+    }
+
+    // If 'old_transfer_to_grave_code' is provided and 'old_transfer_to_grave' is not, convert it
+    if (!empty($rawData['old_transfer_to_grave_code']) && empty($rawData['old_transfer_to_grave'])) {
+        $rawData['old_transfer_to_grave'] = $resolveGraveCode($rawData['old_transfer_to_grave_code']);
+    }
+    // -------------------------------------------------------------------------
+
     $graveId = null;
     $oldIntermentId = null;
     $oldTransferToGrave = null; // New field for where the old occupant is going
@@ -263,7 +286,7 @@ if ($method === 'POST') {
         $defaultRemarks = "To be replaced by $newDeceased (control: $newControl).";
         $oldRemarks = $transferRemarks ?: $defaultRemarks;
     } else {
-        Response::error("You must provide either 'grave_id' (for vacant grave) or 'old_interment_id' (for replacement).", 400);
+        Response::error("You must provide either 'grave_id' (or 'grave_code') for a vacant grave, or 'old_interment_id' for replacement.", 400);
     }
 
     // Prepare fields for NEW occupant. 
