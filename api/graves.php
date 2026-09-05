@@ -283,14 +283,8 @@ if ($method === 'PUT') {
         }
     }
 
-    // 2. If status is being changed to 'Occupied', ensure there IS an active interment on this grave
-    if ($newStatus === 'Occupied') {
-        $interCheck = $pdo->prepare("SELECT interment_id FROM interments WHERE current_grave_id = ? AND status = 'Active'");
-        $interCheck->execute([$graveId]);
-        if (!$interCheck->fetch()) {
-            Response::error("Cannot set grave to Occupied: no active interment found on this grave.", 400);
-        }
-    }
+    // 2. (Removed) – Occupied status can now be set without an active interment.
+    //     Use remarks to explain why (e.g., maintenance, reserved, etc.).
 
     // 3. If row_num or col_num are being changed, ensure the new coordinates are unique within the block
     if (isset($rawData['row_num']) || isset($rawData['col_num'])) {
