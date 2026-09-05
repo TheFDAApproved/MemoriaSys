@@ -9,7 +9,7 @@ CREATE TABLE blocks (
         'Unmapped Area', 'Private', 'Mausoleum',
         'Mass Grave', 'Cluster', 'Block'
     ) NOT NULL,
-    image_link VARCHAR(255),
+    image_link TEXT,
     coordinates JSON, -- for mapping visuals in the UI
     remarks TEXT
 );
@@ -230,7 +230,7 @@ CREATE TABLE payments(
     payers_name VARCHAR(255),
    
     purpose VARCHAR(100) NOT NULL, 
-    image_link VARCHAR(255) NOT NULL, 
+    image_link TEXT, 
     
     -- Audit & Approvals
     confirmed_office_staff INT NULL,
