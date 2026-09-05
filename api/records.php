@@ -190,6 +190,9 @@ if ($method === 'GET') {
             $historyRow = $intermentMap[$intermentId];
             $historyRow['is_history'] = true;
 
+            //the name i guess
+            $historyRow['deceased_name'] = "[History " . $log['transfer_date'] . "] " . $historyRow['deceased_name'];
+
             // Override location fields with the historical grave data
             $historyRow['current_grave_id'] = $log['history_grave_id'] ? (int) $log['history_grave_id'] : null;
             $historyRow['grave_code']        = $log['history_grave_code'];
