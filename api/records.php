@@ -114,74 +114,144 @@ function getIntermentSelectSQL()
 }
 
 // -----------------------------------------------------------------------------
-// GET – List interments or Get a specific interment
+// GET – List interments (with history flattened) or Get a specific one
 // -----------------------------------------------------------------------------
 if ($method === 'GET') {
 
-    // Scenario A: Requesting a SPECIFIC resource /records.php/{id}
-    if ($resourceId) {
-        $sql = getIntermentSelectSQL() . " WHERE i.interment_id = :id";
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute(['id' => $resourceId]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    /**
+     * Helper: Build a flat list of interments (current + history) for given IDs
+     * @param int|null $filterId If provided, only returns rows for that interment_id
+     * @return array Flat array of interment rows (each formatted by formatInterment())
+     */
+    $buildFlatList = function ($filterId = null) use ($pdo) {
+        // 1. Fetch all base interments (or filter by ID)
+        $sql = getIntermentSelectSQL();
+        $params = [];
+        if ($filterId) {
+            $sql .= " WHERE i.interment_id = :id";
+            $params['id'] = $filterId;
+        }
+        $sql .= " ORDER BY i.interment_id DESC";
 
-        if ($row) {
-            Response::success('Interment retrieved', formatInterment($row));
-        } else {
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $baseRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Map formatted interments by interment_id
+        $intermentMap = [];
+        foreach ($baseRows as $row) {
+            $formatted = formatInterment($row);
+            $formatted['is_history'] = false;   // add flag
+            $intermentMap[$row['interment_id']] = $formatted;
+        }
+
+        if (empty($intermentMap)) {
+            return [];
+        }
+
+        // 2. Fetch transfer logs for all these interment IDs
+        $ids = array_keys($intermentMap);
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+
+        $historySql = "
+            SELECT 
+                tl.interment_id,
+                tl.transfer_date,
+                tl.reason,
+                tg.grave_id AS history_grave_id,
+                tg.grave_code AS history_grave_code,
+                tg.row_num AS history_row_num,
+                tg.col_num AS history_col_num,
+                tg.status AS history_grave_status,
+                tg.remarks AS history_grave_remarks,
+                b.block_id AS history_block_id,
+                b.block_name AS history_block_name,
+                b.block_type AS history_block_type
+            FROM transfer_log tl
+            LEFT JOIN graves tg ON tl.to_grave_id = tg.grave_id
+            LEFT JOIN blocks b ON tg.block_id = b.block_id
+            WHERE tl.interment_id IN ($placeholders)
+        ";
+        $histStmt = $pdo->prepare($historySql);
+        $histStmt->execute($ids);
+        $historyLogs = $histStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // 3. Start flat list with current interments
+        $flatList = array_values($intermentMap);
+
+        // 4. Create history rows by cloning the corresponding current row
+        foreach ($historyLogs as $log) {
+            $intermentId = $log['interment_id'];
+            if (!isset($intermentMap[$intermentId])) {
+                continue;
+            }
+
+            // Clone the current record
+            $historyRow = $intermentMap[$intermentId];
+            $historyRow['is_history'] = true;
+
+            // Override location fields with the historical grave data
+            $historyRow['current_grave_id'] = $log['history_grave_id'] ? (int) $log['history_grave_id'] : null;
+            $historyRow['grave_code']        = $log['history_grave_code'];
+            $historyRow['row_num']           = $log['history_row_num'] ? (int) $log['history_row_num'] : null;
+            $historyRow['col_num']           = $log['history_col_num'] ? (int) $log['history_col_num'] : null;
+            $historyRow['grave_status']      = $log['history_grave_status'];
+            $historyRow['grave_remarks']     = $log['history_grave_remarks'];
+            $historyRow['block_id']          = $log['history_block_id'] ? (int) $log['history_block_id'] : null;
+            $historyRow['block_name']        = $log['history_block_name'];
+            $historyRow['block_type']        = $log['history_block_type'];
+            $historyRow['transfer_date']    = $log['transfer_date'];
+
+            // Append move reason to remarks
+            $historyRow['remarks'] = "Moved on {$log['transfer_date']}. Reason: {$log['reason']}. " . ($historyRow['remarks'] ?? '');
+
+            $flatList[] = $historyRow;
+        }
+
+        // 5. Sort: by interment_id DESC (newest first), then current before history
+        usort($flatList, function ($a, $b) {
+            if ($a['interment_id'] != $b['interment_id']) {
+                return $b['interment_id'] - $a['interment_id'];
+            }
+            return $a['is_history'] ? 1 : -1;
+        });
+
+        return $flatList;
+    };
+
+    // --- Scenario A: Requesting a SPECIFIC resource /records.php/{id} ---
+    if ($resourceId) {
+        $flatList = $buildFlatList($resourceId);
+
+        if (empty($flatList)) {
             Response::error('Interment not found.', 404);
         }
+
+        // Return with history_included flag
+        Response::success('Interment retrieved', [
+            'history_included' => true,
+            'interments' => $flatList
+        ]);
     }
-    // Scenario B: Requesting the COLLECTION /records.php
+
+    // --- Scenario B: Requesting the COLLECTION /records.php ---
     else {
-        // Pagination & filters
+        // Build the complete flat list (all current + all history)
+        $allFlatList = $buildFlatList(null);
+
+        // Pagination (optional but recommended)
         $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 100;
         $limit = max(1, min($limit, 500));
         $page  = isset($_GET['page']) ? (int) $_GET['page'] : 1;
         $page  = max(1, $page);
 
-        // Build WHERE clause
-        $where = [];
-        $params = [];
-
-        if (!empty($_GET['status'])) {
-            $where[] = "i.status = ?";
-            $params[] = $_GET['status'];
-        }
-        if (!empty($_GET['control_number'])) {
-            $where[] = "i.control_number LIKE ?";
-            $params[] = "%" . $_GET['control_number'] . "%";
-        }
-        if (!empty($_GET['deceased_name'])) {
-            $where[] = "i.deceased_name LIKE ?";
-            $params[] = "%" . $_GET['deceased_name'] . "%";
-        }
-        if (!empty($_GET['current_grave_id'])) {
-            $where[] = "i.current_grave_id = ?";
-            $params[] = (int) $_GET['current_grave_id'];
-        }
-        if (!empty($_GET['block_id'])) {
-            $where[] = "g.block_id = ?";
-            $params[] = (int) $_GET['block_id'];
-        }
-
-        $whereClause = $where ? "WHERE " . implode(" AND ", $where) : "";
-
-        // Count total
-        $countSql = "SELECT COUNT(*) FROM interments i LEFT JOIN graves g ON i.current_grave_id = g.grave_id $whereClause";
-        $countStmt = $pdo->prepare($countSql);
-        $countStmt->execute($params);
-        $totalRecords = (int) $countStmt->fetchColumn();
+        $totalRecords = count($allFlatList);
         $totalPages = ceil($totalRecords / $limit);
         $page = min($page, $totalPages ?: 1);
         $offset = ($page - 1) * $limit;
 
-        // Fetch data
-        $sql = getIntermentSelectSQL() . " $whereClause ORDER BY i.interment_id DESC LIMIT $limit OFFSET $offset";
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute($params);
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        $paginatedList = array_slice($allFlatList, $offset, $limit);
 
-        $interments = array_map('formatInterment', $rows);
         $pagination = [
             'current_page'  => $page,
             'per_page'      => $limit,
@@ -189,7 +259,11 @@ if ($method === 'GET') {
             'total_pages'   => $totalPages,
         ];
 
-        Response::success('Interments retrieved', ['pagination' => $pagination, 'interments' => $interments]);
+        // Return paginated flat list (no history_included flag, it's implied)
+        Response::success('Interments retrieved', [
+            'pagination' => $pagination,
+            'interments' => $paginatedList
+        ]);
     }
 }
 
