@@ -524,6 +524,53 @@
         font-size: 0.8rem;
       }
 
+      .response-actions {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-left: auto;
+      }
+
+      .action-btn {
+        border: 1px solid var(--border-strong);
+        border-radius: 10px;
+        background: rgba(19, 27, 39, 0.92);
+        color: var(--text);
+        padding: 7px 10px;
+        font-size: 0.72rem;
+        cursor: pointer;
+        transition: 180ms ease;
+        backdrop-filter: blur(6px);
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        font-weight: 600;
+        letter-spacing: 0.03em;
+      }
+
+      .action-btn:hover:not(:disabled) {
+        border-color: rgba(96, 165, 250, 0.45);
+        background: rgba(30, 42, 62, 0.95);
+        transform: translateY(-1px);
+      }
+
+      .action-btn.download-btn {
+        border-color: rgba(52, 211, 153, 0.3);
+        color: var(--green);
+      }
+
+      .action-btn.download-btn:hover:not(:disabled) {
+        border-color: rgba(52, 211, 153, 0.55);
+        background: rgba(52, 211, 153, 0.08);
+      }
+
+      .action-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+        transform: none;
+        filter: grayscale(0.6);
+      }
+
       .response-tabs {
         display: inline-flex;
         gap: 8px;
@@ -584,20 +631,6 @@
       }
       .json-null {
         color: var(--red);
-      }
-
-      .copy-btn {
-        position: absolute;
-        top: 12px;
-        right: 12px;
-        border: 1px solid var(--border-strong);
-        border-radius: 10px;
-        background: rgba(19, 27, 39, 0.9);
-        color: var(--text);
-        padding: 7px 10px;
-        font-size: 0.72rem;
-        cursor: pointer;
-        display: none;
       }
 
       .history-wrap {
@@ -709,6 +742,11 @@
         }
         .builder-grid .grid-head {
           display: none;
+        }
+        .response-actions {
+          margin-left: 0;
+          width: 100%;
+          justify-content: flex-end;
         }
       }
     </style>
@@ -915,6 +953,24 @@
             <span id="responseTime" class="response-time"></span>
             <span style="flex: 1"></span>
             <span id="responseSize" class="response-size"></span>
+            <div class="response-actions">
+              <button
+                id="copyResponseBtn"
+                class="action-btn"
+                type="button"
+                disabled
+              >
+                📋 Copy
+              </button>
+              <button
+                id="downloadResponseBtn"
+                class="action-btn download-btn"
+                type="button"
+                disabled
+              >
+                ⬇ Download
+              </button>
+            </div>
           </div>
 
           <div class="response-tabs">
@@ -930,9 +986,6 @@
             <span class="placeholder"
               >Send a request to see the response here.</span
             >
-            <button id="copyResponseBtn" class="copy-btn" type="button">
-              Copy
-            </button>
           </div>
 
           <div class="history-wrap">
@@ -966,6 +1019,7 @@
         const responseSize = document.getElementById("responseSize");
         const responseContent = document.getElementById("responseContent");
         const copyBtn = document.getElementById("copyResponseBtn");
+        const downloadBtn = document.getElementById("downloadResponseBtn");
         const historyList = document.getElementById("historyList");
         const clearHistoryBtn = document.getElementById("clearHistoryBtn");
         const formatJsonBtn = document.getElementById("formatJsonBtn");
@@ -1056,9 +1110,13 @@
           if (!currentResponse) {
             responseContent.innerHTML =
               '<span class="placeholder">Send a request to see the response here.</span>';
-            copyBtn.style.display = "none";
+            copyBtn.disabled = true;
+            downloadBtn.disabled = true;
             return;
           }
+
+          copyBtn.disabled = false;
+          downloadBtn.disabled = false;
 
           if (tab === "body") {
             const responseBody = currentResponse.body;
@@ -1075,7 +1133,6 @@
                 responseContent.innerHTML = escapeHtml(responseBody);
               }
             }
-            copyBtn.style.display = "block";
           } else {
             const headers = currentResponse.headers || {};
             const content =
@@ -1083,7 +1140,6 @@
                 .map(([key, value]) => `${key}: ${value}`)
                 .join("\n") || "(no headers)";
             responseContent.textContent = content;
-            copyBtn.style.display = "block";
           }
         }
 
@@ -1311,6 +1367,123 @@
           renderHistory();
         }
 
+        function getFileExtension(contentType, body) {
+          const ct = (contentType || "").toLowerCase();
+
+          if (ct.includes("application/json")) return "json";
+          if (ct.includes("text/html")) return "html";
+          if (ct.includes("application/xml") || ct.includes("text/xml"))
+            return "xml";
+          if (ct.includes("text/plain")) return "txt";
+          if (ct.includes("text/csv")) return "csv";
+          if (
+            ct.includes("application/javascript") ||
+            ct.includes("text/javascript")
+          )
+            return "js";
+          if (ct.includes("application/css") || ct.includes("text/css"))
+            return "css";
+          if (ct.includes("image/")) {
+            const match = ct.match(/image\/(\w+)/);
+            return match ? match[1] : "bin";
+          }
+
+          if (body) {
+            const trimmed = body.trim();
+            if (!trimmed) return "txt";
+            if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+              try {
+                JSON.parse(trimmed);
+                return "json";
+              } catch {}
+            }
+            if (trimmed.startsWith("<") && trimmed.includes(">")) return "html";
+            if (trimmed.startsWith("<?xml") || trimmed.startsWith("<xml"))
+              return "xml";
+          }
+          return "txt";
+        }
+
+        function getDownloadFilename(method, url, contentType, body) {
+          let path = "/";
+          try {
+            const parsed = new URL(url);
+            path = parsed.pathname || "/";
+          } catch {
+            const match = url.match(/^https?:\/\/[^/]+(.*)/);
+            if (match && match[1]) path = match[1];
+            else if (url.includes("/")) {
+              const parts = url.split("/");
+              parts.shift();
+              parts.shift();
+              path = "/" + parts.join("/");
+            }
+          }
+
+          let sanitized = path
+            .replace(/\?.*$/, "")
+            .replace(/^\/+/, "")
+            .replace(/\/+/g, "_")
+            .replace(/[^a-zA-Z0-9_.-]/g, "_")
+            .replace(/^_+|_+$/g, "");
+
+          if (!sanitized) sanitized = "root";
+
+          const ext = getFileExtension(contentType, body);
+          return `${method}_${sanitized}.${ext}`;
+        }
+
+        function downloadResponse() {
+          if (!currentResponse) return;
+
+          const body = currentResponse.body || "";
+          const contentType = currentResponse.headers?.["content-type"] || "";
+          const method = currentResponse.method || methodSelect.value || "GET";
+          const url = currentResponse.url || urlInput.value || "request";
+
+          const filename = getDownloadFilename(method, url, contentType, body);
+          const ext = filename.split(".").pop() || "txt";
+          let mimeType = "application/octet-stream";
+          const mimeMap = {
+            json: "application/json",
+            html: "text/html",
+            xml: "application/xml",
+            txt: "text/plain",
+            csv: "text/csv",
+            js: "application/javascript",
+            css: "text/css",
+            png: "image/png",
+            jpg: "image/jpeg",
+            jpeg: "image/jpeg",
+            gif: "image/gif",
+            svg: "image/svg+xml",
+            webp: "image/webp",
+            pdf: "application/pdf",
+            zip: "application/zip",
+            bin: "application/octet-stream",
+          };
+          mimeType = mimeMap[ext] || mimeType;
+
+          if (contentType && !contentType.includes("octet-stream")) {
+            mimeType = contentType.split(";")[0].trim();
+          }
+
+          const blob = new Blob([body], { type: mimeType });
+          const link = document.createElement("a");
+          link.href = URL.createObjectURL(blob);
+          link.download = filename;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(link.href);
+
+          const origText = downloadBtn.textContent;
+          downloadBtn.textContent = "✅ Downloaded";
+          setTimeout(() => {
+            downloadBtn.textContent = "⬇ Download";
+          }, 1500);
+        }
+
         async function sendRequest() {
           if (isFetching) return;
 
@@ -1339,7 +1512,8 @@
           responseSize.textContent = "";
           responseContent.innerHTML =
             '<span class="placeholder">Waiting for response...</span>';
-          copyBtn.style.display = "none";
+          copyBtn.disabled = true;
+          downloadBtn.disabled = true;
 
           const startTime = performance.now();
 
@@ -1414,8 +1588,9 @@
             responseTime.textContent = "";
             responseSize.textContent = "";
             responseContent.innerHTML = `<span class="placeholder" style="color: var(--red);">⚠️ ${escapeHtml(error.message)}</span>`;
-            copyBtn.style.display = "none";
             currentResponse = null;
+            copyBtn.disabled = true;
+            downloadBtn.disabled = true;
           } finally {
             isFetching = false;
             sendBtn.disabled = false;
@@ -1436,6 +1611,7 @@
           }
         }
 
+        // ─── EVENT BINDING ───
         document.querySelectorAll(".mode-btn").forEach((button) => {
           button.addEventListener("click", () =>
             setBodyMode(button.dataset.mode),
@@ -1480,15 +1656,17 @@
           if (!text) return;
           try {
             await navigator.clipboard.writeText(text);
-            copyBtn.textContent = "Copied";
+            copyBtn.textContent = "✅ Copied";
             setTimeout(() => {
-              copyBtn.textContent = "Copy";
+              copyBtn.textContent = "📋 Copy";
             }, 1200);
           } catch {
             responseContent.focus();
             document.execCommand("copy");
           }
         });
+
+        downloadBtn.addEventListener("click", downloadResponse);
 
         bodyInput.addEventListener("keydown", (event) => {
           if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
