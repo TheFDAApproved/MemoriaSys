@@ -5,6 +5,7 @@
  *
  * GET  : List graves (filter by block_id) or get a specific grave with its occupants.
  * PUT  : Update a grave's row, col, status, or remarks.
+ *       All operations exclude soft‑deleted records (deleted_at IS NOT NULL).
  */
 
 define('ITS_ME_JUSTTOVERIFY', true);
@@ -52,9 +53,9 @@ if ($method === 'GET') {
                     i.contact_person_email,
                     i.contact_person_address
                 FROM graves g
-                LEFT JOIN blocks b ON g.block_id = b.block_id
-                LEFT JOIN interments i ON g.grave_id = i.current_grave_id AND i.status = 'Active'
-                WHERE g.grave_id = ?
+                LEFT JOIN blocks b ON g.block_id = b.block_id AND b.deleted_at IS NULL
+                LEFT JOIN interments i ON g.grave_id = i.current_grave_id AND i.status = 'Active' AND i.deleted_at IS NULL
+                WHERE g.grave_id = ? AND g.deleted_at IS NULL
                 ORDER BY i.interment_id
             ";
         } else {
@@ -64,8 +65,8 @@ if ($method === 'GET') {
                     g.grave_id, g.grave_code, g.row_num, g.col_num, g.status,
                     b.block_id, b.block_name
                 FROM graves g
-                LEFT JOIN blocks b ON g.block_id = b.block_id
-                WHERE g.grave_id = ?
+                LEFT JOIN blocks b ON g.block_id = b.block_id AND b.deleted_at IS NULL
+                WHERE g.grave_id = ? AND g.deleted_at IS NULL
             ";
         }
         $stmt = $pdo->prepare($sql);
@@ -141,9 +142,9 @@ if ($method === 'GET') {
         }
     }
 
-    // List all graves (with optional block_id filter)
+    // List all graves (with optional block_id filter) – only active (non‑deleted) graves
     $blockId = isset($_GET['block_id']) ? (int) $_GET['block_id'] : null;
-    $where = "1=1";
+    $where = "g.deleted_at IS NULL";
     $params = [];
     if ($blockId) {
         $where .= " AND g.block_id = ?";
@@ -167,8 +168,8 @@ if ($method === 'GET') {
                 i.contact_person_email,
                 i.contact_person_address
             FROM graves g
-            LEFT JOIN blocks b ON g.block_id = b.block_id
-            LEFT JOIN interments i ON g.grave_id = i.current_grave_id AND i.status = 'Active'
+            LEFT JOIN blocks b ON g.block_id = b.block_id AND b.deleted_at IS NULL
+            LEFT JOIN interments i ON g.grave_id = i.current_grave_id AND i.status = 'Active' AND i.deleted_at IS NULL
             WHERE $where
             ORDER BY g.block_id, g.row_num, g.col_num, i.interment_id
         ";
@@ -211,13 +212,13 @@ if ($method === 'GET') {
         }
         $graves = array_values($gravesMap);
     } else {
-        // Public: simple list
+        // Public: simple list (only active graves)
         $sql = "
             SELECT 
                 g.grave_id, g.grave_code, g.row_num, g.col_num, g.status,
                 b.block_id, b.block_name
             FROM graves g
-            LEFT JOIN blocks b ON g.block_id = b.block_id
+            LEFT JOIN blocks b ON g.block_id = b.block_id AND b.deleted_at IS NULL
             WHERE $where
             ORDER BY g.block_id, g.row_num, g.col_num
         ";
@@ -229,13 +230,13 @@ if ($method === 'GET') {
     Response::success("Graves retrieved.", ['graves' => $graves]);
 }
 
+// -----------------------------------------------------------------------------
+// PUT – Update a single grave (only Admin/Office)
+// -----------------------------------------------------------------------------
 if (!$isAdminOffice) {
     Response::error("Forbidden. Only Admin and Office can update graves.", 403);
 }
 
-// -----------------------------------------------------------------------------
-// PUT – Update a single grave
-// -----------------------------------------------------------------------------
 if ($method === 'PUT') {
 
     if (!is_numeric($resourceId)) {
@@ -243,12 +244,12 @@ if ($method === 'PUT') {
     }
     $graveId = (int) $resourceId;
 
-    // Fetch current grave data
+    // Fetch current grave data (only if not deleted)
     $currentStmt = $pdo->prepare("
         SELECT g.*, b.block_id AS block_id 
         FROM graves g
-        LEFT JOIN blocks b ON g.block_id = b.block_id
-        WHERE g.grave_id = ?
+        LEFT JOIN blocks b ON g.block_id = b.block_id AND b.deleted_at IS NULL
+        WHERE g.grave_id = ? AND g.deleted_at IS NULL
     ");
     $currentStmt->execute([$graveId]);
     $current = $currentStmt->fetch(PDO::FETCH_ASSOC);
@@ -274,9 +275,12 @@ if ($method === 'PUT') {
     // --- Validation ---
     $newStatus = $rawData['status'] ?? $current['status'];
 
-    // 1. If status is being changed to 'Vacant', ensure no active interment exists on this grave
+    // 1. If status is being changed to 'Vacant', ensure no active interment exists on this grave (and interment is not deleted)
     if ($newStatus === 'Vacant') {
-        $interCheck = $pdo->prepare("SELECT interment_id FROM interments WHERE current_grave_id = ? AND status = 'Active'");
+        $interCheck = $pdo->prepare("
+            SELECT interment_id FROM interments 
+            WHERE current_grave_id = ? AND status = 'Active' AND deleted_at IS NULL
+        ");
         $interCheck->execute([$graveId]);
         if ($interCheck->fetch()) {
             Response::error("Cannot set grave to Vacant: it has an active interment.", 400);
@@ -287,13 +291,14 @@ if ($method === 'PUT') {
     //     Use remarks to explain why (e.g., maintenance, reserved, etc.).
 
     // 3. If row_num or col_num are being changed, ensure the new coordinates are unique within the block
+    //    (and only consider non-deleted graves)
     if (isset($rawData['row_num']) || isset($rawData['col_num'])) {
         $newRow = isset($rawData['row_num']) ? (int) $rawData['row_num'] : (int) $current['row_num'];
         $newCol = isset($rawData['col_num']) ? (int) $rawData['col_num'] : (int) $current['col_num'];
-        // Check if another grave in the same block already has these coordinates (excluding itself)
+        // Check if another grave in the same block already has these coordinates (excluding itself, and excluding deleted graves)
         $dupCheck = $pdo->prepare("
             SELECT grave_id FROM graves 
-            WHERE block_id = ? AND row_num = ? AND col_num = ? AND grave_id != ?
+            WHERE block_id = ? AND row_num = ? AND col_num = ? AND grave_id != ? AND deleted_at IS NULL
         ");
         $dupCheck->execute([$current['block_id'], $newRow, $newCol, $graveId]);
         if ($dupCheck->fetch()) {
@@ -301,8 +306,13 @@ if ($method === 'PUT') {
         }
     }
 
-    // Execute update
-    $sql = "UPDATE graves SET " . implode(', ', $updates) . " WHERE grave_id = ?";
+    // Add updated_by to the update list
+    $updates[] = "updated_by = ?";
+    $params[] = $userData['user_id'];
+    // updated_at will auto-update via ON UPDATE CURRENT_TIMESTAMP
+
+    // Execute update (only if not deleted – we already checked)
+    $sql = "UPDATE graves SET " . implode(', ', $updates) . " WHERE grave_id = ? AND deleted_at IS NULL";
     $params[] = $graveId;
     $stmt = $pdo->prepare($sql);
     try {

@@ -10,7 +10,6 @@ require_once 'logger.php';
 $method = $_SERVER['REQUEST_METHOD'] ?? null;
 
 // --- REST ROUTING: PARSE THE URI ---
-// Check our custom .htaccess parameter first, then fallback to standard PATH_INFO
 $pathInfo = $_GET['path_info'] ?? $_SERVER['PATH_INFO'] ?? '';
 $pathParts = array_filter(explode('/', trim($pathInfo, '/')));
 $resourceId = array_shift($pathParts);
@@ -26,8 +25,13 @@ if ($method === 'GET') {
 
     // SCENARIO A: GET /users.php/me (Get own profile)
     if ($resourceId === 'me' || (string)$resourceId === (string)$userData['user_id']) {
-        $stmt = $pdo->prepare("SELECT user_id, username, email, role, status, phone_number, name FROM users WHERE user_id = :id LIMIT 1");
-        $stmt->execute([':id' => $resourceId]);
+        $stmt = $pdo->prepare("
+            SELECT user_id, username, email, role, status, phone_number, name
+            FROM users
+            WHERE user_id = :id AND deleted_at IS NULL
+            LIMIT 1
+        ");
+        $stmt->execute([':id' => $userData['user_id']]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
         systemLog("{$userData['name']} ({$userData['username']}) retrieved their own profile", $userData['user_id']);
         Response::success("Your profile retrieved", $user);
@@ -47,15 +51,19 @@ if ($method === 'GET') {
         }
 
         $searchTerm = '%' . $searchRaw . '%';
-        $sql = "SELECT user_id, username, email, role, status, phone_number, name
-                FROM users
-                WHERE (
-                    username LIKE :search_username 
-                    OR email LIKE :search_email 
-                    OR name LIKE :search_name 
-                    OR phone_number LIKE :search_phone
-                )
-                ORDER BY user_id DESC LIMIT 11";  // limits to 11 results
+        $sql = "
+            SELECT user_id, username, email, role, status, phone_number, name
+            FROM users
+            WHERE (
+                username LIKE :search_username 
+                OR email LIKE :search_email 
+                OR name LIKE :search_name 
+                OR phone_number LIKE :search_phone
+            )
+            AND deleted_at IS NULL
+            ORDER BY user_id DESC
+            LIMIT 11
+        ";
 
         $stmt = $pdo->prepare($sql);
         $stmt->execute([
@@ -76,7 +84,12 @@ if ($method === 'GET') {
 
     // SCENARIO C: GET /users.php/{id} (Get specific user)
     if (is_numeric($resourceId)) {
-        $stmt = $pdo->prepare("SELECT user_id, username, email, role, status, phone_number, name FROM users WHERE user_id = :id LIMIT 1");
+        $stmt = $pdo->prepare("
+            SELECT user_id, username, email, role, status, phone_number, name
+            FROM users
+            WHERE user_id = :id AND deleted_at IS NULL
+            LIMIT 1
+        ");
         $stmt->execute([':id' => $resourceId]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -89,15 +102,21 @@ if ($method === 'GET') {
 
     // SCENARIO D: GET /users.php (List all users)
     if ($resourceId === null) {
-        $limit = 20; // limits to 20 users only per request or page
+        $limit = 20;
 
-        $totalUsers = (int) $pdo->query("SELECT COUNT(*) FROM users")->fetchColumn();
+        $totalUsers = (int) $pdo->query("SELECT COUNT(*) FROM users WHERE deleted_at IS NULL")->fetchColumn();
         $totalPages = max(1, (int)ceil($totalUsers / $limit));
 
         $page = max(1, min((int)($_GET['page'] ?? 1), $totalPages));
         $offset = ($page - 1) * $limit;
 
-        $stmt = $pdo->prepare("SELECT user_id, username, email, role, status, phone_number, name FROM users ORDER BY user_id DESC LIMIT :limit OFFSET :offset");
+        $stmt = $pdo->prepare("
+            SELECT user_id, username, email, role, status, phone_number, name
+            FROM users
+            WHERE deleted_at IS NULL
+            ORDER BY user_id DESC
+            LIMIT :limit OFFSET :offset
+        ");
         $stmt->bindParam(':limit', $limit, PDO::PARAM_INT);
         $stmt->bindParam(':offset', $offset, PDO::PARAM_INT);
         $stmt->execute();
@@ -129,8 +148,6 @@ if ($method === 'POST') {
         Response::error("Forbidden: You are already logged in.", 403);
     }
 
-    // Public POST routes are intentionally unauthenticated: register and forgot-password.
-    // The one-time auth check above only prevents a verified logged-in user from hitting them.
     $email = trim($rawData['email'] ?? '');
     $username = trim($rawData['username'] ?? '');
     $name = trim($rawData['name'] ?? '');
@@ -159,7 +176,18 @@ if ($method === 'POST') {
 
     // SCENARIO A: POST /users.php/forgot-password
     if ($resourceId === 'forgot-password') {
-        $stmt = $pdo->prepare("UPDATE users SET password_hash = :hash, status = :status, updated_at = NOW() WHERE email = :email AND username = :username AND name = :name AND phone_number = :phone_number AND role != :admin_role AND deleted_at is NULL");
+        $stmt = $pdo->prepare("
+            UPDATE users
+            SET password_hash = :hash,
+                status = :status,
+                updated_at = NOW()
+            WHERE email = :email
+              AND username = :username
+              AND name = :name
+              AND phone_number = :phone_number
+              AND role != :admin_role
+              AND deleted_at IS NULL
+        ");
         $stmt->execute([
             ':hash' => $hashedPassword,
             ':status' => STATUS_UNVERIFIED,
@@ -171,7 +199,7 @@ if ($method === 'POST') {
         ]);
 
         if ($stmt->rowCount() > 0) {
-            systemLog("Password reset successful for: $email $username $name", null);
+            systemLog("Password reset successful for: $email $username $name $phone_number", null);
             Response::success("Password changed successfully. Your account is now Unverified. Please wait for admin verification.", null);
         }
         systemLog("Failed password reset attempt for: $email $username", null);
@@ -179,10 +207,12 @@ if ($method === 'POST') {
     }
 
     // SCENARIO B: POST /users.php (Register New User)
-    // Default Role: ROLE_GROUNDS Default Status: STATUS_UNVERIFIED
     elseif ($resourceId === null) {
         try {
-            $stmt = $pdo->prepare("INSERT INTO users (username, email, name, phone_number, password_hash, role, status) VALUES (:username, :email, :name, :phone_number, :hash, :role, :status)");
+            $stmt = $pdo->prepare("
+                INSERT INTO users (username, email, name, phone_number, password_hash, role, status)
+                VALUES (:username, :email, :name, :phone_number, :hash, :role, :status)
+            ");
             $stmt->execute([
                 ':username' => $username,
                 ':email' => $email,
@@ -192,14 +222,16 @@ if ($method === 'POST') {
                 ':role' => ROLE_GROUNDS,
                 ':status' => STATUS_UNVERIFIED
             ]);
+            // created_at/updated_at auto-set, created_by/updated_by remain NULL (public registration)
 
-            systemLog("New user registered: $username ($email)", null);
+            systemLog("New user registered: $username ($email) ($phone_number)", null);
             Response::success("Registration successful! Your account is Unverified. Please wait for admin verification.", null, 201);
         } catch (PDOException $e) {
             if ($e->getCode() == 23000) {
                 systemLog("Registration failed due to duplicate entry: $username ($email) or phone number: $phone_number", null);
                 Response::error("Conflict: The username, phone number, or email is already registered.", 409);
             }
+            systemlog($e->getMessage(), null);
             error_log($e->getMessage());
             Response::error("Database error: Could not create user. " . $e->getMessage(), 500);
         }
@@ -209,7 +241,7 @@ if ($method === 'POST') {
 }
 
 // ==========================================
-// 3. DELETE: REMOVE RESOURCES
+// 3. DELETE: SOFT DELETE RESOURCES
 // ==========================================
 if ($method === 'DELETE') {
 
@@ -220,23 +252,28 @@ if ($method === 'DELETE') {
         Response::error("Bad Request: Invalid or missing user ID in URL path", 400);
     }
     if ($userData['user_id'] === (int)$resourceId) {
-        Response::error("Forbidden: You cannot delete your own account. At least for now", 403);
+        Response::error("Forbidden: You cannot delete your own account.", 403);
     }
 
     try {
+        // Soft delete: set deleted_at and updated_by
         $stmt = $pdo->prepare("
-            DELETE FROM users WHERE user_id = :id;
+            UPDATE users
+            SET deleted_at = NOW(),
+                updated_by = :updated_by
+            WHERE user_id = :id
+              AND deleted_at IS NULL
         ");
-
         $stmt->execute([
             ':id' => (int)$resourceId,
+            ':updated_by' => $userData['user_id']
         ]);
 
         if ($stmt->rowCount() > 0) {
-            systemLog("{$userData['name']} deleted user with ID $resourceId", $userData['user_id']);
-            Response::success("User successfully deleted");
+            systemLog("{$userData['name']} soft-deleted user with ID $resourceId", $userData['user_id']);
+            Response::success("User successfully deleted (soft delete)");
         }
-        Response::error("Not Found: User does not exist", 404);
+        Response::error("Not Found: User does not exist or already deleted", 404);
     } catch (PDOException $e) {
         error_log($e->getMessage());
         Response::error("Database error: Could not delete user. " . $e->getMessage(), 500);
@@ -248,11 +285,21 @@ if ($method === 'DELETE') {
 // ==========================================
 if ($method === 'PUT') {
 
+    if ($resourceId === 'me' || (string)$resourceId === (string)$userData['user_id']) {
+        $resourceId = (int)$userData['user_id'];
+    }
+
     if (!is_numeric($resourceId) || $resourceId <= 0) {
         Response::error("Bad Request: Invalid or missing user ID in URL path", 400);
     }
 
-    $stmt = $pdo->prepare("SELECT user_id, username, email, role, status, phone_number, name FROM users WHERE user_id = :id LIMIT 1");
+    // First, check if the user exists and is not deleted
+    $stmt = $pdo->prepare("
+        SELECT user_id, username, email, role, status, phone_number, name
+        FROM users
+        WHERE user_id = :id AND deleted_at IS NULL
+        LIMIT 1
+    ");
     $stmt->execute([':id' => $resourceId]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -312,7 +359,6 @@ if ($method === 'PUT') {
     }
 
     // --- ADMIN-ONLY FIELD VALIDATIONS ---
-    // At this point, we already know it's not a self-edit if role/status are set.
     if ($isAdmin) {
         if (!empty($rawData['role'])) {
             if (!in_array($rawData['role'], ALLOWED_ROLES, true)) Response::error("Invalid role value.", 400);
@@ -333,14 +379,27 @@ if ($method === 'PUT') {
     if (empty($updateFields)) {
         Response::error("Bad Request: No valid fields provided to update", 400);
     }
+
+    // Always update updated_by with the current user
+    $updateFields[] = "updated_by = :updated_by";
+    $queryParams[':updated_by'] = $userData['user_id'];
+
     $queryParams[':id'] = $targetId;
+
     try {
-        $stmt = $pdo->prepare("UPDATE users SET " . implode(", ", $updateFields) . " WHERE user_id = :id");
+        $stmt = $pdo->prepare("
+            UPDATE users
+            SET " . implode(", ", $updateFields) . "
+            WHERE user_id = :id
+              AND deleted_at IS NULL
+        ");
         $stmt->execute($queryParams);
+
         if ($stmt->rowCount() === 0) Response::success("Looks like nothing has changed.");
+
         // Send Verification SMS if a user was newly verified
         if ($isVerifying) {
-            $stmt = $pdo->prepare("SELECT phone_number, name FROM users WHERE user_id = :id LIMIT 1");
+            $stmt = $pdo->prepare("SELECT phone_number, name FROM users WHERE user_id = :id AND deleted_at IS NULL LIMIT 1");
             $stmt->execute([':id' => $targetId]);
             $targetUser = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -355,11 +414,11 @@ if ($method === 'PUT') {
         }
 
         systemLog("{$userData['name']} updated user with ID $targetId", $userData['user_id']);
-
         Response::success("User updated successfully");
     } catch (PDOException $e) {
         if ($e->getCode() == 23000) Response::error("Conflict: Email or Username is already in use", 409);
         error_log($e->getMessage());
+        systemlog($e->getMessage(), null);
         Response::error("Database error: Could not update user" . $e->getMessage(), 500);
     }
 }

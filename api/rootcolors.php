@@ -5,7 +5,7 @@ require_once 'database.php';
 header("Content-type: text/css; charset: UTF-8");
 
 // --- Fetch main color ---
-$stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'main_color' LIMIT 1");
+$stmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'main_color' AND deleted_at is NULL LIMIT 1");
 $stmt->execute();
 $mainColor = $stmt->fetchColumn();
 

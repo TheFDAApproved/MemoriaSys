@@ -1,9 +1,39 @@
 --  ----------------------------------------------------------------------
+--  USERS (MUST BE FIRST – referenced by all other tables)
+--  ----------------------------------------------------------------------
+CREATE TABLE users (
+    user_id INT PRIMARY KEY AUTO_INCREMENT,
+    username VARCHAR(50) NOT NULL,
+    role ENUM('Administrator', 'Office Staff', 'Grounds Staff') NOT NULL DEFAULT 'Grounds Staff',
+    status ENUM('Verified', 'Unverified') NOT NULL DEFAULT 'Unverified',
+    email VARCHAR(255) NOT NULL,
+    phone_number VARCHAR(20) NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    session_token TEXT NULL,  -- Stores JSON: {token, ip, user_agent, time} for single-session enforcement
+
+    -- Audit columns
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL,
+    created_by INT NULL,
+    updated_by INT NULL,
+
+    -- Composite unique keys that include deleted_at
+    CONSTRAINT uk_username UNIQUE (username, deleted_at),
+    CONSTRAINT uk_email UNIQUE (email, deleted_at),
+    CONSTRAINT uk_phone UNIQUE (phone_number, deleted_at),
+
+    FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE SET NULL,
+    FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
+);
+
+--  ----------------------------------------------------------------------
 --  BLOCKS (sections / areas)
 --  ----------------------------------------------------------------------
 CREATE TABLE blocks (
     block_id INT AUTO_INCREMENT PRIMARY KEY,
-    block_name VARCHAR(100) UNIQUE NOT NULL,
+    block_name VARCHAR(100) NOT NULL,
     block_type ENUM(
         'Niche', 'Bone Chamber', 'Lawn/Grounds',
         'Unmapped Area', 'Private', 'Mausoleum',
@@ -11,7 +41,20 @@ CREATE TABLE blocks (
     ) NOT NULL,
     image_link TEXT,
     coordinates JSON, -- for mapping visuals in the UI
-    remarks TEXT
+    remarks TEXT,
+
+    -- Audit columns
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL,
+    created_by INT NULL,
+    updated_by INT NULL,
+
+    -- Composite unique
+    CONSTRAINT uk_block_name UNIQUE (block_name, deleted_at),
+
+    FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE SET NULL,
+    FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
 
 --  ----------------------------------------------------------------------
@@ -22,12 +65,25 @@ CREATE TABLE blocks (
 CREATE TABLE graves (
     grave_id INT AUTO_INCREMENT PRIMARY KEY,
     block_id INT NOT NULL,
-    grave_code VARCHAR(50) UNIQUE,
+    grave_code VARCHAR(50) NOT NULL,
     row_num INT,
     col_num INT,
     status ENUM('Vacant', 'Occupied') DEFAULT 'Vacant',
     remarks TEXT,
-    FOREIGN KEY (block_id) REFERENCES blocks(block_id) ON DELETE RESTRICT
+
+    -- Audit columns
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL,
+    created_by INT NULL,
+    updated_by INT NULL,
+
+    -- Composite unique
+    CONSTRAINT uk_grave_code UNIQUE (grave_code, deleted_at),
+
+    FOREIGN KEY (block_id) REFERENCES blocks(block_id) ON DELETE RESTRICT,
+    FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE SET NULL,
+    FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
 
 --  ----------------------------------------------------------------------
@@ -43,7 +99,7 @@ CREATE TABLE interments (
     interment_id INT AUTO_INCREMENT PRIMARY KEY,
 
     -- Reference / control
-    control_number VARCHAR(100) UNIQUE NOT NULL,
+    control_number VARCHAR(100) NOT NULL,
 
     -- Deceased details
     deceased_name VARCHAR(255) NOT NULL,
@@ -89,8 +145,20 @@ CREATE TABLE interments (
     -- Free‑text remarks
     remarks TEXT,
 
+    -- Audit columns
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL,
+    created_by INT NULL,
+    updated_by INT NULL,
+
+    -- Composite unique for control_number
+    CONSTRAINT uk_control_number UNIQUE (control_number, deleted_at),
+
     FOREIGN KEY (current_grave_id) REFERENCES graves(grave_id) ON DELETE RESTRICT,
-    FOREIGN KEY (transfer_to_grave) REFERENCES graves(grave_id) ON DELETE RESTRICT
+    FOREIGN KEY (transfer_to_grave) REFERENCES graves(grave_id) ON DELETE RESTRICT,
+    FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE SET NULL,
+    FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
 
 -- ----------------------------------------------------------------------
@@ -104,9 +172,83 @@ CREATE TABLE transfer_log (
     transfer_date DATETIME NOT NULL, -- ⬅️ Exact date + time of the transfer
     reason TEXT,                     -- captured from interments.remarks at time of move
 
-    FOREIGN KEY (interment_id) REFERENCES interments(interment_id) ON DELETE CASCADE
+    -- Audit columns (no unique keys needed)
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL,
+    created_by INT NULL,
+    updated_by INT NULL,
+
+    FOREIGN KEY (interment_id) REFERENCES interments(interment_id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE SET NULL,
+    FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
 
+--  ----------------------------------------------------------------------
+--  SETTINGS
+--  ----------------------------------------------------------------------
+CREATE TABLE settings (
+    setting_id INT AUTO_INCREMENT PRIMARY KEY,
+    setting_key VARCHAR(50) NOT NULL,
+    setting_value TEXT,
+    description VARCHAR(255) NULL,
+
+    -- Audit columns
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL,
+    created_by INT NULL,
+    updated_by INT NULL,
+
+    -- Composite unique
+    CONSTRAINT uk_setting_key UNIQUE (setting_key, deleted_at),
+
+    FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE SET NULL,
+    FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
+);
+
+--  ----------------------------------------------------------------------
+--  PAYMENTS – simple ledger "independent" table
+--  ----------------------------------------------------------------------
+CREATE TABLE payments (
+    payment_id INT AUTO_INCREMENT PRIMARY KEY,
+    reference_number VARCHAR(100) NOT NULL,
+    payment_channel VARCHAR(100) NOT NULL,
+    amount DECIMAL(10,2) NOT NULL,
+    deceased_name  VARCHAR(255),
+    payers_phone_number VARCHAR(20),
+    payers_email VARCHAR(255),
+    payers_name VARCHAR(255),
+
+    purpose VARCHAR(100) NOT NULL,
+    image_link TEXT,
+
+    -- Audit & Approvals
+    confirmed_office_staff INT NULL,
+    confirmed_ground_staff INT NULL,
+    remarks_payer TEXT,
+    remarks_office TEXT,
+    remarks_grounds TEXT,
+
+    -- Audit columns
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL,
+    created_by INT NULL,
+    updated_by INT NULL,
+
+    -- Composite unique for reference_number
+    CONSTRAINT uk_reference_number UNIQUE (reference_number, deleted_at),
+
+    FOREIGN KEY (confirmed_office_staff) REFERENCES users(user_id) ON DELETE SET NULL,
+    FOREIGN KEY (confirmed_ground_staff) REFERENCES users(user_id) ON DELETE SET NULL,
+    FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE SET NULL,
+    FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
+);
+
+--  ----------------------------------------------------------------------
+--  TRIGGER – Auto‑log grave transfers
+--  ----------------------------------------------------------------------
 DELIMITER //
 
 CREATE TRIGGER log_grave_transfer
@@ -115,7 +257,7 @@ FOR EACH ROW
 BEGIN
     -- Only fire if the current_grave_id has actually changed
     IF (OLD.current_grave_id <=> NEW.current_grave_id) = 0 THEN
-        
+
         INSERT INTO transfer_log (
             interment_id,
             from_grave_id,
@@ -138,107 +280,49 @@ DELIMITER ;
 -- ----------------------------------------------------------------------
 -- Add comments to existing tables (for clarity in DB tools)
 -- ----------------------------------------------------------------------
-ALTER TABLE blocks COMMENT = 'Cemetery sections/areas (Niche, Lawn, etc.)';
-ALTER TABLE graves COMMENT = 'Individual burial slots inside a block';
+ALTER TABLE users     COMMENT = 'System users with role‑based access';
+ALTER TABLE blocks    COMMENT = 'Cemetery sections/areas (Niche, Lawn, etc.)';
+ALTER TABLE graves    COMMENT = 'Individual burial slots inside a block';
 ALTER TABLE interments COMMENT = 'Burial/transfer records with status workflow (Pending → Active → Inactive)';
-ALTER TABLE transfer_log COMMENT = 'Audit trail of grave location changes (auto-logged by trigger)';
+ALTER TABLE transfer_log COMMENT = 'Audit trail of grave location changes (auto‑logged by trigger)';
+ALTER TABLE settings  COMMENT = 'System configuration key‑value store';
+ALTER TABLE payments  COMMENT = 'Payment records with dual‑approval workflow';
 
 -- ----------------------------------------------------------------------
--- INDEXES for blocks
+-- INDEXES
 -- ----------------------------------------------------------------------
--- block_name is already UNIQUE (implicit index)
--- No additional indexes needed on blocks currently.
 
--- ----------------------------------------------------------------------
--- INDEXES for graves
--- ----------------------------------------------------------------------
--- Foreign key to blocks (commonly used in JOINs)
+-- Blocks
+CREATE INDEX idx_blocks_deleted_at ON blocks(deleted_at);
+
+-- Graves
 CREATE INDEX idx_graves_block_id ON graves(block_id);
-
--- Filtering by status (Vacant/Occupied) for reservation queries
 CREATE INDEX idx_graves_status ON graves(status);
-
--- Composite index for quick lookup of vacant graves within a block
--- Useful in reserve.php when filtering by block_id and status
 CREATE INDEX idx_graves_block_status ON graves(block_id, status);
+CREATE INDEX idx_graves_deleted_at ON graves(deleted_at);
 
--- ----------------------------------------------------------------------
--- INDEXES for interments
--- ----------------------------------------------------------------------
--- Foreign keys (already indexed? InnoDB auto-indexes FK columns, but explicit is safer)
+-- Interments
 CREATE INDEX idx_interments_current_grave_id ON interments(current_grave_id);
 CREATE INDEX idx_interments_transfer_to_grave ON interments(transfer_to_grave);
-
--- Status is heavily filtered (Pending, Active, Inactive)
 CREATE INDEX idx_interments_status ON interments(status);
-
--- control_number is already UNIQUE (implicit index)
-
--- For searching by deceased_name (supports prefix searches)
--- If you frequently do LIKE 'name%', this helps; for leading wildcards, consider FULLTEXT.
 CREATE INDEX idx_interments_deceased_name ON interments(deceased_name(100));
-
--- Critical for reserve.php: finding expiring/expired leases
 CREATE INDEX idx_interments_lease_expiration ON interments(lease_expiration_date);
-
--- Composite index for common filtering in records.php: status + current_grave_id
 CREATE INDEX idx_interments_status_grave ON interments(status, current_grave_id);
-
--- Composite index for date range queries (e.g., reports by date_buried)
 CREATE INDEX idx_interments_date_buried ON interments(date_buried);
+CREATE INDEX idx_interments_deleted_at ON interments(deleted_at);
 
--- ----------------------------------------------------------------------
--- INDEXES for transfer_log
--- ----------------------------------------------------------------------
--- Foreign key to interments (heavily used to fetch history)
--- InnoDB auto-indexes FK columns, but we'll add for clarity and documentation.
+-- Transfer log
 CREATE INDEX idx_transfer_log_interment_id ON transfer_log(interment_id);
-
--- If you often query by transfer_date for reporting
 CREATE INDEX idx_transfer_log_transfer_date ON transfer_log(transfer_date);
-
--- Composite index for timeline ordering (interment_id + transfer_date)
--- Speeds up the history fetch for a given interment
 CREATE INDEX idx_transfer_log_interment_date ON transfer_log(interment_id, transfer_date);
+CREATE INDEX idx_transfer_log_deleted_at ON transfer_log(deleted_at);
 
-CREATE TABLE settings (
-    setting_id INT AUTO_INCREMENT PRIMARY KEY,
-    setting_key VARCHAR(50) NOT NULL UNIQUE,
-    setting_value TEXT,
-    description VARCHAR(255) NULL
-);
+-- Settings
+CREATE INDEX idx_settings_deleted_at ON settings(deleted_at);
 
-CREATE TABLE users (
-    user_id INT PRIMARY KEY AUTO_INCREMENT, 
-    username VARCHAR(50) UNIQUE NOT NULL,
-    role ENUM('Administrator', 'Office Staff', 'Grounds Staff') NOT NULL DEFAULT 'Grounds Staff',
-    status ENUM('Verified', 'Unverified') NOT NULL DEFAULT 'Unverified',
-    email VARCHAR(255) UNIQUE NOT NULL,
-    phone_number VARCHAR(20) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    name VARCHAR(255) NOT NULL
-);
+-- Users
+CREATE INDEX idx_users_deleted_at ON users(deleted_at);
+CREATE INDEX idx_users_session_token ON users(session_token(100)); -- For fast single‑session lookup
 
-CREATE TABLE payments(
-    payment_id INT AUTO_INCREMENT PRIMARY KEY,
-    reference_number VARCHAR(100) UNIQUE NOT NULL,
-    payment_channel VARCHAR(100) NOT NULL, 
-    amount DECIMAL(10,2) NOT NULL,
-    deceased_name  VARCHAR(255),
-    payers_phone_number VARCHAR(20),
-    payers_email VARCHAR(255), 
-    payers_name VARCHAR(255),
-   
-    purpose VARCHAR(100) NOT NULL, 
-    image_link TEXT, 
-    
-    -- Audit & Approvals
-    confirmed_office_staff INT NULL,
-    confirmed_ground_staff INT NULL,
-    remarks_payer TEXT,
-    remarks_office TEXT,
-    remarks_grounds TEXT,
-    
-    FOREIGN KEY (confirmed_office_staff) REFERENCES users(user_id) ON DELETE SET NULL,
-    FOREIGN KEY (confirmed_ground_staff) REFERENCES users(user_id) ON DELETE SET NULL
-);
+-- Payments
+CREATE INDEX idx_payments_deleted_at ON payments(deleted_at);

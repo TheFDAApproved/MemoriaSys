@@ -6,7 +6,7 @@
  * GET    : List all payments (paginated, role‑filtered) or fetch one by ID
  * POST   : Create a new payment (public, requires image upload)
  * PUT    : Confirm/unconfirm office/grounds, or edit details
- * DELETE : Permanently delete a payment (admin/office only)
+ * DELETE : Soft‑delete a payment (admin/office only)
  */
 
 define('ITS_ME_JUSTTOVERIFY', true);
@@ -146,9 +146,9 @@ try {
                 Response::error('Forbidden. You do not have access to view payment records.', 403);
             }
 
-            // If resourceId is numeric, fetch single record
+            // If resourceId is numeric, fetch single record (only if not soft‑deleted)
             if (is_numeric($resourceId)) {
-                $sql = getPaymentSelectSQL() . ' WHERE p.payment_id = ? LIMIT 1';
+                $sql = getPaymentSelectSQL() . ' WHERE p.payment_id = ? AND p.deleted_at IS NULL LIMIT 1';
                 $stmt = $pdo->prepare($sql);
                 $stmt->execute([$resourceId]);
                 $row = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -158,8 +158,8 @@ try {
                 Response::success('Payment retrieved',  formatPayment($row));
             }
 
-            // ---- List all payments (paginated, role-filtered) ----
-            $where = '1=1';
+            // ---- List all payments (paginated, role-filtered, excluding soft-deleted) ----
+            $where = 'p.deleted_at IS NULL';
             if ($isGrounds) {
                 $where .= ' AND p.confirmed_office_staff IS NOT NULL';
             }
@@ -177,13 +177,11 @@ try {
             $page = min($page, $totalPages ?: 1);
             $offset = ($page - 1) * $limit;
 
-            // -------- FIX: Directly inject the integer values ----------
-            // Cast to int for safety (already done, but explicit again)
             $limitInt  = (int) $limit;
             $offsetInt = (int) $offset;
             $sql = getPaymentSelectSQL() . " WHERE $where ORDER BY p.payment_id DESC LIMIT $limitInt OFFSET $offsetInt";
             $stmt = $pdo->prepare($sql);
-            $stmt->execute(); // No placeholders to bind
+            $stmt->execute();
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
             $payments = array_map('formatPayment', $rows);
@@ -199,7 +197,7 @@ try {
 
         // ---------- POST ----------
         case 'POST':
-            // Anyone can submit
+            // Anyone can submit (no authentication needed)
             $required = [
                 'reference_number',
                 'payment_channel',
@@ -248,6 +246,7 @@ try {
             $filename  = $uploadResult['filename'];
 
             try {
+                // Public insert: created_by / updated_by remain NULL (default)
                 $stmt = $pdo->prepare("
                     INSERT INTO payments 
                         (reference_number, payment_channel, amount, purpose,
@@ -292,36 +291,56 @@ try {
             $action = $input['action'] ?? 'edit_details';
             $userId = $userData['user_id'];
 
+            // Helper to check if payment exists and is not deleted (for all actions)
+            $existsStmt = $pdo->prepare("SELECT 1 FROM payments WHERE payment_id = ? AND deleted_at IS NULL");
+            $existsStmt->execute([$resourceId]);
+            if (!$existsStmt->fetch()) {
+                Response::error('Payment not found or already deleted.', 404);
+            }
+
             switch ($action) {
                 case 'confirm_office':
                     requireRole([ROLE_ADMIN, ROLE_OFFICE], $role);
                     $stmt = $pdo->prepare("
                         UPDATE payments 
                         SET confirmed_office_staff = ?, 
-                            remarks_office = COALESCE(?, remarks_office) 
-                        WHERE payment_id = ?
+                            remarks_office = COALESCE(?, remarks_office),
+                            updated_by = ?
+                        WHERE payment_id = ? AND deleted_at IS NULL
                     ");
-                    $stmt->execute([$userId, $input['remarks_office'] ?? null, $resourceId]);
+                    $stmt->execute([$userId, $input['remarks_office'] ?? null, $userId, $resourceId]);
                     systemLog($userData['name'] . " confirmed payment receipt for ID: $resourceId", $userId);
                     Response::success('Payment confirmed by Office.');
                     break;
 
                 case 'unconfirm_office':
                     requireRole([ROLE_ADMIN, ROLE_OFFICE], $role);
-                    $check = $pdo->prepare("SELECT confirmed_ground_staff FROM payments WHERE payment_id = ?");
+                    // Check if grounds already confirmed
+                    $check = $pdo->prepare("
+                        SELECT confirmed_ground_staff FROM payments 
+                        WHERE payment_id = ? AND deleted_at IS NULL
+                    ");
                     $check->execute([$resourceId]);
                     if ($check->fetchColumn()) {
                         Response::error('Cannot unconfirm: Grounds staff has already completed work.', 409);
                     }
-                    $stmt = $pdo->prepare("UPDATE payments SET confirmed_office_staff = NULL WHERE payment_id = ?");
-                    $stmt->execute([$resourceId]);
+                    $stmt = $pdo->prepare("
+                        UPDATE payments 
+                        SET confirmed_office_staff = NULL,
+                            updated_by = ?
+                        WHERE payment_id = ? AND deleted_at IS NULL
+                    ");
+                    $stmt->execute([$userId, $resourceId]);
                     systemLog($userData['name'] . " unconfirmed payment receipt for ID: $resourceId", $userId);
                     Response::success('Payment confirmation reverted.');
                     break;
 
                 case 'confirm_grounds':
                     requireRole([ROLE_ADMIN, ROLE_GROUNDS], $role);
-                    $check = $pdo->prepare("SELECT confirmed_office_staff FROM payments WHERE payment_id = ?");
+                    $check = $pdo->prepare("
+                        SELECT confirmed_office_staff FROM payments 
+                        WHERE payment_id = ? AND deleted_at IS NULL
+                    ");
                     $check->execute([$resourceId]);
                     if (!$check->fetchColumn()) {
                         Response::error('Cannot complete ground work: Payment not confirmed by office yet.', 400);
@@ -329,18 +348,24 @@ try {
                     $stmt = $pdo->prepare("
                         UPDATE payments 
                         SET confirmed_ground_staff = ?, 
-                            remarks_grounds = COALESCE(?, remarks_grounds) 
-                        WHERE payment_id = ?
+                            remarks_grounds = COALESCE(?, remarks_grounds),
+                            updated_by = ?
+                        WHERE payment_id = ? AND deleted_at IS NULL
                     ");
-                    $stmt->execute([$userId, $input['remarks_grounds'] ?? null, $resourceId]);
+                    $stmt->execute([$userId, $input['remarks_grounds'] ?? null, $userId, $resourceId]);
                     systemLog($userData['name'] . " confirmed ground work for ID: $resourceId", $userId);
                     Response::success('Work completion confirmed by Grounds.');
                     break;
 
                 case 'unconfirm_grounds':
                     requireRole([ROLE_ADMIN, ROLE_GROUNDS], $role);
-                    $stmt = $pdo->prepare("UPDATE payments SET confirmed_ground_staff = NULL WHERE payment_id = ?");
-                    $stmt->execute([$resourceId]);
+                    $stmt = $pdo->prepare("
+                        UPDATE payments 
+                        SET confirmed_ground_staff = NULL,
+                            updated_by = ?
+                        WHERE payment_id = ? AND deleted_at IS NULL
+                    ");
+                    $stmt->execute([$userId, $resourceId]);
                     systemLog($userData['name'] . " unconfirmed ground work for ID: $resourceId", $userId);
                     Response::success('Ground work confirmation reverted.');
                     break;
@@ -370,8 +395,9 @@ try {
                             payers_email = COALESCE(?, payers_email),
                             payers_name = COALESCE(?, payers_name),
                             remarks_office = COALESCE(?, remarks_office),
-                            remarks_grounds = COALESCE(?, remarks_grounds)
-                        WHERE payment_id = ?
+                            remarks_grounds = COALESCE(?, remarks_grounds),
+                            updated_by = ?
+                        WHERE payment_id = ? AND deleted_at IS NULL
                     ");
                     $stmt->execute([
                         $newRef,
@@ -384,6 +410,7 @@ try {
                         $newPayer,
                         $remOff,
                         $remGrn,
+                        $userId,
                         $resourceId
                     ]);
                     systemLog($userData['name'] . " edited payment ID: $resourceId", $userId);
@@ -391,19 +418,24 @@ try {
             }
             break;
 
-        // ---------- DELETE ----------
+        // ---------- DELETE (Soft Delete) ----------
         case 'DELETE':
             requireRole([ROLE_ADMIN, ROLE_OFFICE], $role);
             if (!is_numeric($resourceId)) {
                 Response::error('Payment ID required.', 400);
             }
-            $stmt = $pdo->prepare("DELETE FROM payments WHERE payment_id = ?");
-            $stmt->execute([$resourceId]);
+            // Soft delete: set deleted_at and updated_by
+            $stmt = $pdo->prepare("
+                UPDATE payments 
+                SET deleted_at = NOW(), updated_by = ? 
+                WHERE payment_id = ? AND deleted_at IS NULL
+            ");
+            $stmt->execute([$userData['user_id'], $resourceId]);
             if ($stmt->rowCount() === 0) {
-                Response::error('Payment not found.', 404);
+                Response::error('Payment not found or already deleted.', 404);
             }
-            systemLog($userData['name'] . " deleted payment ID: $resourceId", $userData['user_id']);
-            Response::success('Payment permanently deleted.');
+            systemLog($userData['name'] . " soft‑deleted payment ID: $resourceId", $userData['user_id']);
+            Response::success('Payment soft‑deleted successfully.');
             break;
 
         default:
@@ -411,7 +443,6 @@ try {
     }
 } catch (PDOException $e) {
     systemLog('Database error in payments endpoint: ' . $e->getMessage(), 'System');
-    // For debugging, you can also output the error message, but be careful in production
     Response::error('A database error occurred: ' . $e->getMessage(), 500);
 } catch (Exception $e) {
     systemLog('Unexpected error: ' . $e->getMessage(), 'System');

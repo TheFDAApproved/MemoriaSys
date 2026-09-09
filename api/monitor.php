@@ -148,10 +148,11 @@ if ($method === 'GET') {
             g.grave_id AS target_grave_id, g.grave_code, g.row_num, g.col_num, g.status AS grave_status, g.remarks AS grave_remarks,
             b.block_name, b.block_id, b.block_type
         FROM interments p
-        LEFT JOIN interments o ON o.current_grave_id = p.transfer_to_grave AND o.status = 'Active' AND o.interment_id != p.interment_id
-        LEFT JOIN graves g ON p.transfer_to_grave = g.grave_id
-        LEFT JOIN blocks b ON g.block_id = b.block_id
+        LEFT JOIN interments o ON o.current_grave_id = p.transfer_to_grave AND o.status = 'Active' AND o.interment_id != p.interment_id AND o.deleted_at IS NULL
+        LEFT JOIN graves g ON p.transfer_to_grave = g.grave_id AND g.deleted_at IS NULL
+        LEFT JOIN blocks b ON g.block_id = b.block_id AND b.deleted_at IS NULL
         WHERE p.status = 'Pending'
+          AND p.deleted_at IS NULL
     ";
 
     // Scenario A: Requesting a SPECIFIC resource /monitor.php/{id}
@@ -173,8 +174,8 @@ if ($method === 'GET') {
         $page  = isset($_GET['page']) ? (int) $_GET['page'] : 1;
         $page  = max(1, $page);
 
-        // Count total
-        $countSql = "SELECT COUNT(*) FROM interments WHERE status = 'Pending'";
+        // Count total (only pending, not soft‑deleted)
+        $countSql = "SELECT COUNT(*) FROM interments WHERE status = 'Pending' AND deleted_at IS NULL";
         $totalRecords = (int) $pdo->query($countSql)->fetchColumn();
         $totalPages = ceil($totalRecords / $limit);
         $page = min($page, $totalPages ?: 1);
@@ -212,8 +213,11 @@ if ($method === 'POST') {
     }
     $pendingId = (int) $rawData['pending_interment_id'];
 
-    // Fetch pending interment
-    $pendingStmt = $pdo->prepare("SELECT * FROM interments WHERE interment_id = ? AND status = 'Pending'");
+    // Fetch pending interment (only if not soft‑deleted)
+    $pendingStmt = $pdo->prepare("
+        SELECT * FROM interments 
+        WHERE interment_id = ? AND status = 'Pending' AND deleted_at IS NULL
+    ");
     $pendingStmt->execute([$pendingId]);
     $pending = $pendingStmt->fetch(PDO::FETCH_ASSOC);
     if (!$pending) {
@@ -222,10 +226,10 @@ if ($method === 'POST') {
 
     $targetGraveId = $pending['transfer_to_grave'];
 
-    // Check if there is an active old occupant in the target grave
+    // Check if there is an active old occupant in the target grave (excluding soft‑deleted)
     $oldStmt = $pdo->prepare("
         SELECT * FROM interments 
-        WHERE current_grave_id = ? AND status = 'Active' AND interment_id != ?
+        WHERE current_grave_id = ? AND status = 'Active' AND interment_id != ? AND deleted_at IS NULL
     ");
     $oldStmt->execute([$targetGraveId, $pendingId]);
     $old = $oldStmt->fetch(PDO::FETCH_ASSOC);
@@ -248,10 +252,11 @@ if ($method === 'POST') {
                     if ($oldNewGraveId == $targetGraveId) {
                         throw new Exception("Old occupant cannot stay in the same grave being reserved.");
                     }
-                    // Validate new grave is vacant
+                    // Validate new grave is vacant and not deleted
                     $checkNew = $pdo->prepare("
-                        SELECT status FROM graves WHERE grave_id = ? AND status = 'Vacant'
-                          AND NOT EXISTS (SELECT 1 FROM interments WHERE current_grave_id = ? AND status = 'Active')
+                        SELECT status FROM graves 
+                        WHERE grave_id = ? AND status = 'Vacant' AND deleted_at IS NULL
+                          AND NOT EXISTS (SELECT 1 FROM interments WHERE current_grave_id = ? AND status = 'Active' AND deleted_at IS NULL)
                     ");
                     $checkNew->execute([$oldNewGraveId, $oldNewGraveId]);
                     if (!$checkNew->fetch()) {
@@ -261,10 +266,12 @@ if ($method === 'POST') {
                     // Move old occupant to their new physical grave
                     $updateOld = $pdo->prepare("
                         UPDATE interments 
-                        SET current_grave_id = ?, transfer_to_grave = NULL, status = 'Active', remarks = CONCAT(COALESCE(remarks, ''), ' ', ?)
+                        SET current_grave_id = ?, transfer_to_grave = NULL, status = 'Active', 
+                            remarks = CONCAT(COALESCE(remarks, ''), ' ', ?),
+                            updated_by = ?
                         WHERE interment_id = ?
                     ");
-                    $updateOld->execute([$oldNewGraveId, $oldRemarks, $old['interment_id']]);
+                    $updateOld->execute([$oldNewGraveId, $oldRemarks, $userData['user_id'], $old['interment_id']]);
 
                     // Mark their new grave as Occupied
                     $markNew = $pdo->prepare("UPDATE graves SET status = 'Occupied' WHERE grave_id = ?");
@@ -273,19 +280,23 @@ if ($method === 'POST') {
                     // COMMON BONE CHAMBER CASE: Active status, but no physical grave_id (NULL). Mentioned in remarks.
                     $updateOld = $pdo->prepare("
                         UPDATE interments 
-                        SET current_grave_id = NULL, transfer_to_grave = NULL, status = 'Active', remarks = CONCAT(COALESCE(remarks, ''), ' ', ?)
+                        SET current_grave_id = NULL, transfer_to_grave = NULL, status = 'Active', 
+                            remarks = CONCAT(COALESCE(remarks, ''), ' ', ?),
+                            updated_by = ?
                         WHERE interment_id = ?
                     ");
-                    $updateOld->execute([$oldRemarks, $old['interment_id']]);
+                    $updateOld->execute([$oldRemarks, $userData['user_id'], $old['interment_id']]);
                 }
             } else {
                 // Status is Inactive (Removed from cemetery completely)
                 $updateOld = $pdo->prepare("
                     UPDATE interments 
-                    SET current_grave_id = NULL, transfer_to_grave = NULL, status = 'Inactive', remarks = CONCAT(COALESCE(remarks, ''), ' ', ?)
+                    SET current_grave_id = NULL, transfer_to_grave = NULL, status = 'Inactive', 
+                        remarks = CONCAT(COALESCE(remarks, ''), ' ', ?),
+                        updated_by = ?
                     WHERE interment_id = ?
                 ");
-                $updateOld->execute([$oldRemarks, $old['interment_id']]);
+                $updateOld->execute([$oldRemarks, $userData['user_id'], $old['interment_id']]);
             }
         }
 
@@ -293,10 +304,10 @@ if ($method === 'POST') {
         // They take over the current_grave_id, and their transfer target is cleared.
         $updatePending = $pdo->prepare("
             UPDATE interments 
-            SET status = 'Active', current_grave_id = ?, transfer_to_grave = NULL 
+            SET status = 'Active', current_grave_id = ?, transfer_to_grave = NULL, updated_by = ?
             WHERE interment_id = ?
         ");
-        $updatePending->execute([$targetGraveId, $pendingId]);
+        $updatePending->execute([$targetGraveId, $userData['user_id'], $pendingId]);
 
         // Ensure their target grave is marked as Occupied
         if ($targetGraveId) {
@@ -340,8 +351,11 @@ if ($method === 'DELETE') {
         Response::error("pending_interment_id is required.", 400);
     }
 
-    // Fetch the pending interment
-    $pendingStmt = $pdo->prepare("SELECT * FROM interments WHERE interment_id = ? AND status = 'Pending'");
+    // Fetch the pending interment (only if not soft‑deleted)
+    $pendingStmt = $pdo->prepare("
+        SELECT * FROM interments 
+        WHERE interment_id = ? AND status = 'Pending' AND deleted_at IS NULL
+    ");
     $pendingStmt->execute([$pendingId]);
     $pending = $pendingStmt->fetch(PDO::FETCH_ASSOC);
     if (!$pending) {
@@ -357,16 +371,18 @@ if ($method === 'DELETE') {
         $cancelRemark = "Cancelled on " . date('Y-m-d H:i:s');
         $update = $pdo->prepare("
             UPDATE interments 
-            SET status = 'Inactive', transfer_to_grave = NULL, remarks = CONCAT(COALESCE(remarks, ''), ' ', ?)
+            SET status = 'Inactive', transfer_to_grave = NULL, 
+                remarks = CONCAT(COALESCE(remarks, ''), ' ', ?),
+                updated_by = ?
             WHERE interment_id = ?
         ");
-        $update->execute([$cancelRemark, $pendingId]);
+        $update->execute([$cancelRemark, $userData['user_id'], $pendingId]);
 
         // 2. Check the fate of the Target Grave
         if ($targetGraveId) {
             $checkActive = $pdo->prepare("
                 SELECT interment_id FROM interments 
-                WHERE current_grave_id = ? AND status = 'Active'
+                WHERE current_grave_id = ? AND status = 'Active' AND deleted_at IS NULL
             ");
             $checkActive->execute([$targetGraveId]);
             $activeOccupant = $checkActive->fetch(PDO::FETCH_ASSOC);
@@ -381,10 +397,12 @@ if ($method === 'DELETE') {
                 // We clear their transfer target since the replacement is canceled.
                 $clearOld = $pdo->prepare("
                     UPDATE interments 
-                    SET transfer_to_grave = NULL, remarks = CONCAT(COALESCE(remarks, ''), ' [Replacement cancelled]') 
+                    SET transfer_to_grave = NULL, 
+                        remarks = CONCAT(COALESCE(remarks, ''), ' [Replacement cancelled]'),
+                        updated_by = ?
                     WHERE interment_id = ?
                 ");
-                $clearOld->execute([$activeOccupant['interment_id']]);
+                $clearOld->execute([$userData['user_id'], $activeOccupant['interment_id']]);
             }
         }
 

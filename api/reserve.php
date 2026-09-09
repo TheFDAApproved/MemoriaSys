@@ -85,7 +85,7 @@ $formatItem = function ($row) {
 // -----------------------------------------------------------------------------
 if ($method === 'GET') {
 
-    // Base SQL for expiring interments
+    // Base SQL for expiring interments (only non-deleted records)
     $expiringSQL = "
         SELECT 'expiring' AS type, i.interment_id, i.control_number, i.deceased_name, i.last_known_address, 
                i.death_certificate, i.deceased_date_of_birth, i.deceased_date_of_death, i.current_grave_id, 
@@ -98,14 +98,15 @@ if ($method === 'GET') {
                g.grave_id, g.grave_code, g.row_num, g.col_num, g.status AS grave_status, g.remarks AS grave_remarks, 
                b.block_name, b.block_id, b.block_type
         FROM interments i
-        LEFT JOIN graves g ON i.current_grave_id = g.grave_id
-        LEFT JOIN blocks b ON g.block_id = b.block_id
+        LEFT JOIN graves g ON i.current_grave_id = g.grave_id AND g.deleted_at IS NULL
+        LEFT JOIN blocks b ON g.block_id = b.block_id AND b.deleted_at IS NULL
         WHERE i.status = 'Active'
+          AND i.deleted_at IS NULL
           AND i.lease_expiration_date IS NOT NULL
           AND i.lease_expiration_date <= DATE_ADD(CURDATE(), INTERVAL 1 MONTH)
     ";
 
-    // Base SQL for vacant graves
+    // Base SQL for vacant graves (only non-deleted graves and blocks)
     $vacantSQL = "
         SELECT 'vacant' AS type, NULL AS interment_id, NULL AS control_number, NULL AS deceased_name, 
                NULL AS last_known_address, NULL AS death_certificate, NULL AS deceased_date_of_birth, 
@@ -119,12 +120,14 @@ if ($method === 'GET') {
                NULL AS deceased_sex, NULL AS contact_person_address,
                g.col_num, g.status AS grave_status, g.remarks AS grave_remarks, b.block_name, b.block_id, b.block_type
         FROM graves g
-        LEFT JOIN blocks b ON g.block_id = b.block_id
+        LEFT JOIN blocks b ON g.block_id = b.block_id AND b.deleted_at IS NULL
         WHERE g.status = 'Vacant'
+          AND g.deleted_at IS NULL
           AND NOT EXISTS (
               SELECT 1 FROM interments i
               WHERE i.current_grave_id = g.grave_id
                 AND i.status = 'Active'
+                AND i.deleted_at IS NULL
           )
     ";
 
@@ -211,7 +214,7 @@ if ($method === 'POST') {
     // NEW: Helper to resolve grave_code to grave_id
     // -------------------------------------------------------------------------
     $resolveGraveCode = function ($code) use ($pdo) {
-        $stmt = $pdo->prepare("SELECT grave_id FROM graves WHERE grave_code = ?");
+        $stmt = $pdo->prepare("SELECT grave_id FROM graves WHERE grave_code = ? AND deleted_at IS NULL");
         $stmt->execute([$code]);
         $id = $stmt->fetchColumn();
         if ($id === false) {
@@ -242,10 +245,14 @@ if ($method === 'POST') {
         $check = $pdo->prepare("
             SELECT g.grave_id, g.status 
             FROM graves g
-            WHERE g.grave_id = ? AND g.status = 'Vacant'
+            WHERE g.grave_id = ? 
+              AND g.status = 'Vacant'
+              AND g.deleted_at IS NULL
               AND NOT EXISTS (
                   SELECT 1 FROM interments i
-                  WHERE i.current_grave_id = g.grave_id AND i.status = 'Active'
+                  WHERE i.current_grave_id = g.grave_id 
+                    AND i.status = 'Active'
+                    AND i.deleted_at IS NULL
               )
         ");
         $check->execute([$graveId]);
@@ -256,7 +263,13 @@ if ($method === 'POST') {
         // Case 2: Replace an existing occupant
         $oldIntermentId = (int) $rawData['old_interment_id'];
 
-        $oldStmt = $pdo->prepare("SELECT current_grave_id, deceased_name FROM interments WHERE interment_id = ? AND status = 'Active'");
+        $oldStmt = $pdo->prepare("
+            SELECT current_grave_id, deceased_name 
+            FROM interments 
+            WHERE interment_id = ? 
+              AND status = 'Active'
+              AND deleted_at IS NULL
+        ");
         $oldStmt->execute([$oldIntermentId]);
         $old = $oldStmt->fetch(PDO::FETCH_ASSOC);
 
@@ -269,8 +282,11 @@ if ($method === 'POST') {
 
         $graveId = $old['current_grave_id'];
 
-        // Ensure grave is occupied
-        $checkGrave = $pdo->prepare("SELECT status FROM graves WHERE grave_id = ?");
+        // Ensure grave is occupied and not deleted
+        $checkGrave = $pdo->prepare("
+            SELECT status FROM graves 
+            WHERE grave_id = ? AND deleted_at IS NULL
+        ");
         $checkGrave->execute([$graveId]);
         if ($checkGrave->fetchColumn() !== 'Occupied') {
             Response::error("The grave is not currently occupied. Cannot replace.", 400);
@@ -318,7 +334,12 @@ if ($method === 'POST') {
         'status',
         'remarks',
         'deceased_sex',
-        'contact_person_address'
+        'contact_person_address',
+        // New audit columns (will be set explicitly)
+        'created_at',
+        'updated_at',
+        'created_by',
+        'updated_by'
     ];
 
     $placeholders = [];
@@ -331,6 +352,10 @@ if ($method === 'POST') {
             $val = $graveId;
         } elseif ($field === 'status') {
             $val = 'Pending';
+        } elseif ($field === 'created_at' || $field === 'updated_at') {
+            $val = date('Y-m-d H:i:s');
+        } elseif ($field === 'created_by' || $field === 'updated_by') {
+            $val = $userData['user_id'];
         } else {
             $val = $rawData[$field] ?? null;
         }
@@ -347,21 +372,24 @@ if ($method === 'POST') {
 
     $pdo->beginTransaction();
     try {
-        // 1. Insert new pending interment
+        // 1. Insert new pending interment (with audit columns)
         $sql = "INSERT INTO interments (" . implode(', ', $insertFields) . ") VALUES (" . implode(', ', $placeholders) . ")";
         $stmt = $pdo->prepare($sql);
         $stmt->execute($values);
         $newIntermentId = $pdo->lastInsertId();
 
-        // 2. If replacing an old occupant, update their target grave and remarks
+        // 2. If replacing an old occupant, update their target grave, remarks, and audit fields
         if ($oldIntermentId) {
             $updateOld = $pdo->prepare("
                 UPDATE interments 
-                SET transfer_to_grave = ?, remarks = CONCAT(COALESCE(remarks, ''), ' ', ?) 
+                SET transfer_to_grave = ?, 
+                    remarks = CONCAT(COALESCE(remarks, ''), ' ', ?),
+                    updated_at = NOW(),
+                    updated_by = ?
                 WHERE interment_id = ?
             ");
             $fullRemarks = $oldRemarks . " (new interment ID: $newIntermentId)";
-            $updateOld->execute([$oldTransferToGrave, $fullRemarks, $oldIntermentId]);
+            $updateOld->execute([$oldTransferToGrave, $fullRemarks, $userData['user_id'], $oldIntermentId]);
         }
 
         $pdo->commit();

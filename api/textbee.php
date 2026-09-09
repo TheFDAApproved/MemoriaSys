@@ -60,7 +60,12 @@ function sendSmsViaTextBee($phoneNumber, $message, $include_cemetery_name = true
 
     try {
         // 1. Fetch and DECRYPT the TextBee API Key
-        $keyStmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'textbee_api_key' LIMIT 1");
+        $keyStmt = $pdo->prepare("
+            SELECT setting_value 
+            FROM settings 
+            WHERE setting_key = 'textbee_api_key' AND deleted_at IS NULL 
+            LIMIT 1
+        ");
         $keyStmt->execute();
         $keyResult = $keyStmt->fetch(PDO::FETCH_ASSOC);
 
@@ -76,7 +81,12 @@ function sendSmsViaTextBee($phoneNumber, $message, $include_cemetery_name = true
         }
 
         // 2. Fetch and DECRYPT the TextBee Device ID
-        $deviceStmt = $pdo->prepare("SELECT setting_value FROM settings WHERE setting_key = 'textbee_device_id' LIMIT 1");
+        $deviceStmt = $pdo->prepare("
+            SELECT setting_value 
+            FROM settings 
+            WHERE setting_key = 'textbee_device_id' AND deleted_at IS NULL 
+            LIMIT 1
+        ");
         $deviceStmt->execute();
         $deviceResult = $deviceStmt->fetch(PDO::FETCH_ASSOC);
 
@@ -94,7 +104,11 @@ function sendSmsViaTextBee($phoneNumber, $message, $include_cemetery_name = true
         // 3. Prepare the TextBee API endpoint and payload using the DECRYPTED values
         $url = "https://api.textbee.dev/api/v1/gateway/devices/{$deviceId}/sendSMS";
 
-        $cemetery_name = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'cemetery_name'")->fetch(PDO::FETCH_ASSOC)['setting_value'] ?? false;
+        $cemetery_name = $pdo->query("
+            SELECT setting_value 
+            FROM settings 
+            WHERE setting_key = 'cemetery_name' AND deleted_at IS NULL
+        ")->fetch(PDO::FETCH_ASSOC)['setting_value'] ?? false;
 
         if ($cemetery_name && $include_cemetery_name) {
             $message = $message . "\n\n- From " . $cemetery_name;
@@ -146,32 +160,52 @@ function sendSmsViaTextBee($phoneNumber, $message, $include_cemetery_name = true
     }
 }
 
-function saveTextBeeCredentials($plainTextApiKey, $plainTextDeviceId)
+/**
+ * Saves (or updates) TextBee API credentials in the database.
+ * Credentials are encrypted before storage.
+ * 
+ * @param string $plainTextApiKey
+ * @param string $plainTextDeviceId
+ * @param int|null $userId  Optional ID of the admin performing the save (for audit).
+ * @return array
+ */
+function saveTextBeeCredentials($plainTextApiKey, $plainTextDeviceId, $userId = null)
 {
+    global $pdo;
 
     try {
         // 1. Encrypt the plain text values
-        global $pdo;
         $encryptedApiKey = encryptCredential($plainTextApiKey);
         $encryptedDeviceId = encryptCredential($plainTextDeviceId);
 
-        // 2. Prepare the database update statement
-        // Adjust this query based on how your 'settings' table is structured
+        // 2. Prepare the database insert/update statement
+        // Using ON DUPLICATE KEY UPDATE to handle existing keys
         $stmt = $pdo->prepare("
             INSERT INTO settings 
-            (setting_value, setting_key, description) VALUES (:value, :key, 'sensitive data');
+            (setting_key, setting_value, description, created_at, updated_at, created_by, updated_by)
+            VALUES (:key, :value, :desc, NOW(), NOW(), :created_by, :updated_by)
+            ON DUPLICATE KEY UPDATE
+                setting_value = VALUES(setting_value),
+                updated_at = NOW(),
+                updated_by = VALUES(updated_by)
         ");
 
-        // 3. Save the encrypted API Key
+        // Save the encrypted API Key
         $stmt->execute([
-            ':value' => $encryptedApiKey,
-            ':key' => 'textbee_api_key'
+            ':key'        => 'textbee_api_key',
+            ':value'      => $encryptedApiKey,
+            ':desc'       => 'Encrypted TextBee API Key',
+            ':created_by' => $userId,
+            ':updated_by' => $userId
         ]);
 
-        // 4. Save the encrypted Device ID
+        // Save the encrypted Device ID
         $stmt->execute([
-            ':value' => $encryptedDeviceId,
-            ':key' => 'textbee_device_id'
+            ':key'        => 'textbee_device_id',
+            ':value'      => $encryptedDeviceId,
+            ':desc'       => 'Encrypted TextBee Device ID',
+            ':created_by' => $userId,
+            ':updated_by' => $userId
         ]);
 
         return ['success' => true, 'message' => 'Credentials encrypted and saved successfully.'];

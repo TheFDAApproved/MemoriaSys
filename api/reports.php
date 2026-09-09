@@ -1,7 +1,16 @@
 <?php
 
 /**
- * reports.php
+ * reports.php – Generate various cemetery reports.
+ *
+ * Supported reports:
+ *   - capacity     : Overall cemetery occupancy summary + breakdown by block.
+ *   - expirations  : Active interments with expired leases, and those expiring in 30 days.
+ *   - graves       : All graves registry (filterable by status).
+ *   - interments   : Interment directory (filterable by address, gender, year, family status).
+ *
+ * All reports exclude soft‑deleted records (deleted_at IS NOT NULL).
+ * Authentication required: only Admin and Office staff can access.
  */
 
 define('ITS_ME_JUSTTOVERIFY', true);
@@ -46,18 +55,19 @@ try {
         // 1. CAPACITY REPORT (Aggregated Data)
         // ---------------------------------------------------------
         case 'capacity':
-            // Overall Cemetery Summary
+            // Overall Cemetery Summary (only active graves, not deleted)
             $summaryStmt = $pdo->prepare("
                 SELECT
                     COUNT(*) AS total_graves,
                     SUM(CASE WHEN status = 'Occupied' THEN 1 ELSE 0 END) AS occupied,
                     SUM(CASE WHEN status = 'Vacant' THEN 1 ELSE 0 END) AS vacant
                 FROM graves
+                WHERE deleted_at IS NULL
             ");
             $summaryStmt->execute();
             $summary = $summaryStmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
-            // Capacity by Block
+            // Capacity by Block (only active blocks and graves)
             $blockStmt = $pdo->prepare("
                 SELECT
                     b.block_name,
@@ -66,7 +76,8 @@ try {
                     SUM(CASE WHEN g.status = 'Occupied' THEN 1 ELSE 0 END) AS occupied,
                     SUM(CASE WHEN g.status = 'Vacant' THEN 1 ELSE 0 END) AS vacant
                 FROM blocks b
-                LEFT JOIN graves g ON g.block_id = b.block_id
+                LEFT JOIN graves g ON g.block_id = b.block_id AND g.deleted_at IS NULL
+                WHERE b.deleted_at IS NULL
                 GROUP BY b.block_id, b.block_name, b.block_type
                 ORDER BY b.block_name ASC
             ");
@@ -88,7 +99,7 @@ try {
         // 2. LEASE EXPIRATIONS REPORT
         // ---------------------------------------------------------
         case 'expirations':
-            // Already Expired Leases
+            // Already Expired Leases (only active interments, not deleted)
             $expiredStmt = $pdo->prepare("
                 SELECT
                     i.interment_id,
@@ -100,8 +111,9 @@ try {
                     i.remarks,
                     i.status
                 FROM interments i
-                LEFT JOIN graves g ON g.grave_id = i.current_grave_id
+                LEFT JOIN graves g ON g.grave_id = i.current_grave_id AND g.deleted_at IS NULL
                 WHERE i.status = 'Active'
+                  AND i.deleted_at IS NULL
                   AND i.lease_expiration_date IS NOT NULL
                   AND i.lease_expiration_date < CURDATE()
                 ORDER BY i.lease_expiration_date ASC
@@ -120,8 +132,9 @@ try {
                     i.remarks,
                     i.status
                 FROM interments i
-                LEFT JOIN graves g ON g.grave_id = i.current_grave_id
+                LEFT JOIN graves g ON g.grave_id = i.current_grave_id AND g.deleted_at IS NULL
                 WHERE i.status = 'Active'
+                  AND i.deleted_at IS NULL
                   AND i.lease_expiration_date IS NOT NULL
                   AND i.lease_expiration_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)
                 ORDER BY i.lease_expiration_date ASC
@@ -142,7 +155,7 @@ try {
         case 'allgraves':
         case 'graves':
             $params = [];
-            $whereClauses = ["1=1"];
+            $whereClauses = ["g.deleted_at IS NULL"];
 
             if ($filterType === 'status' && $filterValue !== 'all') {
                 $whereClauses[] = "g.status = :status";
@@ -160,7 +173,7 @@ try {
                     b.block_name,
                     b.block_type
                 FROM graves g
-                LEFT JOIN blocks b ON b.block_id = g.block_id
+                LEFT JOIN blocks b ON b.block_id = g.block_id AND b.deleted_at IS NULL
                 $whereSql
                 ORDER BY b.block_name ASC, g.grave_code ASC
             ";
@@ -193,7 +206,7 @@ try {
         case 'interments':
         default:
             $params = [];
-            $whereClauses = ["1=1"];
+            $whereClauses = ["i.deleted_at IS NULL"];
 
             if ($filterType === 'address' && $filterValue !== 'all') {
                 $whereClauses[] = "i.last_known_address LIKE :address";
@@ -239,8 +252,8 @@ try {
                     i.contact_person_phone_number,
                     i.contact_person_address
                 FROM interments i
-                LEFT JOIN graves g ON g.grave_id = i.current_grave_id
-                LEFT JOIN blocks b ON b.block_id = g.block_id
+                LEFT JOIN graves g ON g.grave_id = i.current_grave_id AND g.deleted_at IS NULL
+                LEFT JOIN blocks b ON b.block_id = g.block_id AND b.deleted_at IS NULL
                 $whereSql
                 ORDER BY i.date_buried DESC, i.interment_id DESC
             ";

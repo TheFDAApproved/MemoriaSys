@@ -56,11 +56,16 @@ $stmt = $pdo->query("
             MIN(i.lease_expiration_date) AS min_exp_date,
             EXISTS (
                 SELECT 1 FROM interments p 
-                WHERE p.current_grave_id = g.grave_id AND p.status = 'Pending'
+                WHERE p.current_grave_id = g.grave_id 
+                  AND p.status = 'Pending'
+                  AND p.deleted_at IS NULL
             ) AS has_pending
         FROM graves g
         LEFT JOIN interments i 
-            ON g.grave_id = i.current_grave_id AND i.status = 'Active'
+            ON g.grave_id = i.current_grave_id 
+            AND i.status = 'Active'
+            AND i.deleted_at IS NULL
+        WHERE g.deleted_at IS NULL
         GROUP BY g.grave_id
     ) AS grave_categories
     GROUP BY category
@@ -87,6 +92,7 @@ $dashboardData['available_graves'] = $graveDistribution['Vacant'];
 $stmt = $pdo->query("
     SELECT COUNT(*) FROM interments 
     WHERE status = 'Active' 
+      AND deleted_at IS NULL
       AND lease_expiration_date BETWEEN DATE_ADD(CURDATE(), INTERVAL 1 DAY) 
                                    AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)
 ");
@@ -98,6 +104,7 @@ $stmt = $pdo->query("
            COUNT(*) AS count 
     FROM interments 
     WHERE status = 'Active' 
+      AND deleted_at IS NULL
       AND YEAR(lease_expiration_date) = YEAR(CURDATE())
     GROUP BY exp_month 
     ORDER BY exp_month ASC
@@ -112,86 +119,26 @@ for ($m = 1; $m <= 12; $m++) {
 }
 $dashboardData['monthly_lease_expiration'] = $monthlyExpiration;
 
-// --- Payment Summary ---
-// Grounds staff see only payments already confirmed by office.
-// $paymentWhere = "1=1";  // no deleted_at column
-// $paymentParams = [];
-// if ($userRole === ROLE_GROUNDS) {
-//     $paymentWhere .= " AND confirmed_office_staff IS NOT NULL";
-// }
-
-// $stmt = $pdo->prepare("
-//     SELECT
-//         COUNT(*) AS total_count,
-//         SUM(CASE WHEN confirmed_office_staff IS NULL THEN 1 ELSE 0 END) AS pending_office,
-//         SUM(CASE WHEN confirmed_office_staff IS NOT NULL AND confirmed_ground_staff IS NULL THEN 1 ELSE 0 END) AS pending_grounds,
-//         SUM(CASE WHEN confirmed_office_staff IS NOT NULL AND confirmed_ground_staff IS NOT NULL THEN 1 ELSE 0 END) AS completed
-//     FROM payments
-//     WHERE $paymentWhere
-// ");
-// $stmt->execute($paymentParams);
-// $paymentSummary = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
-
-// $dashboardData['payments'] = [
-//     'total_count'      => (int)($paymentSummary['total_count'] ?? 0),
-//     'pending_office'   => (int)($paymentSummary['pending_office'] ?? 0),
-//     'pending_grounds'  => (int)($paymentSummary['pending_grounds'] ?? 0),
-//     'completed'        => (int)($paymentSummary['completed'] ?? 0)
-// ];
-
 // ==========================================
 // TIER 2: OFFICE STAFF & ADMIN ONLY
 // ==========================================
 if (in_array($userRole, [ROLE_ADMIN, ROLE_OFFICE])) {
 
-    // Total Interment Records (all interments, regardless of status)
-    $stmt = $pdo->query("SELECT COUNT(*) FROM interments");
+    // Total Interment Records (all interments, regardless of status, excluding soft-deleted)
+    $stmt = $pdo->query("SELECT COUNT(*) FROM interments WHERE deleted_at IS NULL");
     $dashboardData['total_interment_records'] = (int)$stmt->fetchColumn();
-
-    // Expired Leases List (active interments with expired lease)
-    // $stmt = $pdo->query("
-    //     SELECT 
-    //         i.deceased_name,
-    //         g.grave_code,
-    //         i.lease_expiration_date,
-    //         i.contact_person_name AS contact_name,
-    //         i.contact_person_phone_number AS phone_number,
-    //         i.remarks
-    //     FROM interments i
-    //     JOIN graves g ON i.current_grave_id = g.grave_id
-    //     WHERE i.status = 'Active'
-    //       AND i.lease_expiration_date <= CURDATE()
-    //     ORDER BY i.lease_expiration_date ASC
-    //     LIMIT 5
-    // ");
-    // $dashboardData['expired_leases'] = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-
-    // Expiring Leases List (active interments expiring within 30 days)
-    // $stmt = $pdo->query("
-    //     SELECT 
-    //         i.deceased_name,
-    //         g.grave_code,
-    //         i.lease_expiration_date,
-    //         i.contact_person_name AS contact_name,
-    //         i.contact_person_phone_number AS phone_number,
-    //         i.remarks
-    //     FROM interments i
-    //     JOIN graves g ON i.current_grave_id = g.grave_id
-    //     WHERE i.status = 'Active'
-    //       AND i.lease_expiration_date BETWEEN DATE_ADD(CURDATE(), INTERVAL 1 DAY) 
-    //                                      AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)
-    //     ORDER BY i.lease_expiration_date ASC
-    //     LIMIT 5
-    // ");
-    // $dashboardData['expiring_leases_list'] = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 }
 
 // ==========================================
 // TIER 3: ADMINISTRATOR ONLY
 // ==========================================
 if ($userRole === ROLE_ADMIN) {
-    // Unverified Accounts (users with status != 'Verified')
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE status != :status");
+    // Unverified Accounts (users with status != 'Verified', excluding soft-deleted)
+    $stmt = $pdo->prepare("
+        SELECT COUNT(*) FROM users 
+        WHERE status != :status 
+          AND deleted_at IS NULL
+    ");
     $stmt->execute(['status' => 'Verified']);
     $dashboardData['unverified_accounts'] = (int)$stmt->fetchColumn();
 }

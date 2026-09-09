@@ -19,14 +19,23 @@ if (!$userData) {
     try {
         if ($method === 'GET') {
             if ($resourceId) {
-                $stmt = $pdo->prepare("SELECT * FROM settings WHERE description NOT LIKE '%sensitive%'");
+                $stmt = $pdo->prepare("
+                    SELECT * FROM settings 
+                    WHERE setting_id = :id 
+                      AND deleted_at IS NULL 
+                      AND description NOT LIKE '%sensitive%'
+                ");
                 $stmt->execute([':id' => $resourceId]);
                 $setting = $stmt->fetch(PDO::FETCH_ASSOC);
 
                 if (!$setting) Response::error("Public Setting not found", 404);
                 Response::success("Public System setting retrieved", $setting);
             } else {
-                $stmt = $pdo->prepare("SELECT * FROM settings WHERE description NOT LIKE '%sensitive%'");
+                $stmt = $pdo->prepare("
+                    SELECT * FROM settings 
+                    WHERE deleted_at IS NULL 
+                      AND description NOT LIKE '%sensitive%'
+                ");
                 $stmt->execute();
                 $settings = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 Response::success("Public System settings retrieved", $settings);
@@ -59,8 +68,11 @@ try {
 
         case 'GET':
             if ($resourceId) {
-                // Get single setting
-                $stmt = $pdo->prepare("SELECT * FROM settings WHERE setting_id = :id");
+                // Get single setting (only if not deleted)
+                $stmt = $pdo->prepare("
+                    SELECT * FROM settings 
+                    WHERE setting_id = :id AND deleted_at IS NULL
+                ");
                 $stmt->execute([':id' => $resourceId]);
                 $setting = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -82,8 +94,10 @@ try {
                 );
                 Response::success("System setting retrieved", $setting);
             } else {
-                // Get all settings
-                $stmt = $pdo->prepare("SELECT * FROM settings");
+                // Get all settings (only active ones)
+                $stmt = $pdo->prepare("
+                    SELECT * FROM settings WHERE deleted_at IS NULL
+                ");
                 $stmt->execute();
                 $settings = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -163,11 +177,8 @@ try {
                             }
 
                             // Force the filename to be the setting_key.
-                            // The ImageManager will automatically append the verified '.png' extension.
                             $requestedName = $sKey;
 
-                            // Always use uploadImage with $replaceIfExists = true
-                            // This ensures logo1.png safely overwrites logo1.png using file locking
                             $result = $manager->uploadImage(
                                 $tmpName,
                                 $_FILES['bulk_images']['name'][$index],
@@ -179,7 +190,6 @@ try {
                                 throw new Exception("Image upload failed for {$sKey}: " . $result['error']);
                             }
 
-                            // $sValue will now strictly be "logo1.png", "cemetery_full_logo.png", etc.
                             $sValue = $result['filename'];
                             $uploadedFiles[] = $sValue;
                         }
@@ -189,23 +199,36 @@ try {
                             $sValue = encryptCredential($sValue);
                         }
 
-                        $sql = "INSERT INTO settings (setting_key, setting_value, description) 
-                                VALUES (:key, :value, :desc)
-                                ON DUPLICATE KEY UPDATE 
-                                setting_value = VALUES(setting_value), 
-                                description = VALUES(description)";
+                        // ================================================================
+                        // UPDATED QUERY: now includes audit columns and restores soft-deleted
+                        // ================================================================
+                        $sql = "
+                            INSERT INTO settings 
+                                (setting_key, setting_value, description, created_at, updated_at, created_by, updated_by, deleted_at)
+                            VALUES 
+                                (:key, :value, :desc, NOW(), NOW(), :created_by, :updated_by, NULL)
+                            ON DUPLICATE KEY UPDATE
+                                setting_value = VALUES(setting_value),
+                                description = VALUES(description),
+                                updated_at = NOW(),
+                                updated_by = VALUES(updated_by),
+                                deleted_at = NULL   -- restore if it was soft-deleted
+                        ";
 
                         $stmt = $pdo->prepare($sql);
                         $stmt->execute([
-                            ':key' => $sKey,
-                            ':value' => $sValue,
-                            ':desc' => $sDesc,
+                            ':key'        => $sKey,
+                            ':value'      => $sValue,
+                            ':desc'       => $sDesc,
+                            ':created_by' => $userData['user_id'],
+                            ':updated_by' => $userData['user_id']
                         ]);
+
                         $changes .= 'setting_key: ' . $sKey . ', description: ' . $sDesc . ', value: ' . $sValue . '  ';
                     }
 
                     $pdo->commit();
-                    systemLog("{$userData['name']} ({$userData['username']}) saved a settings. " . $changes, $userData['user_id']);
+                    systemLog("{$userData['name']} ({$userData['username']}) saved settings. " . $changes, $userData['user_id']);
                     Response::success("Settings saved successfully. [Changes] " . $changes);
                 } catch (Exception $e) {
                     $pdo->rollBack();
@@ -232,17 +255,23 @@ try {
                 Response::error("Setting ID is required for deletion.", 400);
             }
 
-            $sql = "DELETE FROM settings WHERE setting_id = :id";
+            // Soft delete: set deleted_at and updated_by
+            $sql = "
+                UPDATE settings 
+                SET deleted_at = NOW(), updated_by = :updated_by 
+                WHERE setting_id = :id AND deleted_at IS NULL
+            ";
             $stmt = $pdo->prepare($sql);
             $stmt->execute([
-                ':id' => $settingId
+                ':id' => $settingId,
+                ':updated_by' => $userData['user_id']
             ]);
 
             if ($stmt->rowCount() === 0) {
                 Response::error("Setting not found or already deleted", 404);
             }
 
-            systemLog("{$userData['name']} deleted setting ID: {$settingId}", $userData['user_id']);
+            systemLog("{$userData['name']} soft-deleted setting ID: {$settingId}", $userData['user_id']);
             Response::success("Setting deleted successfully");
             break;
 

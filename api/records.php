@@ -11,7 +11,7 @@
  * GET    /records.php/{id} : Get details of a specific interment by ID
  * POST   /records.php      : Create a new interment manually
  * PUT    /records.php/{id} : Update an interment manually (any field)
- * DELETE /records.php/{id} : Permanently delete an interment (only if not active)
+ * DELETE /records.php/{id} : Soft‑delete an interment (only if not active)
  */
 
 define('ITS_ME_JUSTTOVERIFY', true);
@@ -108,8 +108,8 @@ function getIntermentSelectSQL()
             b.block_name,
             b.block_type
         FROM interments i
-        LEFT JOIN graves g ON i.current_grave_id = g.grave_id
-        LEFT JOIN blocks b ON g.block_id = b.block_id
+        LEFT JOIN graves g ON i.current_grave_id = g.grave_id AND g.deleted_at IS NULL
+        LEFT JOIN blocks b ON g.block_id = b.block_id AND b.deleted_at IS NULL
     ";
 }
 
@@ -124,11 +124,11 @@ if ($method === 'GET') {
      * @return array Flat array of interment rows (each formatted by formatInterment())
      */
     $buildFlatList = function ($filterId = null) use ($pdo) {
-        // 1. Fetch all base interments (or filter by ID)
-        $sql = getIntermentSelectSQL();
+        // 1. Fetch all base interments that are NOT soft‑deleted (or filter by ID)
+        $sql = getIntermentSelectSQL() . " WHERE i.deleted_at IS NULL";
         $params = [];
         if ($filterId) {
-            $sql .= " WHERE i.interment_id = :id";
+            $sql .= " AND i.interment_id = :id";
             $params['id'] = $filterId;
         }
         $sql .= " ORDER BY i.interment_id DESC";
@@ -297,15 +297,18 @@ if ($method === 'POST') {
     // If current_grave_id provided, validate existence ONLY (no vacancy check)
     $currentGraveId = !empty($rawData['current_grave_id']) ? (int) $rawData['current_grave_id'] : null;
     if ($currentGraveId) {
-        $graveCheck = $pdo->prepare("SELECT grave_id FROM graves WHERE grave_id = ?");
+        $graveCheck = $pdo->prepare("
+            SELECT grave_id FROM graves 
+            WHERE grave_id = ? AND deleted_at IS NULL
+        ");
         $graveCheck->execute([$currentGraveId]);
         if (!$graveCheck->fetch()) {
-            Response::error("Current grave does not exist.", 400);
+            Response::error("Current grave does not exist or is deleted.", 400);
         }
         // NO vacancy check – allows co‑interment
     }
 
-    // Prepare insert fields
+    // Prepare insert fields (including audit columns)
     $fields = [
         'control_number',
         'deceased_name',
@@ -333,7 +336,10 @@ if ($method === 'POST') {
         'burial_clearance_date',
         'lease_expiration_date',
         'status',
-        'remarks'
+        'remarks',
+        // Audit
+        'created_by',
+        'updated_by'
     ];
 
     $placeholders = [];
@@ -341,6 +347,8 @@ if ($method === 'POST') {
     foreach ($fields as $field) {
         if ($field === 'status') {
             $val = $status;
+        } elseif ($field === 'created_by' || $field === 'updated_by') {
+            $val = $userData['user_id'];
         } else {
             $val = $rawData[$field] ?? null;
         }
@@ -356,7 +364,7 @@ if ($method === 'POST') {
 
     $pdo->beginTransaction();
     try {
-        // Insert interment
+        // Insert interment (created_at/updated_at default automatically)
         $sql = "INSERT INTO interments (" . implode(', ', $fields) . ") VALUES (" . implode(', ', $placeholders) . ")";
         $stmt = $pdo->prepare($sql);
         $stmt->execute($values);
@@ -392,8 +400,11 @@ if ($method === 'PUT') {
     }
     $id = (int) $rawData['interment_id'];
 
-    // Fetch current record
-    $currentStmt = $pdo->prepare("SELECT * FROM interments WHERE interment_id = ?");
+    // Fetch current record (only if not soft‑deleted)
+    $currentStmt = $pdo->prepare("
+        SELECT * FROM interments 
+        WHERE interment_id = ? AND deleted_at IS NULL
+    ");
     $currentStmt->execute([$id]);
     $current = $currentStmt->fetch(PDO::FETCH_ASSOC);
     if (!$current) {
@@ -403,7 +414,7 @@ if ($method === 'PUT') {
     $updates = [];
     $params = [];
 
-    // Allowed fields to update
+    // Allowed fields to update (excluding audit columns – they are managed automatically)
     $updatable = [
         'control_number',
         'deceased_name',
@@ -464,22 +475,28 @@ if ($method === 'PUT') {
     }
 
     // --- Validation (co‑interment friendly) ---
-    // Only check that the new current_grave_id exists (if provided)
+    // Only check that the new current_grave_id exists (if provided) and is not deleted
     if ($newCurrentGraveId) {
-        $graveCheck = $pdo->prepare("SELECT grave_id FROM graves WHERE grave_id = ?");
+        $graveCheck = $pdo->prepare("
+            SELECT grave_id FROM graves 
+            WHERE grave_id = ? AND deleted_at IS NULL
+        ");
         $graveCheck->execute([$newCurrentGraveId]);
         if (!$graveCheck->fetch()) {
-            Response::error("Target current_grave_id does not exist.", 400);
+            Response::error("Target current_grave_id does not exist or is deleted.", 400);
         }
         // NO check for vacancy or other active interments – allows co‑interment
     }
 
-    $oldCurrentGraveId = $current['current_grave_id'];
+    // Add updated_by to the update list
+    $updates[] = "updated_by = ?";
+    $params[] = $userData['user_id'];
+    // updated_at will auto‑update via ON UPDATE CURRENT_TIMESTAMP
 
     $pdo->beginTransaction();
     try {
         // Apply updates to interment
-        $updateSql = "UPDATE interments SET " . implode(', ', $updates) . " WHERE interment_id = ?";
+        $updateSql = "UPDATE interments SET " . implode(', ', $updates) . " WHERE interment_id = ? AND deleted_at IS NULL";
         $params[] = $id;
         $stmt = $pdo->prepare($updateSql);
         $stmt->execute($params);
@@ -500,7 +517,7 @@ if ($method === 'PUT') {
 }
 
 // -----------------------------------------------------------------------------
-// DELETE – Permanently delete an interment (only if not active)
+// DELETE – Soft‑delete an interment (only if not active and not already deleted)
 // -----------------------------------------------------------------------------
 if ($method === 'DELETE') {
     // REST functionality: allow DELETE /records.php/{id}
@@ -513,12 +530,16 @@ if ($method === 'DELETE') {
     }
     $id = (int) $rawData['interment_id'];
 
-    // Check if exists and status
-    $check = $pdo->prepare("SELECT status, current_grave_id FROM interments WHERE interment_id = ?");
+    // Check if exists, not already deleted, and status is not Active
+    $check = $pdo->prepare("
+        SELECT status, current_grave_id 
+        FROM interments 
+        WHERE interment_id = ? AND deleted_at IS NULL
+    ");
     $check->execute([$id]);
     $row = $check->fetch(PDO::FETCH_ASSOC);
     if (!$row) {
-        Response::error("Interment not found.", 404);
+        Response::error("Interment not found or already deleted.", 404);
     }
     if ($row['status'] === 'Active') {
         Response::error("Cannot delete an Active interment. Deactivate it first.", 400);
@@ -529,12 +550,23 @@ if ($method === 'DELETE') {
 
     $pdo->beginTransaction();
     try {
-        $delete = $pdo->prepare("DELETE FROM interments WHERE interment_id = ?");
-        $delete->execute([$id]);
+        // Soft delete: set deleted_at, updated_at, updated_by
+        $updateSql = "
+            UPDATE interments 
+            SET deleted_at = NOW(), 
+                updated_at = NOW(), 
+                updated_by = :updated_by
+            WHERE interment_id = :id AND deleted_at IS NULL
+        ";
+        $stmt = $pdo->prepare($updateSql);
+        $stmt->execute([
+            ':id' => $id,
+            ':updated_by' => $userData['user_id']
+        ]);
 
         $pdo->commit();
-        systemLog("Deleted interment $id permanently", $userData['user_id']);
-        Response::success("Interment deleted.");
+        systemLog("Soft‑deleted interment $id", $userData['user_id']);
+        Response::success("Interment deleted (soft delete).");
     } catch (PDOException $e) {
         $pdo->rollBack();
         systemLog("Record deletion error: " . $e->getMessage(), 'System');
