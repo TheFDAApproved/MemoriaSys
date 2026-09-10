@@ -419,25 +419,27 @@ if ($method === 'PUT') {
         if ($gridChanged) {
             // --- Shrink: remove graves outside target dimensions (soft delete) ---
             if ($targetRows < $currentMaxRows || $targetCols < $currentMaxCols) {
-                // Check for any interments (not just active) on graves to be removed
+                // FIX: Use INNER JOIN and explicitly check for Active or Pending interments.
+                // This allows graves with only 'Inactive' (historical) records to be safely removed
+                // if the physical block dimensions were mapped incorrectly.
                 $checkSql = "
                     SELECT EXISTS (
                         SELECT 1
                         FROM graves g
-                        LEFT JOIN interments i
+                        INNER JOIN interments i
                             ON (i.current_grave_id = g.grave_id OR i.transfer_to_grave = g.grave_id)
-                            AND i.deleted_at IS NULL
                         WHERE g.block_id = ?
                           AND g.deleted_at IS NULL
                           AND (g.row_num > ? OR g.col_num > ?)
-                          AND i.interment_id IS NOT NULL
+                          AND i.deleted_at IS NULL
+                          AND i.status IN ('Active', 'Pending')
                     )
                 ";
                 $checkStmt = $pdo->prepare($checkSql);
                 $checkStmt->execute([$blockId, $targetRows, $targetCols]);
                 if ($checkStmt->fetchColumn()) {
                     $pdo->rollBack();
-                    Response::error("Cannot shrink block: some graves to be removed have interment records.", 400);
+                    Response::error("Cannot shrink block: some graves to be removed have Active or Pending interment records.", 400);
                 }
 
                 // Soft‑delete the graves outside the new grid

@@ -393,16 +393,11 @@ if ($method === 'DELETE') {
                 $freeGrave->execute([$targetGraveId]);
             } else {
                 $hasActive = true;
-                // If there IS an old occupant, their `transfer_to_grave` was probably set anticipating this move.
-                // We clear their transfer target since the replacement is canceled.
-                $clearOld = $pdo->prepare("
-                    UPDATE interments 
-                    SET transfer_to_grave = NULL, 
-                        remarks = CONCAT(COALESCE(remarks, ''), ' [Replacement cancelled]'),
-                        updated_by = ?
-                    WHERE interment_id = ?
-                ");
-                $clearOld->execute([$userData['user_id'], $activeOccupant['interment_id']]);
+
+                // FIX: We intentionally DO NOT auto-update the active occupant's remarks or transfer_to_grave here.
+                // Because Memoria allows co-interments, automatically altering the first active occupant 
+                // the query finds can corrupt innocent records. If a replacement flow is cancelled, 
+                // the admin must manually adjust the old occupant's status/remarks via the records module.
             }
         }
 

@@ -370,8 +370,12 @@ if ($method === 'POST') {
         $stmt->execute($values);
         $newId = $pdo->lastInsertId();
 
-        // Do NOT automatically update graves.status – leave that to the admin
-        // The admin can manually set grave.status via graves.php if needed.
+        // --- NEW ADDITION: Automatically mark grave as Occupied ---
+        if ($status === 'Active' && $currentGraveId) {
+            $markOccupied = $pdo->prepare("UPDATE graves SET status = 'Occupied' WHERE grave_id = ?");
+            $markOccupied->execute([$currentGraveId]);
+        }
+        // ---------------------------------------------------------
 
         $pdo->commit();
         systemLog("Manually created interment $newId with status $status", $userData['user_id']);
@@ -501,7 +505,12 @@ if ($method === 'PUT') {
         $stmt = $pdo->prepare($updateSql);
         $stmt->execute($params);
 
-        // Do NOT automatically update graves.status – leave that to the admin
+        // --- NEW ADDITION: Automatically mark grave as Occupied ---
+        if ($newStatus === 'Active' && $newCurrentGraveId) {
+            $markOccupied = $pdo->prepare("UPDATE graves SET status = 'Occupied' WHERE grave_id = ?");
+            $markOccupied->execute([$newCurrentGraveId]);
+        }
+        // ---------------------------------------------------------
 
         $pdo->commit();
         systemLog("Manually updated interment $id", $userData['user_id']);

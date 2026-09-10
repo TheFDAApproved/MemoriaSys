@@ -368,6 +368,14 @@ function importInterments($pdo, $filePath, $userId)
                     $insertStmt->execute($insertParams);
                     $inserted++;
                 }
+
+                // --- NEW ADDITION: Synchronize the grave status upon import ---
+                if ($params['status'] === 'Active' && !empty($params['current_grave_id'])) {
+                    $markOccupied = $pdo->prepare("UPDATE graves SET status = 'Occupied' WHERE grave_id = :grave_id AND deleted_at IS NULL");
+                    $markOccupied->execute(['grave_id' => $params['current_grave_id']]);
+                }
+                // --------------------------------------------------------------
+
             } catch (PDOException $e) {
                 $errors[] = "Row $rowCount: Database error - " . $e->getMessage();
             }
