@@ -324,14 +324,14 @@ if ($method === 'POST') {
             'old_interment_id'     => $old ? $old['interment_id'] : null,
             'type'                 => $old ? 'replacement' : 'vacant'
         ]);
-    } catch (Exception $e) {
-        $pdo->rollBack();
-        systemLog("Monitor execution error: " . $e->getMessage(), 'System');
-        Response::error($e->getMessage(), 400); // Send the specific validation error message back
     } catch (PDOException $e) {
         $pdo->rollBack();
         systemLog("Monitor Database error: " . $e->getMessage(), 'System');
         Response::error("Database error while executing transfer.", 500);
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        systemLog("Monitor execution error: " . $e->getMessage(), 'System');
+        Response::error($e->getMessage(), 400); // Send the specific validation error message back
     }
 }
 
