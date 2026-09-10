@@ -19,9 +19,6 @@
         const rows = Array.isArray(result) ? result : result?.data;
         if (!Array.isArray(rows)) {
           console.error("Invalid settings response:", result);
-          if (typeof showAlertTOP === "function") {
-            showAlertTOP("Failed to load settings: invalid response", "error");
-          }
           return;
         }
 
@@ -120,9 +117,6 @@
       })
       .catch((error) => {
         console.error("Error loading settings:", error);
-        if (typeof showAlertTOP === "function") {
-          showAlertTOP("Failed to load settings", "error");
-        }
       });
   }
 
@@ -208,9 +202,6 @@
 
         if (!user || typeof user !== "object" || Array.isArray(user)) {
           console.error("Invalid user response:", result);
-          if (typeof showAlertTOP === "function") {
-            showAlertTOP("Failed to load user info: invalid response", "error");
-          }
           return;
         }
 
@@ -241,9 +232,6 @@
       })
       .catch((error) => {
         console.error("Error loading user:", error);
-        if (typeof showAlertTOP === "function") {
-          showAlertTOP("Failed to load user info", "error");
-        }
       });
   }
 
