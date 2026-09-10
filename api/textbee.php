@@ -183,11 +183,11 @@ function saveTextBeeCredentials($plainTextApiKey, $plainTextDeviceId, $userId = 
         $stmt = $pdo->prepare("
             INSERT INTO settings 
             (setting_key, setting_value, description, created_at, updated_at, created_by, updated_by)
-            VALUES (:key, :value, :desc, NOW(), NOW(), :created_by, :updated_by)
+            VALUES (:key, :value, :desc, NOW(), NOW(), :created_by, :updated_by) AS new
             ON DUPLICATE KEY UPDATE
-                setting_value = VALUES(setting_value),
-                updated_at = NOW(),
-                updated_by = VALUES(updated_by)
+            setting_value = new.setting_value,
+            updated_at    = NOW(),
+            updated_by    = new.updated_by
         ");
 
         // Save the encrypted API Key
