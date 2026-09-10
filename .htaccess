@@ -1,3 +1,93 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # ==========================================
+    # FIX NGROK/PROXY TRAILING SLASH REDIRECTS
+    # ==========================================
+    # 1. If the requested path is a physical directory
+    RewriteCond %{REQUEST_FILENAME} -d
+    # 2. And it does NOT end in a slash
+    RewriteCond %{REQUEST_URI} !/$
+    # 3. And an Ngrok/Proxy host header exists (capturing it into %1)
+    RewriteCond %{HTTP:X-Forwarded-Host} ^(.+)$
+    # 4. Redirect manually using the Proxy host and HTTPS
+    RewriteRule ^(.*)$ https://%1/$1/ [R=301,L]
+
+    # ==========================================
+    # 1. ENVIRONMENT SETUP
+    # ==========================================
+    # HOW TO HOST:
+    # -> If testing locally on XAMPP, use: RewriteBase /memoria/
+    # -> If hosting on InfinityFree/Production, comment out the line above and uncomment the line below:
+    # -> If like not in root/memoria, and just directly to root ro RewriteBase / only
+
+    # RewriteBase /memoria/
+    RewriteBase /
+
+    Options -Indexes
+
+    # ==========================================
+    # 2. BLOCK SENSITIVE / HIDDEN FILES
+    # ==========================================
+    # Instantly returns a 404 for .env, .git, and .htaccess files
+    RewriteRule (^|/)\. - [R=404,L]
+
+    # Blocks direct browser access to backend tools and passwords
+    RewriteRule ^api/jwt/ - [R=404,L]
+    RewriteRule ^api/config\.php$ - [R=404,L]
+
+    # ==========================================
+    # 3. API ROUTING (Restricted)
+    # ==========================================
+    # Allow only the public storage folders under /api/ add images|(foldernames)|(foldernames) soon i guess
+    RewriteRule ^api/(images)(/.*)?$ - [L]
+
+    # FIX: Allow valid .php files in the api folder to execute.
+    # Without this, the internal redirect below will get blocked by the catch-alls!
+    RewriteRule ^api/[a-zA-Z0-9_-]+\.php(/.*)?$ - [L]
+
+    # Route simple /api/<name> requests AND /api/<name>/<extra> to /api/<name>.php
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^api/([a-zA-Z0-9_-]+)(/.*)?$ api/$1.php?path_info=$2 [QSA,L]
+
+    # Block any other API paths (like subfolders or weird extensions)
+    RewriteRule ^api/ - [R=404,L]
+
+    # ==========================================
+    # 4. WHITELIST (Environment Agnostic)
+    # ==========================================
+    # Allow the root folder
+    RewriteRule ^$ - [L]
+
+    # Allow direct access to HTML files (like index.html, dashboard.html)
+    RewriteRule ^[^/]+\.html$ - [L]
+
+    # Allow all necessary frontend assets to load securely
+    RewriteRule ^assets/.*\.(css|js|png|jpg|jpeg|gif|svg|webp|ico|woff2?|ttf|json)$ - [L]
+
+    # Allow a root favicon if it exists (Optional, but highly recommended)
+    RewriteRule ^favicon\.ico$ - [L]
+
+    # ==========================================
+    # 5. BLOCK EVERYTHING ELSE
+    # ==========================================
+    RewriteRule ^ - [R=404,L]
+
+</IfModule>
+
+# ==========================================
+
+# ERROR PAGES
+
+# ==========================================
+
+# HOW TO HOST:
+
+# -> If testing locally on XAMPP, leave this as-is (with /memoria/).
+
+# -> If hosting on InfinityFree/Production, comment out the Local lines and uncomment the Production lines below.
+
 # LOCAL HOSTING / Not in root folder i guess:
 
 # ErrorDocument 400 /memoria/404.html

@@ -2,7 +2,7 @@
 
 // Ensure database connection is available
 require_once 'database.php';
-require_once 'notallowed.php';
+//require_once 'notallowed.php';
 require_once 'reusable_functions.php';
 // This MUST exactly match the key used in your decryption script!
 // Use a secure, 32-character string. Store this in a .env file if possible.
