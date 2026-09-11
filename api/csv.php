@@ -134,7 +134,6 @@ function exportInterments($pdo, $filename = 'interments_export.csv')
         fputcsv($output, $row, ',', '"', '\\');
     }
     fclose($output);
-    exit;
 }
 
 // ------------------------------------------------------------------
@@ -404,6 +403,8 @@ function importInterments($pdo, $filePath, $userId)
 // ------------------------------------------------------------------
 if ($method === 'GET') {
     exportInterments($pdo);
+    systemLog("{$userData['name']} ({$userData['username']}) exported a csv file", $userData['user_id']);
+    exit;
 }
 
 if ($method === 'POST') {
