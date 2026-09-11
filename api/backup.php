@@ -434,7 +434,7 @@ if ($method === 'GET') {
     foreach ($files as $file) {
         $backups[] = [
             'filename' => basename($file),
-            'size'     => filesize($file),
+            'size_in_bytes'     => filesize($file),
             // date() now runs in DB_TIMEZONE thanks to the sync in section 0,
             // so this matches the wall clock stored in created_at / transfer_date.
             'date'     => date('Y-m-d H:i:s', filemtime($file)),
@@ -457,7 +457,7 @@ if ($method === 'POST') {
 
         Response::success('Snapshot created successfully: ' . $filename, [
             'filename' => $filename,
-            'size'     => filesize($backupDir . $filename),
+            'size_in_bytes'     => filesize($backupDir . $filename),
             'pruned'   => $deleted,
         ]);
     } catch (Throwable $e) {
