@@ -5,4 +5,5 @@
 /api/cache/*
 /api/images/*
 /api/test.php
+/api/backups
 map.html
