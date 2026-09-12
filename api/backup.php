@@ -50,6 +50,7 @@ const BACKUP_NAME_PREFIX = 'memoria_db_';
 $userData = checkuser();
 
 if (($userData['role'] ?? null) !== ROLE_ADMIN) {
+    systemLog("{$userData['name']} ({$userData['username']}) attempted to backup or something here lol", $userData['user_id']);
     Response::error('Forbidden. Insufficient privileges.', 403);
 }
 
@@ -585,6 +586,7 @@ if ($method === 'POST') {
     try {
         $filename = createBackup($pdo, $backupDir);
         $deleted  = pruneBackups($backupDir);
+        systemLog("{$userData['name']} ({$userData['username']}) created a database backup: " . $filename, $userData['user_id']);
 
         Response::success('Snapshot created successfully: ' . $filename, [
             'filename'      => $filename,
@@ -612,6 +614,7 @@ if ($method === 'PUT') {
 
     try {
         $executed = restoreBackup($pdo, $filePath);
+        systemLog("{$userData['name']} ({$userData['username']}) restored a database backup: " . basename($filePath), $userData['user_id']);
 
         Response::success('Database restored successfully: ' . basename($filePath), [
             'filename'   => basename($filePath),
