@@ -141,12 +141,12 @@ try {
 
         // ---------- GET ----------
         case 'GET':
-            // Only staff can view payments
+            // Only staff can view payments (no role-filtering on the data itself)
             if (!$isStaff) {
                 Response::error('Forbidden. You do not have access to view payment records.', 403);
             }
 
-            // If resourceId is numeric, fetch single record (only if not soft‑deleted)
+            // ---- Single record ----
             if (is_numeric($resourceId)) {
                 $sql = getPaymentSelectSQL() . ' WHERE p.payment_id = ? AND p.deleted_at IS NULL LIMIT 1';
                 $stmt = $pdo->prepare($sql);
@@ -155,36 +155,118 @@ try {
                 if (!$row) {
                     Response::error('Payment not found', 404);
                 }
-                Response::success('Payment retrieved',  formatPayment($row));
+                Response::success('Payment retrieved', formatPayment($row));
             }
 
-            // ---- List all payments (paginated, role-filtered, excluding soft-deleted) ----
-            $where = 'p.deleted_at IS NULL';
-            if ($isGrounds) {
-                $where .= ' AND p.confirmed_office_staff IS NOT NULL';
+            // ---- Inputs ----
+            $searchTerm = isset($_GET['search_term']) ? trim((string) $_GET['search_term']) : '';
+            if ($searchTerm !== '' && mb_strlen($searchTerm) < 3) {
+                Response::error("Search term must be at least 3 characters long", 400);
             }
 
-            // Pagination
-            $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 100;
-            $limit = max(1, min($limit, 500));
-            $page  = isset($_GET['page']) ? (int) $_GET['page'] : 1;
-            $page  = max(1, $page);
+            $limit = max(1, min((int) ($_GET['limit'] ?? 100), 500));
+            $page  = max(1, (int) ($_GET['page'] ?? 1));
 
-            // Count total
-            $countSql = "SELECT COUNT(*) FROM payments p WHERE $where";
-            $totalRecords = (int) $pdo->query($countSql)->fetchColumn();
-            $totalPages = ceil($totalRecords / $limit);
-            $page = min($page, $totalPages ?: 1);
-            $offset = ($page - 1) * $limit;
+            // ---- Status filter (pending_office | pending_grounds | verified) ----
+            $statusRaw = $_GET['status'] ?? '';
+            if (is_array($statusRaw)) {
+                $statusRaw = implode(',', $statusRaw);
+            }
+            $statusFilter    = strtolower(trim((string) $statusRaw));
+            $allowedStatuses = ['pending_office', 'pending_grounds', 'verified'];
+            $wantedStatuses  = [];
 
-            $limitInt  = (int) $limit;
-            $offsetInt = (int) $offset;
-            $sql = getPaymentSelectSQL() . " WHERE $where ORDER BY p.payment_id DESC LIMIT $limitInt OFFSET $offsetInt";
+            if ($statusFilter !== '') {
+                foreach (explode(',', $statusFilter) as $s) {
+                    $s = trim($s);
+                    if (!in_array($s, $allowedStatuses, true)) {
+                        Response::error("Invalid status '$s'. Allowed: pending_office, pending_grounds, verified.", 400);
+                    }
+                    if (!in_array($s, $wantedStatuses, true)) {
+                        $wantedStatuses[] = $s;
+                    }
+                }
+            }
+
+            // ---- Build WHERE + params ----
+            $where  = 'p.deleted_at IS NULL';
+            $params = [];
+
+            // Status clause (OR across wanted statuses)
+            if (!empty($wantedStatuses)) {
+                $statusParts = [];
+                foreach ($wantedStatuses as $s) {
+                    if ($s === 'pending_office') {
+                        $statusParts[] = '(p.confirmed_office_staff IS NULL)';
+                    } elseif ($s === 'pending_grounds') {
+                        $statusParts[] = '(p.confirmed_office_staff IS NOT NULL AND p.confirmed_ground_staff IS NULL)';
+                    } elseif ($s === 'verified') {
+                        $statusParts[] = '(p.confirmed_office_staff IS NOT NULL AND p.confirmed_ground_staff IS NOT NULL)';
+                    }
+                }
+                $where .= ' AND (' . implode(' OR ', $statusParts) . ')';
+            }
+
+            // Search clause (includes staff names via u1/u2)
+            if ($searchTerm !== '') {
+                $like = '%' . $searchTerm . '%';
+                $searchCols = [
+                    'p.reference_number',
+                    'p.payment_channel',
+                    'p.purpose',
+                    'p.deceased_name',
+                    'p.payers_phone_number',
+                    'p.payers_email',
+                    'p.payers_name',
+                    'p.remarks_payer',
+                    'p.remarks_office',
+                    'p.remarks_grounds',
+                    'u1.name',
+                    'u2.name',
+                ];
+                $parts = [];
+                foreach ($searchCols as $c) {
+                    $parts[] = "$c LIKE ?";
+                    $params[] = $like;
+                }
+                $where .= ' AND (' . implode(' OR ', $parts) . ')';
+            }
+
+            // ---- COUNT (mirrors the page query's joins so search on u1/u2 works) ----
+            $countSql = "
+                SELECT COUNT(*)
+                FROM payments p
+                LEFT JOIN users u1 ON p.confirmed_office_staff = u1.user_id
+                LEFT JOIN users u2 ON p.confirmed_ground_staff = u2.user_id
+                WHERE $where
+            ";
+            $countStmt = $pdo->prepare($countSql);
+            $countStmt->execute($params);
+            $totalRecords = (int) $countStmt->fetchColumn();
+
+            $totalPages = (int) ceil($totalRecords / $limit);
+            $page       = min($page, max(1, $totalPages));
+            $offset     = ($page - 1) * $limit;
+
+            // ---- Order: Pending Office (0) → Pending Grounds (1) → Verified (2), newest first within group ----
+            $orderSql = "
+                ORDER BY
+                    CASE
+                        WHEN p.confirmed_office_staff IS NULL THEN 0
+                        WHEN p.confirmed_ground_staff IS NULL THEN 1
+                        ELSE 2
+                    END ASC,
+                    p.payment_id DESC
+            ";
+
+            // $limit / $offset are strict ints at this point → safe to interpolate.
+            $sql = getPaymentSelectSQL() . " WHERE $where $orderSql LIMIT $limit OFFSET $offset";
             $stmt = $pdo->prepare($sql);
-            $stmt->execute();
+            $stmt->execute($params);
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
             $payments = array_map('formatPayment', $rows);
+
             $pagination = [
                 'current_page'  => $page,
                 'per_page'      => $limit,
@@ -192,7 +274,19 @@ try {
                 'total_pages'   => $totalPages,
             ];
 
-            Response::success('Payments retrieved', ['pagination' => $pagination, 'payments' => $payments]);
+            // ---- Response ----
+            $payload = [
+                'pagination' => $pagination,
+                'payments'   => $payments,
+            ];
+            if ($searchTerm !== '') {
+                $payload['search_term'] = $searchTerm;
+            }
+            if (!empty($wantedStatuses)) {
+                $payload['status'] = implode(',', $wantedStatuses);
+            }
+
+            Response::success('Payments retrieved', $payload);
             break;
 
         // ---------- POST ----------
