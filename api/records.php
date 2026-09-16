@@ -119,29 +119,20 @@ function getIntermentSelectSQL()
 if ($method === 'GET') {
 
     /**
-     * Helper: Build a flat list of interments (current + history) for given IDs
-     * @param int|null $filterId If provided, only returns rows for that interment_id
-     * @return array Flat array of interment rows (each formatted by formatInterment())
+     * Helper: Build a flat list of interments (current + history) for ONE ID.
+     * Used by Scenario A only. Efficient because it scopes to a single interment.
      */
-    $buildFlatList = function ($filterId = null) use ($pdo) {
-        // 1. Fetch all base interments that are NOT soft‑deleted (or filter by ID)
-        $sql = getIntermentSelectSQL() . " WHERE i.deleted_at IS NULL";
-        $params = [];
-        if ($filterId) {
-            $sql .= " AND i.interment_id = :id";
-            $params['id'] = $filterId;
-        }
-        $sql .= " ORDER BY i.interment_id DESC";
-
+    $buildFlatList = function ($filterId) use ($pdo) {
+        $sql = getIntermentSelectSQL() . " WHERE i.deleted_at IS NULL AND i.interment_id = :id
+                                          ORDER BY i.interment_id DESC";
         $stmt = $pdo->prepare($sql);
-        $stmt->execute($params);
+        $stmt->execute(['id' => $filterId]);
         $baseRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Map formatted interments by interment_id
         $intermentMap = [];
         foreach ($baseRows as $row) {
             $formatted = formatInterment($row);
-            $formatted['is_history'] = false;   // add flag
+            $formatted['is_history'] = false;
             $intermentMap[$row['interment_id']] = $formatted;
         }
 
@@ -149,69 +140,59 @@ if ($method === 'GET') {
             return [];
         }
 
-        // 2. Fetch transfer logs for all these interment IDs
         $ids = array_keys($intermentMap);
         $placeholders = implode(',', array_fill(0, count($ids), '?'));
 
         $historySql = "
-            SELECT 
+            SELECT
                 tl.interment_id,
                 tl.transfer_date,
                 tl.reason,
-                tg.grave_id AS history_grave_id,
+                tg.grave_id   AS history_grave_id,
                 tg.grave_code AS history_grave_code,
-                tg.row_num AS history_row_num,
-                tg.col_num AS history_col_num,
-                tg.status AS history_grave_status,
-                tg.remarks AS history_grave_remarks,
-                b.block_id AS history_block_id,
-                b.block_name AS history_block_name,
-                b.block_type AS history_block_type
+                tg.row_num    AS history_row_num,
+                tg.col_num    AS history_col_num,
+                tg.status     AS history_grave_status,
+                tg.remarks    AS history_grave_remarks,
+                b.block_id    AS history_block_id,
+                b.block_name  AS history_block_name,
+                b.block_type  AS history_block_type
             FROM transfer_log tl
             LEFT JOIN graves tg ON tl.to_grave_id = tg.grave_id
-            LEFT JOIN blocks b ON tg.block_id = b.block_id
+            LEFT JOIN blocks b  ON tg.block_id    = b.block_id
             WHERE tl.interment_id IN ($placeholders)
         ";
         $histStmt = $pdo->prepare($historySql);
         $histStmt->execute($ids);
         $historyLogs = $histStmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // 3. Start flat list with current interments
         $flatList = array_values($intermentMap);
 
-        // 4. Create history rows by cloning the corresponding current row
         foreach ($historyLogs as $log) {
             $intermentId = $log['interment_id'];
             if (!isset($intermentMap[$intermentId])) {
                 continue;
             }
 
-            // Clone the current record
             $historyRow = $intermentMap[$intermentId];
             $historyRow['is_history'] = true;
 
-            //the name i guess
-            $historyRow['deceased_name'] = "[History " . $log['transfer_date'] . "] " . $historyRow['deceased_name'];
-
-            // Override location fields with the historical grave data
+            $historyRow['deceased_name']   = "[History " . $log['transfer_date'] . "] " . $historyRow['deceased_name'];
             $historyRow['current_grave_id'] = $log['history_grave_id'] ? (int) $log['history_grave_id'] : null;
-            $historyRow['grave_code']        = $log['history_grave_code'];
-            $historyRow['row_num']           = $log['history_row_num'] ? (int) $log['history_row_num'] : null;
-            $historyRow['col_num']           = $log['history_col_num'] ? (int) $log['history_col_num'] : null;
-            $historyRow['grave_status']      = $log['history_grave_status'];
-            $historyRow['grave_remarks']     = $log['history_grave_remarks'];
-            $historyRow['block_id']          = $log['history_block_id'] ? (int) $log['history_block_id'] : null;
-            $historyRow['block_name']        = $log['history_block_name'];
-            $historyRow['block_type']        = $log['history_block_type'];
-            $historyRow['transfer_date']    = $log['transfer_date'];
-
-            // Append move reason to remarks
-            $historyRow['remarks'] = "Moved on {$log['transfer_date']}. Reason: {$log['reason']}. " . ($historyRow['remarks'] ?? '');
+            $historyRow['grave_code']      = $log['history_grave_code'];
+            $historyRow['row_num']         = $log['history_row_num'] ? (int) $log['history_row_num'] : null;
+            $historyRow['col_num']         = $log['history_col_num'] ? (int) $log['history_col_num'] : null;
+            $historyRow['grave_status']    = $log['history_grave_status'];
+            $historyRow['grave_remarks']   = $log['history_grave_remarks'];
+            $historyRow['block_id']        = $log['history_block_id'] ? (int) $log['history_block_id'] : null;
+            $historyRow['block_name']      = $log['history_block_name'];
+            $historyRow['block_type']      = $log['history_block_type'];
+            $historyRow['transfer_date']   = $log['transfer_date'];
+            $historyRow['remarks']         = "Moved on {$log['transfer_date']}. Reason: {$log['reason']}. " . ($historyRow['remarks'] ?? '');
 
             $flatList[] = $historyRow;
         }
 
-        // 5. Sort: by interment_id DESC (newest first), then current before history
         usort($flatList, function ($a, $b) {
             if ($a['interment_id'] != $b['interment_id']) {
                 return $b['interment_id'] - $a['interment_id'];
@@ -222,7 +203,7 @@ if ($method === 'GET') {
         return $flatList;
     };
 
-    // --- Scenario A: Requesting a SPECIFIC resource /records.php/{id} ---
+    // --- Scenario A: specific resource /records.php/{id} ---
     if ($resourceId) {
         $flatList = $buildFlatList($resourceId);
 
@@ -230,43 +211,218 @@ if ($method === 'GET') {
             Response::error('Interment not found.', 404);
         }
 
-        // Return with history_included flag
         Response::success('Interment retrieved', [
             'history_included' => true,
-            'interments' => $flatList
+            'interments'       => $flatList,
         ]);
     }
 
-    // --- Scenario B: Requesting the COLLECTION /records.php ---
+    // --- Scenario B: collection /records.php ---
     else {
-        // Build the complete flat list (all current + all history)
-        $allFlatList = $buildFlatList(null);
+        // ---- Inputs ----
+        $searchTerm = isset($_GET['search_term']) ? trim((string) $_GET['search_term']) : '';
+        if ($searchTerm !== '' && mb_strlen($searchTerm) < 3) {
+            Response::error("Search term must be at least 3 characters long", 400);
+        }
 
-        // Pagination (optional but recommended)
-        $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 100;
-        $limit = max(1, min($limit, 500));
-        $page  = isset($_GET['page']) ? (int) $_GET['page'] : 1;
-        $page  = max(1, $page);
+        $limit = max(1, min((int) ($_GET['limit'] ?? 100), 500));
+        $page  = max(1, (int) ($_GET['page'] ?? 1));
 
-        $totalRecords = count($allFlatList);
-        $totalPages = ceil($totalRecords / $limit);
-        $page = min($page, $totalPages ?: 1);
-        $offset = ($page - 1) * $limit;
+        // ---- Build search clauses (current branch: aliases i/g/b; history: i/tg/b/tl) ----
+        $searchSQLCurrent = '';
+        $searchSQLHistory = '';
+        $searchParams     = [];
 
-        $paginatedList = array_slice($allFlatList, $offset, $limit);
+        if ($searchTerm !== '') {
+            $like = '%' . $searchTerm . '%';
 
-        $pagination = [
-            'current_page'  => $page,
-            'per_page'      => $limit,
-            'total_records' => $totalRecords,
-            'total_pages'   => $totalPages,
+            $currentSearchCols = [
+                'i.control_number',
+                'i.deceased_name',
+                'i.deceased_sex',
+                'i.last_known_address',
+                'i.death_certificate',
+                'i.contact_person_name',
+                'i.contact_person_phone_number',
+                'i.contact_person_email',
+                'i.contact_person_address',
+                'i.assistance_type',
+                'i.burial_permit_number',
+                'i.transfer_permit_number',
+                'i.transfer_permit_issued_by',
+                'i.exhumation_permit_number',
+                'i.status',
+                'i.remarks',
+                'g.grave_code',
+                'b.block_name',
+                'b.block_type',
+            ];
+
+            // For history we ALSO search:
+            //   - tl.transfer_date (so searching a date works)
+            //   - the display strings the API actually emits:
+            //       "[History <date>] <name>"
+            //       "Moved on <date>. Reason: <reason>. <remarks>"
+            $historySearchCols = [
+                'i.control_number',
+                'i.deceased_name',
+                'i.deceased_sex',
+                'i.last_known_address',
+                'i.death_certificate',
+                'i.contact_person_name',
+                'i.contact_person_phone_number',
+                'i.contact_person_email',
+                'i.contact_person_address',
+                'i.assistance_type',
+                'i.burial_permit_number',
+                'i.transfer_permit_number',
+                'i.transfer_permit_issued_by',
+                'i.exhumation_permit_number',
+                'i.status',
+                'i.remarks',
+                'tg.grave_code',
+                'b.block_name',
+                'b.block_type',
+                'tl.reason',
+                'tl.transfer_date',
+            ];
+
+            $cp = [];
+            foreach ($currentSearchCols as $c) {
+                $cp[] = "$c LIKE ?";
+                $searchParams[] = $like;
+            }
+            $searchSQLCurrent = ' AND (' . implode(' OR ', $cp) . ')';
+
+            $hp = [];
+            foreach ($historySearchCols as $c) {
+                $hp[] = "$c LIKE ?";
+                $searchParams[] = $like;
+            }
+
+            // Extra: match against the *computed* strings shown in JSON.
+            $hp[] = "CONCAT('[History ', COALESCE(tl.transfer_date, ''), '] ', COALESCE(i.deceased_name, '')) LIKE ?";
+            $searchParams[] = $like;
+
+            $hp[] = "CONCAT('Moved on ', COALESCE(tl.transfer_date, ''), '. Reason: ', COALESCE(tl.reason, ''), '. ', COALESCE(i.remarks, '')) LIKE ?";
+            $searchParams[] = $like;
+
+            $searchSQLHistory = ' AND (' . implode(' OR ', $hp) . ')';
+        }
+
+        // ---- Current branch (is_history = 0) ----
+        $currentSQL = "
+            SELECT
+                i.interment_id, 0 AS is_history,
+                i.control_number, i.deceased_name, i.deceased_sex,
+                i.last_known_address, i.death_certificate,
+                i.deceased_date_of_birth, i.deceased_date_of_death,
+                i.current_grave_id, i.transfer_to_grave,
+                i.contact_person_name, i.contact_person_phone_number,
+                i.contact_person_email, i.contact_person_address,
+                i.assistance_type, i.burial_permit_number, i.burial_permit_date,
+                i.transfer_permit_number, i.transfer_permit_issued_by, i.transfer_permit_date,
+                i.exhumation_permit_number, i.exhumation_permit_date,
+                i.date_buried, i.date_exhumed, i.burial_clearance_date,
+                i.lease_expiration_date, i.status, i.remarks,
+                g.grave_code, g.row_num, g.col_num,
+                g.status AS grave_status, g.remarks AS grave_remarks,
+                b.block_id, b.block_name, b.block_type,
+                NULL AS transfer_date
+            FROM interments i
+            LEFT JOIN graves g ON i.current_grave_id = g.grave_id AND g.deleted_at IS NULL
+            LEFT JOIN blocks b ON g.block_id          = b.block_id AND b.deleted_at IS NULL
+            WHERE i.deleted_at IS NULL
+            $searchSQLCurrent
+        ";
+
+        // ---- History branch (is_history = 1) ----
+        $historySQL = "
+            SELECT
+                i.interment_id, 1 AS is_history,
+                i.control_number, i.deceased_name, i.deceased_sex,
+                i.last_known_address, i.death_certificate,
+                i.deceased_date_of_birth, i.deceased_date_of_death,
+                tg.grave_id AS current_grave_id, i.transfer_to_grave,
+                i.contact_person_name, i.contact_person_phone_number,
+                i.contact_person_email, i.contact_person_address,
+                i.assistance_type, i.burial_permit_number, i.burial_permit_date,
+                i.transfer_permit_number, i.transfer_permit_issued_by, i.transfer_permit_date,
+                i.exhumation_permit_number, i.exhumation_permit_date,
+                i.date_buried, i.date_exhumed, i.burial_clearance_date,
+                i.lease_expiration_date, i.status,
+                CONCAT('Moved on ', tl.transfer_date, '. Reason: ',
+                       COALESCE(tl.reason, ''), '. ', COALESCE(i.remarks, '')) AS remarks,
+                tg.grave_code, tg.row_num, tg.col_num,
+                tg.status AS grave_status, tg.remarks AS grave_remarks,
+                b.block_id, b.block_name, b.block_type,
+                tl.transfer_date
+            FROM transfer_log tl
+            INNER JOIN interments i ON tl.interment_id = i.interment_id AND i.deleted_at IS NULL
+            LEFT  JOIN graves tg    ON tl.to_grave_id  = tg.grave_id
+            LEFT  JOIN blocks b     ON tg.block_id     = b.block_id
+            WHERE 1 = 1
+            $searchSQLHistory
+        ";
+
+        // ---- Union (note the outer parens around the WHOLE union) ----
+        $unionSQL = "($currentSQL) UNION ALL ($historySQL)";
+
+        // ---- COUNT (filtered) ----
+        // Wrapped in outer parens so the alias attaches to the union, not just the 2nd branch.
+        $countStmt = $pdo->prepare("SELECT COUNT(*) FROM ($unionSQL) AS combined");
+        $countStmt->execute($searchParams);
+        $totalRecords = (int) $countStmt->fetchColumn();
+
+        $totalPages = (int) ceil($totalRecords / $limit);
+        $page       = min($page, max(1, $totalPages));
+        $offset     = ($page - 1) * $limit;
+
+        // ---- Fetch page (filtered, ordered, limited) ----
+        // $limit and $offset are strict ints at this point → safe to interpolate.
+        $pageSQL = "
+            SELECT *
+            FROM ($unionSQL) AS combined
+            ORDER BY interment_id DESC, is_history ASC
+            LIMIT $limit OFFSET $offset
+        ";
+        $pageStmt = $pdo->prepare($pageSQL);
+        $pageStmt->execute($searchParams);
+        $rows = $pageStmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // ---- Format current page only (≤500 rows) ----
+        $items = [];
+        foreach ($rows as $row) {
+            $isHistory = (bool) $row['is_history'];
+            $formatted = formatInterment($row);
+            $formatted['is_history'] = $isHistory;
+
+            if ($isHistory) {
+                $formatted['transfer_date'] = $row['transfer_date'];
+                if (!empty($row['transfer_date'])) {
+                    $formatted['deceased_name'] =
+                        "[History " . $row['transfer_date'] . "] " . $formatted['deceased_name'];
+                }
+            }
+
+            $items[] = $formatted;
+        }
+
+        // ---- Response ----
+        $payload = [
+            'pagination' => [
+                'current_page'  => $page,
+                'per_page'      => $limit,
+                'total_records' => $totalRecords,
+                'total_pages'   => $totalPages,
+            ],
+            'interments' => $items,
         ];
+        if ($searchTerm !== '') {
+            $payload['search_term'] = $searchTerm;
+        }
 
-        // Return paginated flat list (no history_included flag, it's implied)
-        Response::success('Interments retrieved', [
-            'pagination' => $pagination,
-            'interments' => $paginatedList
-        ]);
+        Response::success('Interments retrieved', $payload);
     }
 }
 
