@@ -48,6 +48,53 @@ document.addEventListener('DOMContentLoaded', function () {
         return displayRole === 'Ground Staff' ? 'Grounds Staff' : displayRole;
     }
 
+    function formatPhoneDisplay(phone) {
+        if (!phone) return '';
+        var digits = String(phone).replace(/\D/g, '');
+
+        if (digits.length >= 12 && digits.slice(0, 2) === '63') {
+            digits = digits.slice(2);
+        } else if (digits.length === 11 && digits.charAt(0) === '0') {
+            digits = digits.slice(1);
+        }
+
+        digits = digits.slice(0, 10);
+        if (digits.length === 0) return '';
+
+        var out = '+63';
+        if (digits.length > 0) out += ' ' + digits.slice(0, 3);
+        if (digits.length > 3) out += ' ' + digits.slice(3, 6);
+        if (digits.length > 6) out += ' ' + digits.slice(6, 10);
+        return out;
+    }
+
+    function formatPhoneInput(value) {
+        var raw = String(value).replace(/^\+63\s*/, '');
+        var digits = raw.replace(/\D/g, '');
+        digits = digits.replace(/^0/, '').replace(/^63/, '');
+        digits = digits.slice(0, 10);
+
+        var formatted = '+63';
+        if (digits.length > 0) formatted += ' ' + digits.slice(0, 3);
+        if (digits.length > 3) formatted += ' ' + digits.slice(3, 6);
+        if (digits.length > 6) formatted += ' ' + digits.slice(6, 10);
+        return formatted;
+    }
+
+    function formatPhoneForDb(displayValue) {
+        var digits = String(displayValue).replace(/\D/g, '');
+        if (digits.length === 12 && digits.slice(0, 2) === '63') {
+            return '+' + digits;
+        }
+        if (digits.length === 11 && digits.charAt(0) === '0') {
+            return '+63' + digits.slice(1);
+        }
+        if (digits.length === 10) {
+            return '+63' + digits;
+        }
+        return null;
+    }
+
     async function fetchAllMatchingUsers() {
         const all = [];
         let serverPage = 1;
@@ -153,7 +200,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function buildRenderKey() {
         if (state.data.length === 0) return 'empty:' + state.editingId + ':' + state.page;
         return state.data.map(function (u) {
-            return u.user_id + '|' + u.role + '|' + u.status;
+            return u.user_id + '|' + u.role + '|' + u.status + '|' + (u.phone_number || '');
         }).join(',') + ':' + state.editingId + ':' + state.page;
     }
 
@@ -189,6 +236,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 ? '<select class="cellSelect" data-field="status">' + buildOptions(STATUS_OPTIONS, user.status) + '</select>'
                 : escapeHtml(user.status);
 
+            const phoneCell = isEditing
+                ? '<input type="tel" class="cellSelect" data-field="phone_number" ' +
+                'value="' + escapeHtml(formatPhoneDisplay(user.phone_number)) + '" ' +
+                'placeholder="+63 912 345 6789" maxlength="16" autocomplete="off" ' +
+                'inputmode="numeric" ' +
+                'style="background-image:none;padding-right:10px;">'
+                : escapeHtml(formatPhoneDisplay(user.phone_number));
+
             const actions = isEditing
                 ? '<button type="button" class="actionBtn save-action" data-action="save" title="Save"><i class="fas fa-check"></i></button>' +
                 '<button type="button" class="actionBtn delete-action" data-action="delete" title="Delete"><i class="fas fa-trash"></i></button>'
@@ -199,7 +254,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 '<td>' + escapeHtml(user.name) + '</td>' +
                 '<td>' + escapeHtml(user.username) + '</td>' +
                 '<td>' + escapeHtml(user.email) + '</td>' +
-                '<td>' + escapeHtml(user.phone_number) + '</td>' +
+                '<td>' + phoneCell + '</td>' +
                 '<td>' + roleCell + '</td>' +
                 '<td>' + statusCell + '</td>' +
                 '<td>' + escapeHtml(user.user_id) + '</td>' +
@@ -322,6 +377,13 @@ document.addEventListener('DOMContentLoaded', function () {
         els.searchInput.style.paddingRight = hasText ? '36px' : '';
     }
 
+    els.tableBody.addEventListener('input', function (e) {
+        const input = e.target;
+        if (input && input.matches && input.matches('input[data-field="phone_number"]')) {
+            input.value = formatPhoneInput(input.value);
+        }
+    });
+
     els.tableBody.addEventListener('click', async function (e) {
         const btn = e.target.closest('button[data-action]');
         if (!btn) return;
@@ -336,13 +398,33 @@ document.addEventListener('DOMContentLoaded', function () {
             state.editingId = userId;
             state.lastRenderKey = '';
             renderTable(false);
+            const phoneInput = row.querySelector('input[data-field="phone_number"]');
+            if (phoneInput) setTimeout(function () { phoneInput.focus(); }, 30);
             return;
         }
 
         if (action === 'save') {
             const roleSel = row.querySelector('select[data-field="role"]');
             const statusSel = row.querySelector('select[data-field="status"]');
+            const phoneInput = row.querySelector('input[data-field="phone_number"]');
             if (!roleSel || !statusSel) return;
+
+            const body = {
+                role: toDbRole(roleSel.value),
+                status: statusSel.value
+            };
+
+            if (phoneInput) {
+                const trimmed = phoneInput.value.trim();
+                if (trimmed !== '' && trimmed !== '+63' && trimmed !== '+63 ') {
+                    const forDb = formatPhoneForDb(trimmed);
+                    if (forDb === null) {
+                        alert('Please enter a valid Philippine mobile number (10 digits after +63).');
+                        return;
+                    }
+                    body.phone_number = forDb;
+                }
+            }
 
             btn.disabled = true;
 
@@ -350,10 +432,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 const res = await fetch(API_URL + '/' + userId, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        role: toDbRole(roleSel.value),
-                        status: statusSel.value
-                    })
+                    body: JSON.stringify(body)
                 });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.message || data.error || 'Update failed');
