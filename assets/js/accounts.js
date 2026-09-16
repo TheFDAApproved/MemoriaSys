@@ -1,8 +1,11 @@
 document.addEventListener('DOMContentLoaded', function () {
     const MAX_PAGE_BUTTONS = 5;
+    const PER_PAGE = 10;
+    const MAX_SERVER_PAGES = 200;
     const API_URL = 'api/users.php';
 
     const state = {
+        allUsers: [],
         data: [],
         page: 1,
         totalPages: 1,
@@ -45,18 +48,18 @@ document.addEventListener('DOMContentLoaded', function () {
         return displayRole === 'Ground Staff' ? 'Grounds Staff' : displayRole;
     }
 
-    async function fetchAccounts(options) {
-        const opts = options || {};
-        const silent = !!opts.silent;
-        const reqId = ++state.requestId;
+    async function fetchAllMatchingUsers() {
+        const all = [];
+        let serverPage = 1;
+        let totalServerPages = 1;
 
-        const params = new URLSearchParams();
-        params.set('page', state.page);
-        if (state.appliedSearch) params.set('search_term', state.appliedSearch);
-        if (state.appliedRole && state.appliedRole !== 'all') params.set('role', state.appliedRole);
-        if (state.appliedStatus && state.appliedStatus !== 'all') params.set('status', state.appliedStatus);
+        while (serverPage <= totalServerPages && serverPage <= MAX_SERVER_PAGES) {
+            const params = new URLSearchParams();
+            params.set('page', serverPage);
+            if (state.appliedSearch) params.set('search_term', state.appliedSearch);
+            if (state.appliedRole && state.appliedRole !== 'all') params.set('role', state.appliedRole);
+            if (state.appliedStatus && state.appliedStatus !== 'all') params.set('status', state.appliedStatus);
 
-        try {
             const res = await fetch(API_URL + '?' + params.toString());
             const text = await res.text();
 
@@ -71,13 +74,45 @@ document.addEventListener('DOMContentLoaded', function () {
                 throw new Error(data.message || data.error || ('HTTP ' + res.status));
             }
 
-            if (reqId !== state.requestId) return;
-
             const payload = data.data || data;
             const users = Array.isArray(payload.users) ? payload.users : [];
             const pagination = payload.pagination || {};
 
-            state.data = users.map(function (u) {
+            for (let i = 0; i < users.length; i++) all.push(users[i]);
+            totalServerPages = Math.max(1, parseInt(pagination.total_pages, 10) || 1);
+            serverPage++;
+        }
+
+        return all;
+    }
+
+    function sortUsers(users) {
+        const rank = function (s) { return s === 'Unverified' ? 0 : 1; };
+        return users.slice().sort(function (a, b) {
+            const ra = rank(a.status);
+            const rb = rank(b.status);
+            if (ra !== rb) return ra - rb;
+            return (Number(a.user_id) || 0) - (Number(b.user_id) || 0);
+        });
+    }
+
+    function applyPage() {
+        state.totalPages = Math.max(1, Math.ceil(state.allUsers.length / PER_PAGE));
+        if (state.page > state.totalPages) state.page = state.totalPages;
+        if (state.page < 1) state.page = 1;
+        const start = (state.page - 1) * PER_PAGE;
+        state.data = state.allUsers.slice(start, start + PER_PAGE);
+    }
+
+    async function loadUsers(opts) {
+        const silent = !!(opts && opts.silent);
+        const reqId = ++state.requestId;
+
+        try {
+            const raw = await fetchAllMatchingUsers();
+            if (reqId !== state.requestId) return;
+
+            state.allUsers = sortUsers(raw.map(function (u) {
                 return {
                     user_id: u.user_id,
                     name: u.name,
@@ -87,10 +122,9 @@ document.addEventListener('DOMContentLoaded', function () {
                     role: toDisplayRole(u.role),
                     status: u.status
                 };
-            });
-            state.page = pagination.current_page || 1;
-            state.totalPages = pagination.total_pages || 1;
+            }));
 
+            applyPage();
             renderTable(silent);
             renderPagination(silent);
         } catch (e) {
@@ -117,19 +151,20 @@ document.addEventListener('DOMContentLoaded', function () {
     const STATUS_OPTIONS = ['Verified', 'Unverified'];
 
     function buildRenderKey() {
-        if (state.data.length === 0) return 'empty:' + state.editingId;
+        if (state.data.length === 0) return 'empty:' + state.editingId + ':' + state.page;
         return state.data.map(function (u) {
             return u.user_id + '|' + u.role + '|' + u.status;
-        }).join(',') + ':' + state.editingId;
+        }).join(',') + ':' + state.editingId + ':' + state.page;
     }
 
     function renderTable(silent) {
         const rows = state.data;
 
         if (rows.length === 0) {
-            if (state.lastRenderKey !== 'empty:' + state.editingId) {
+            const emptyKey = 'empty:' + state.editingId + ':' + state.page;
+            if (state.lastRenderKey !== emptyKey) {
                 els.tableBody.innerHTML = '';
-                state.lastRenderKey = 'empty:' + state.editingId;
+                state.lastRenderKey = emptyKey;
             }
             els.noData.style.display = 'flex';
             return;
@@ -186,9 +221,6 @@ document.addEventListener('DOMContentLoaded', function () {
     function renderPagination(silent) {
         const total = state.totalPages;
 
-        if (state.page > total) state.page = total;
-        if (state.page < 1) state.page = 1;
-
         els.currentPageNum.textContent = state.page;
         els.totalPagesNum.textContent = total;
 
@@ -209,7 +241,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 startPage = 1;
                 endPage = MAX_PAGE_BUTTONS;
             }
-
             if (endPage > total) {
                 endPage = total;
                 startPage = total - MAX_PAGE_BUTTONS + 1;
@@ -217,7 +248,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         const existingButtons = els.carouselTrack.querySelectorAll('button');
-        const existingValues = Array.from(existingButtons).map(function (b) { return b.textContent; });
+        const existingValues = Array.prototype.map.call(existingButtons, function (b) { return b.textContent; });
         const newValues = [];
         for (let i = startPage; i <= endPage; i++) newValues.push(String(i));
 
@@ -225,7 +256,7 @@ document.addEventListener('DOMContentLoaded', function () {
             existingValues.every(function (v, i) { return v === newValues[i]; });
 
         if (sameSet) {
-            existingButtons.forEach(function (btn, i) {
+            Array.prototype.forEach.call(existingButtons, function (btn, i) {
                 const pageNum = startPage + i;
                 btn.classList.toggle('active', pageNum === state.page);
             });
@@ -239,7 +270,9 @@ document.addEventListener('DOMContentLoaded', function () {
             btn.type = 'button';
             btn.textContent = i;
             if (i === state.page) btn.classList.add('active');
-            btn.addEventListener('click', function () { goToPage(i); });
+            btn.addEventListener('click', (function (pageNum) {
+                return function () { goToPage(pageNum); };
+            })(i));
             els.carouselTrack.appendChild(btn);
         }
 
@@ -270,8 +303,17 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function goToPage(page) {
         if (page < 1 || page > state.totalPages) return;
+        if (page === state.page) return;
+
         state.page = page;
-        fetchAccounts();
+        state.editingId = null;
+        state.lastRenderKey = '';
+
+        applyPage();
+        renderTable(false);
+        renderPagination(false);
+
+        if (els.tableScrollWrapper) els.tableScrollWrapper.scrollTop = 0;
     }
 
     function updateCloseButton() {
@@ -302,6 +344,8 @@ document.addEventListener('DOMContentLoaded', function () {
             const statusSel = row.querySelector('select[data-field="status"]');
             if (!roleSel || !statusSel) return;
 
+            btn.disabled = true;
+
             try {
                 const res = await fetch(API_URL + '/' + userId, {
                     method: 'PUT',
@@ -316,10 +360,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 state.editingId = null;
                 state.lastRenderKey = '';
-                fetchAccounts();
+
+                await loadUsers();
             } catch (err) {
                 console.error('[accounts] update failed:', err);
                 alert(err.message || 'Update failed');
+                btn.disabled = false;
             }
             return;
         }
@@ -327,6 +373,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (action === 'delete') {
             if (!confirm('Delete this account? This action can be undone by restoring from database.')) return;
 
+            btn.disabled = true;
             try {
                 const res = await fetch(API_URL + '/' + userId, { method: 'DELETE' });
                 const data = await res.json();
@@ -334,10 +381,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 if (state.editingId === userId) state.editingId = null;
                 state.lastRenderKey = '';
-                fetchAccounts();
+                await loadUsers();
             } catch (err) {
                 console.error('[accounts] delete failed:', err);
                 alert(err.message || 'Delete failed');
+                btn.disabled = false;
             }
         }
     });
@@ -351,12 +399,11 @@ document.addEventListener('DOMContentLoaded', function () {
         state.appliedRole = 'all';
 
         const val = els.searchInput.value;
-        // API requires search_term >= 3 chars. Skip 1-2 char keystrokes.
         if (val.length === 1 || val.length === 2) return;
 
         state.appliedSearch = val;
         state.page = 1;
-        fetchAccounts({ silent: true });
+        loadUsers({ silent: true });
     });
 
     els.searchInput.addEventListener('keydown', function (e) {
@@ -374,7 +421,7 @@ document.addEventListener('DOMContentLoaded', function () {
         state.appliedSearch = '';
         updateCloseButton();
         state.page = 1;
-        fetchAccounts({ silent: true });
+        loadUsers({ silent: true });
         els.searchInput.focus();
     });
 
@@ -383,7 +430,7 @@ document.addEventListener('DOMContentLoaded', function () {
         state.appliedRole = els.roleFilter.value;
         state.appliedSearch = els.searchInput.value;
         state.page = 1;
-        fetchAccounts();
+        loadUsers();
     });
 
     els.prevBtn.addEventListener('click', function () { goToPage(state.page - 1); });
@@ -391,8 +438,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
     window.addEventListener('resize', centerActivePage);
 
-    (function init() {
-        updateCloseButton();
-        fetchAccounts();
-    })();
+    updateCloseButton();
+    loadUsers();
 });
