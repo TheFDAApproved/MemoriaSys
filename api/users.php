@@ -43,46 +43,7 @@ if ($method === 'GET') {
         Response::error("Forbidden", 403);
     }
 
-    // SCENARIO B: GET Search
-    if (isset($_GET['search']) && trim($_GET['search']) !== '') {
-        $searchRaw = trim($_GET['search']);
-        if (strlen($searchRaw) < 3) {
-            Response::error("Search term must be at least 3 characters long", 400);
-        }
-
-        $searchTerm = '%' . $searchRaw . '%';
-        $sql = "
-            SELECT user_id, username, email, role, status, phone_number, name
-            FROM users
-            WHERE (
-                username LIKE :search_username 
-                OR email LIKE :search_email 
-                OR name LIKE :search_name 
-                OR phone_number LIKE :search_phone
-            )
-            AND deleted_at IS NULL
-            ORDER BY user_id DESC
-            LIMIT 11
-        ";
-
-        $stmt = $pdo->prepare($sql);
-        $stmt->execute([
-            ':search_username' => $searchTerm,
-            ':search_email'    => $searchTerm,
-            ':search_name'     => $searchTerm,
-            ':search_phone'    => str_replace('%09', '%+639', $searchTerm)
-        ]);
-
-        systemLog("{$userData['name']} ({$userData['username']}) searched users with term: {$searchRaw}", $userData['user_id']);
-
-        $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        if ($users) {
-            Response::success("Search results retrieved", ["users" => $users, "search_term" => $searchRaw]);
-        }
-        Response::error("No users found matching the search criteria (" . $searchRaw . ")", 404);
-    }
-
-    // SCENARIO C: GET /users.php/{id} (Get specific user)
+    // SCENARIO B: GET /users.php/{id} (Get specific user)
     if (is_numeric($resourceId)) {
         $stmt = $pdo->prepare("
             SELECT user_id, username, email, role, status, phone_number, name
@@ -100,33 +61,152 @@ if ($method === 'GET') {
         Response::error("User not found", 404);
     }
 
-    // SCENARIO D: GET /users.php (List all users)
+    // SCENARIO C: GET /users.php (List with search + role + status + pagination)
     if ($resourceId === null) {
+
+        // ---- Inputs ----
+        $searchTerm = isset($_GET['search_term']) ? trim((string) $_GET['search_term']) : '';
+        if ($searchTerm !== '' && mb_strlen($searchTerm) < 3) {
+            Response::error("Search term must be at least 3 characters long", 400);
+        }
+
         $limit = 20;
+        $page  = max(1, (int) ($_GET['page'] ?? 1));
 
-        $totalUsers = (int) $pdo->query("SELECT COUNT(*) FROM users WHERE deleted_at IS NULL")->fetchColumn();
-        $totalPages = max(1, (int)ceil($totalUsers / $limit));
+        // ---- Role filter (admin | office | grounds, comma-separated) ----
+        $roleRaw = $_GET['role'] ?? '';
+        if (is_array($roleRaw)) {
+            $roleRaw = implode(',', $roleRaw);
+        }
+        $roleFilter = strtolower(trim((string) $roleRaw));
 
-        $page = max(1, min((int)($_GET['page'] ?? 1), $totalPages));
-        $offset = ($page - 1) * $limit;
+        // Friendly label → DB enum value
+        $roleMap = [
+            'admin'   => ROLE_ADMIN,
+            'office'  => ROLE_OFFICE,
+            'grounds' => ROLE_GROUNDS,
+        ];
 
-        $stmt = $pdo->prepare("
+        $wantedRoles = [];
+        if ($roleFilter !== '') {
+            foreach (explode(',', $roleFilter) as $r) {
+                $r = trim($r);
+                if (!isset($roleMap[$r])) {
+                    Response::error("Invalid role '$r'. Allowed: admin, office, grounds.", 400);
+                }
+                if (!in_array($roleMap[$r], $wantedRoles, true)) {
+                    $wantedRoles[] = $roleMap[$r];
+                }
+            }
+        }
+
+        // ---- Status filter (verified | unverified, comma-separated) ----
+        $statusRaw = $_GET['status'] ?? '';
+        if (is_array($statusRaw)) {
+            $statusRaw = implode(',', $statusRaw);
+        }
+        $statusFilter = strtolower(trim((string) $statusRaw));
+
+        // Friendly label → DB enum value
+        $statusMap = [
+            'verified'   => STATUS_VERIFIED,
+            'unverified' => STATUS_UNVERIFIED,
+        ];
+
+        $wantedStatuses = [];
+        if ($statusFilter !== '') {
+            foreach (explode(',', $statusFilter) as $s) {
+                $s = trim($s);
+                if (!isset($statusMap[$s])) {
+                    Response::error("Invalid status '$s'. Allowed: verified, unverified.", 400);
+                }
+                if (!in_array($statusMap[$s], $wantedStatuses, true)) {
+                    $wantedStatuses[] = $statusMap[$s];
+                }
+            }
+        }
+
+        // ---- Build WHERE + params ----
+        $where  = 'deleted_at IS NULL';
+        $params = [];
+
+        if (!empty($wantedRoles)) {
+            $ph = implode(',', array_fill(0, count($wantedRoles), '?'));
+            $where .= " AND role IN ($ph)";
+            foreach ($wantedRoles as $r) {
+                $params[] = $r;
+            }
+        }
+
+        if (!empty($wantedStatuses)) {
+            $ph = implode(',', array_fill(0, count($wantedStatuses), '?'));
+            $where .= " AND status IN ($ph)";
+            foreach ($wantedStatuses as $s) {
+                $params[] = $s;
+            }
+        }
+
+        if ($searchTerm !== '') {
+            $like      = '%' . $searchTerm . '%';
+            $phoneLike = str_replace('%09', '%+639', $like);
+            $where .= " AND (username LIKE ? OR email LIKE ? OR name LIKE ? OR phone_number LIKE ?)";
+            $params[] = $like;
+            $params[] = $like;
+            $params[] = $like;
+            $params[] = $phoneLike;
+        }
+
+        // ---- Count ----
+        $countStmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE $where");
+        $countStmt->execute($params);
+        $totalUsers = (int) $countStmt->fetchColumn();
+
+        $totalPages = max(1, (int) ceil($totalUsers / $limit));
+        $page       = min($page, $totalPages);
+        $offset     = ($page - 1) * $limit;
+
+        // ---- Fetch page ----
+        // $limit / $offset are strict ints at this point → safe to interpolate.
+        $sql = "
             SELECT user_id, username, email, role, status, phone_number, name
             FROM users
-            WHERE deleted_at IS NULL
+            WHERE $where
             ORDER BY user_id DESC
-            LIMIT :limit OFFSET :offset
-        ");
-        $stmt->bindParam(':limit', $limit, PDO::PARAM_INT);
-        $stmt->bindParam(':offset', $offset, PDO::PARAM_INT);
-        $stmt->execute();
+            LIMIT $limit OFFSET $offset
+        ";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        systemLog("{$userData['name']} ({$userData['username']}) retrieved user list (Page $page)", $userData['user_id']);
+        // ---- Log ----
+        $logParts = [];
+        if ($searchTerm !== '')      $logParts[] = "search='$searchTerm'";
+        if (!empty($wantedRoles))    $logParts[] = 'role=' . implode(',', $wantedRoles);
+        if (!empty($wantedStatuses)) $logParts[] = 'status=' . implode(',', $wantedStatuses);
+        $logSuffix = $logParts ? ' (' . implode(', ', $logParts) . ')' : '';
+        systemLog("{$userData['name']} ({$userData['username']}) retrieved user list (Page $page)$logSuffix", $userData['user_id']);
 
-        Response::success("Users retrieved successfully", [
-            "users" => $stmt->fetchAll(PDO::FETCH_ASSOC),
-            "pagination" => ["current_page" => $page, "per_page" => $limit, "total_users" => $totalUsers, "total_pages" => $totalPages]
-        ]);
+        // ---- Response ----
+        $payload = [
+            'users' => $users,
+            'pagination' => [
+                'current_page' => $page,
+                'per_page'     => $limit,
+                'total_users'  => $totalUsers,
+                'total_pages'  => $totalPages,
+            ],
+        ];
+        if ($searchTerm !== '') {
+            $payload['search_term'] = $searchTerm;
+        }
+        if (!empty($wantedRoles)) {
+            $payload['role'] = $roleFilter;
+        }
+        if (!empty($wantedStatuses)) {
+            $payload['status'] = $statusFilter;
+        }
+
+        Response::success("Users retrieved successfully", $payload);
     }
 
     Response::error("User not found", 404);
