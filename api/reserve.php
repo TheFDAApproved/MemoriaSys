@@ -85,17 +85,21 @@ $formatItem = function ($row) {
 // -----------------------------------------------------------------------------
 if ($method === 'GET') {
 
-    // Base SQL for expiring interments (only non-deleted records)
-    $expiringSQL = "
-        SELECT 'expiring' AS type, i.interment_id, i.control_number, i.deceased_name, i.last_known_address, 
-               i.death_certificate, i.deceased_date_of_birth, i.deceased_date_of_death, i.current_grave_id, 
-               i.transfer_to_grave, i.contact_person_name, i.contact_person_phone_number, i.contact_person_email, 
-               i.assistance_type, i.burial_permit_number, i.burial_permit_date, i.transfer_permit_number, 
-               i.transfer_permit_issued_by, i.transfer_permit_date, i.exhumation_permit_number, 
-               i.exhumation_permit_date, i.date_buried, i.date_exhumed, i.burial_clearance_date, 
+    // ---- Base SELECT: expiring/expired interments (aliases: i, g, b) ----
+    $expiringSelect = "
+        SELECT
+               CASE
+                   WHEN i.lease_expiration_date < CURDATE() THEN 'expired'
+                   ELSE 'expiring'
+               END AS type,
+               i.interment_id, i.control_number, i.deceased_name, i.last_known_address,               i.death_certificate, i.deceased_date_of_birth, i.deceased_date_of_death, i.current_grave_id,
+               i.transfer_to_grave, i.contact_person_name, i.contact_person_phone_number, i.contact_person_email,
+               i.assistance_type, i.burial_permit_number, i.burial_permit_date, i.transfer_permit_number,
+               i.transfer_permit_issued_by, i.transfer_permit_date, i.exhumation_permit_number,
+               i.exhumation_permit_date, i.date_buried, i.date_exhumed, i.burial_clearance_date,
                i.lease_expiration_date, i.status AS interment_status, i.remarks AS interment_remarks,
-               i.deceased_sex, i.contact_person_address, 
-               g.grave_id, g.grave_code, g.row_num, g.col_num, g.status AS grave_status, g.remarks AS grave_remarks, 
+               i.deceased_sex, i.contact_person_address,
+               g.grave_id, g.grave_code, g.row_num, g.col_num, g.status AS grave_status, g.remarks AS grave_remarks,
                b.block_name, b.block_id, b.block_type
         FROM interments i
         LEFT JOIN graves g ON i.current_grave_id = g.grave_id AND g.deleted_at IS NULL
@@ -106,19 +110,22 @@ if ($method === 'GET') {
           AND i.lease_expiration_date <= DATE_ADD(CURDATE(), INTERVAL 1 MONTH)
     ";
 
-    // Base SQL for vacant graves (only non-deleted graves and blocks)
-    $vacantSQL = "
-        SELECT 'vacant' AS type, NULL AS interment_id, NULL AS control_number, NULL AS deceased_name, 
-               NULL AS last_known_address, NULL AS death_certificate, NULL AS deceased_date_of_birth, 
-               NULL AS deceased_date_of_death, NULL AS current_grave_id, NULL AS transfer_to_grave, 
-               NULL AS contact_person_name, NULL AS contact_person_phone_number, NULL AS contact_person_email, 
-               NULL AS assistance_type, NULL AS burial_permit_number, NULL AS burial_permit_date, 
-               NULL AS transfer_permit_number, NULL AS transfer_permit_issued_by, NULL AS transfer_permit_date, 
-               NULL AS exhumation_permit_number, NULL AS exhumation_permit_date, NULL AS date_buried, 
-               NULL AS date_exhumed, NULL AS burial_clearance_date, NULL AS lease_expiration_date, 
-               NULL AS interment_status, NULL AS interment_remarks, g.grave_id, g.grave_code, g.row_num, 
+    // ---- Base SELECT: vacant graves (aliases: g, b; interment fields are NULL) ----
+    // IMPORTANT: column order must match $expiringSelect exactly (MySQL UNION ALL is positional).
+    $vacantSelect = "
+        SELECT 'vacant' AS type, NULL AS interment_id, NULL AS control_number, NULL AS deceased_name,
+               NULL AS last_known_address, NULL AS death_certificate, NULL AS deceased_date_of_birth,
+               NULL AS deceased_date_of_death, NULL AS current_grave_id, NULL AS transfer_to_grave,
+               NULL AS contact_person_name, NULL AS contact_person_phone_number, NULL AS contact_person_email,
+               NULL AS assistance_type, NULL AS burial_permit_number, NULL AS burial_permit_date,
+               NULL AS transfer_permit_number, NULL AS transfer_permit_issued_by, NULL AS transfer_permit_date,
+               NULL AS exhumation_permit_number, NULL AS exhumation_permit_date, NULL AS date_buried,
+               NULL AS date_exhumed, NULL AS burial_clearance_date, NULL AS lease_expiration_date,
+               NULL AS interment_status, NULL AS interment_remarks,
                NULL AS deceased_sex, NULL AS contact_person_address,
-               g.col_num, g.status AS grave_status, g.remarks AS grave_remarks, b.block_name, b.block_id, b.block_type
+               g.grave_id, g.grave_code, g.row_num, g.col_num,
+               g.status AS grave_status, g.remarks AS grave_remarks,
+               b.block_name, b.block_id, b.block_type
         FROM graves g
         LEFT JOIN blocks b ON g.block_id = b.block_id AND b.deleted_at IS NULL
         WHERE g.status = 'Vacant'
@@ -131,12 +138,12 @@ if ($method === 'GET') {
           )
     ";
 
-    // Scenario A: Requesting a SPECIFIC resource /reserve.php/{id}
+    // --- Scenario A: Requesting a SPECIFIC resource /reserve.php/{id} ---
     if ($resourceId) {
-        $expiringSQL .= " AND g.grave_id = :id1";
-        $vacantSQL   .= " AND g.grave_id = :id2";
+        $expiringById = $expiringSelect . " AND g.grave_id = :id1";
+        $vacantById   = $vacantSelect   . " AND g.grave_id = :id2";
 
-        $combinedSQL = "($expiringSQL) UNION ($vacantSQL)";
+        $combinedSQL = "($expiringById) UNION ALL ($vacantById)";
 
         $stmt = $pdo->prepare($combinedSQL);
         $stmt->execute(['id1' => $resourceId, 'id2' => $resourceId]);
@@ -148,40 +155,190 @@ if ($method === 'GET') {
             Response::error('Grave not found or not available for reservation', 404);
         }
     }
-    // Scenario B: Requesting the COLLECTION /reserve.php
+
+    // --- Scenario B: Requesting the COLLECTION /reserve.php ---
     else {
-        // Pagination parameters
-        $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 100;
-        $limit = max(1, min($limit, 500));
-        $page  = isset($_GET['page']) ? (int) $_GET['page'] : 1;
-        $page  = max(1, $page);
+        // ---- Inputs ----
+        $searchTerm = trim((string) ($_GET['search_term'] ?? ''));
+        if ($searchTerm !== '' && mb_strlen($searchTerm) < 3) {
+            Response::error("Search term must be at least 3 characters long", 400);
+        }
 
-        // Combine both result sets with a UNION
-        $combinedSQL = "($expiringSQL) UNION ($vacantSQL) ORDER BY type DESC, lease_expiration_date ASC, block_name, grave_code";
+        $limit = max(1, min((int) ($_GET['limit'] ?? 100), 500));
+        $page  = max(1, (int) ($_GET['page'] ?? 1));
 
-        // Count total
-        $countSQL = "SELECT COUNT(*) FROM ($combinedSQL) AS combined";
-        $totalRecords = (int) $pdo->query($countSQL)->fetchColumn();
-        $totalPages = ceil($totalRecords / $limit);
-        $page = min($page, $totalPages ?: 1);
-        $offset = ($page - 1) * $limit;
+        // ---- Status filter (vacant / expired / expiring, comma-separated) ----
+        $statusRaw = $_GET['status'] ?? '';
+        if (is_array($statusRaw)) {
+            $statusRaw = implode(',', $statusRaw);
+        }
+        $statusFilter    = strtolower(trim((string) $statusRaw));
+        $allowedStatuses = ['vacant', 'expired', 'expiring'];
+        $wantedStatuses  = [];
 
-        // Add pagination
-        $paginatedSQL = $combinedSQL . " LIMIT $limit OFFSET $offset";
-        $stmt = $pdo->prepare($paginatedSQL);
-        $stmt->execute();
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if ($statusFilter !== '') {
+            foreach (explode(',', $statusFilter) as $s) {
+                $s = trim($s);
+                if (!in_array($s, $allowedStatuses, true)) {
+                    Response::error("Invalid status '$s'. Allowed: vacant, expired, expiring.", 400);
+                }
+                if (!in_array($s, $wantedStatuses, true)) {
+                    $wantedStatuses[] = $s;
+                }
+            }
+        }
+
+        // Which branches to run?
+        $runVacant   = empty($wantedStatuses) || in_array('vacant',   $wantedStatuses);
+        $runExpiring = empty($wantedStatuses)
+            || in_array('expired',  $wantedStatuses)
+            || in_array('expiring', $wantedStatuses);
+
+        // Date split for the expiring branch (only when narrowed)
+        $expiringDateClause = '';
+        if (!empty($wantedStatuses)) {
+            $hasExpired  = in_array('expired',  $wantedStatuses);
+            $hasExpiring = in_array('expiring', $wantedStatuses);
+            if ($hasExpired && !$hasExpiring) {
+                $expiringDateClause = " AND i.lease_expiration_date < CURDATE()";
+            } elseif ($hasExpiring && !$hasExpired) {
+                $expiringDateClause = " AND i.lease_expiration_date >= CURDATE()";
+            }
+            // both → no extra clause (both sides already covered by <= CURDATE()+1M)
+        }
+
+        // ---- Build subqueries + search params in matching order ----
+        $subqueries   = [];
+        $searchParams = [];
+
+        if ($runExpiring) {
+            $expiringSearchSQL = '';
+            if ($searchTerm !== '') {
+                $like = '%' . $searchTerm . '%';
+                $expiringSearchCols = [
+                    'i.control_number',
+                    'i.deceased_name',
+                    'i.deceased_sex',
+                    'i.last_known_address',
+                    'i.death_certificate',
+                    'i.contact_person_name',
+                    'i.contact_person_phone_number',
+                    'i.contact_person_email',
+                    'i.contact_person_address',
+                    'i.assistance_type',
+                    'i.burial_permit_number',
+                    'i.transfer_permit_number',
+                    'i.transfer_permit_issued_by',
+                    'i.exhumation_permit_number',
+                    'i.status',
+                    'i.remarks',
+                    'g.grave_code',
+                    'g.status',
+                    'g.remarks',
+                    'b.block_name',
+                    'b.block_type',
+                ];
+                $parts = [];
+                foreach ($expiringSearchCols as $c) {
+                    $parts[] = "$c LIKE ?";
+                    $searchParams[] = $like;
+                }
+                $expiringSearchSQL = ' AND (' . implode(' OR ', $parts) . ')';
+            }
+            $subqueries[] = "($expiringSelect $expiringDateClause $expiringSearchSQL)";
+        }
+
+        if ($runVacant) {
+            $vacantSearchSQL = '';
+            if ($searchTerm !== '') {
+                $like = '%' . $searchTerm . '%';
+                $vacantSearchCols = [
+                    'g.grave_code',
+                    'g.status',
+                    'g.remarks',
+                    'b.block_name',
+                    'b.block_type',
+                ];
+                $parts = [];
+                foreach ($vacantSearchCols as $c) {
+                    $parts[] = "$c LIKE ?";
+                    $searchParams[] = $like;
+                }
+                $vacantSearchSQL = ' AND (' . implode(' OR ', $parts) . ')';
+            }
+            $subqueries[] = "($vacantSelect $vacantSearchSQL)";
+        }
+
+        // No runnable branch (shouldn't happen given the defaults, but be safe)
+        if (empty($subqueries)) {
+            $payload = [
+                'pagination' => [
+                    'current_page'  => 1,
+                    'per_page'      => $limit,
+                    'total_records' => 0,
+                    'total_pages'   => 0,
+                ],
+                'items' => [],
+            ];
+            if ($searchTerm !== '')      $payload['search_term'] = $searchTerm;
+            if (!empty($wantedStatuses)) $payload['status']      = implode(',', $wantedStatuses);
+            Response::success('Available graves retrieved', $payload);
+            exit;
+        }
+
+        // Outer parens around the WHOLE union so COUNT's alias attaches correctly
+        $unionSQL = implode(' UNION ALL ', $subqueries);
+
+        // ---- COUNT (filtered) ----
+        $countStmt = $pdo->prepare("SELECT COUNT(*) FROM ($unionSQL) AS combined");
+        $countStmt->execute($searchParams);
+        $totalRecords = (int) $countStmt->fetchColumn();
+
+        $totalPages = (int) ceil($totalRecords / $limit);
+        $page       = min($page, max(1, $totalPages));
+        $offset     = ($page - 1) * $limit;
+
+        // ---- Fetch page (filtered + ordered + limited in SQL) ----
+        // $limit / $offset are strict ints at this point → safe to interpolate.
+        $pageSQL = "
+            SELECT *
+            FROM ($unionSQL) AS combined
+            ORDER BY
+                CASE type
+                    WHEN 'vacant'   THEN 0
+                    WHEN 'expired'  THEN 1
+                    WHEN 'expiring' THEN 2
+                    ELSE 3
+                END ASC,
+                lease_expiration_date ASC,
+                block_name,
+                grave_code
+            LIMIT $limit OFFSET $offset
+        ";
+        $pageStmt = $pdo->prepare($pageSQL);
+        $pageStmt->execute($searchParams);
+        $rows = $pageStmt->fetchAll(PDO::FETCH_ASSOC);
 
         $items = array_map($formatItem, $rows);
 
-        $pagination = [
-            'current_page'  => $page,
-            'per_page'      => $limit,
-            'total_records' => $totalRecords,
-            'total_pages'   => $totalPages,
+        // ---- Response ----
+        $payload = [
+            'pagination' => [
+                'current_page'  => $page,
+                'per_page'      => $limit,
+                'total_records' => $totalRecords,
+                'total_pages'   => $totalPages,
+            ],
+            'items' => $items,
         ];
+        if ($searchTerm !== '') {
+            $payload['search_term'] = $searchTerm;
+        }
+        if (!empty($wantedStatuses)) {
+            $payload['status'] = implode(',', $wantedStatuses);
+        }
 
-        Response::success('Available graves retrieved', ['pagination' => $pagination, 'items' => $items]);
+        Response::success('Available graves retrieved', $payload);
     }
 }
 
