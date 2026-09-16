@@ -195,7 +195,31 @@ if ($method === 'GET') {
             ]
         ]);
     } else {
-        // List all blocks – role‑based columns, only non‑deleted blocks
+        // ---- Optional search_term ----
+        $searchTerm = isset($_GET['search_term']) ? trim((string) $_GET['search_term']) : '';
+        if ($searchTerm !== '' && mb_strlen($searchTerm) < 3) {
+            Response::error("Search term must be at least 3 characters long", 400);
+        }
+
+        // Build the search clause. Staff can search remarks; public cannot
+        // (public responses don't include remarks, so searching on it would leak).
+        $searchSQL    = '';
+        $searchParams = [];
+        if ($searchTerm !== '') {
+            $like   = '%' . $searchTerm . '%';
+            $cols   = ['b.block_name', 'b.block_type'];
+            if ($isStaff) {
+                $cols[] = 'b.remarks';
+            }
+            $parts = [];
+            foreach ($cols as $c) {
+                $parts[]        = "$c LIKE ?";
+                $searchParams[] = $like;
+            }
+            $searchSQL = ' AND (' . implode(' OR ', $parts) . ')';
+        }
+
+        // List all blocks – role-based columns, only non-deleted blocks
         if ($isStaff) {
             $sql = "
                 SELECT b.*,
@@ -204,24 +228,38 @@ if ($method === 'GET') {
                     (SELECT COUNT(*) FROM graves WHERE block_id = b.block_id AND status = 'Occupied' AND deleted_at IS NULL) AS occupied
                 FROM blocks b
                 WHERE b.deleted_at IS NULL
+                $searchSQL
                 ORDER BY b.block_id
             ";
         } else {
             // Public: include image_link
             $sql = "
-                SELECT 
+                SELECT
                     b.block_id, b.block_name, b.block_type, b.coordinates, b.image_link,
                     (SELECT COUNT(*) FROM graves WHERE block_id = b.block_id AND deleted_at IS NULL) AS total_graves,
                     (SELECT COUNT(*) FROM graves WHERE block_id = b.block_id AND status = 'Vacant' AND deleted_at IS NULL) AS vacant,
                     (SELECT COUNT(*) FROM graves WHERE block_id = b.block_id AND status = 'Occupied' AND deleted_at IS NULL) AS occupied
                 FROM blocks b
                 WHERE b.deleted_at IS NULL
+                $searchSQL
                 ORDER BY b.block_id
             ";
         }
-        $stmt = $pdo->query($sql);
+
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($searchParams);
         $blocks = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        Response::success("Blocks retrieved.", $blocks);
+
+        // Preserve the original bare-array response when no search.
+        // Only wrap when we actually have a search_term to echo back.
+        if ($searchTerm === '') {
+            Response::success("Blocks retrieved.", $blocks);
+        } else {
+            Response::success("Blocks retrieved.", [
+                'blocks'      => $blocks,
+                'search_term' => $searchTerm,
+            ]);
+        }
     }
 }
 
