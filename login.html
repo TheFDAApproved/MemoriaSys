@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memoria</title>
+
+    <meta name="description" content="Management system for the Cemetery. Locate plots, monitor leases, and manage notifications.">
+    <meta name="author" content="Team DND">
+    <meta name="theme-color" content="#2f3136">
+    <meta name="robots" content="index, follow">
+
+    <meta name="geo.region" content="PH-CEB">
+    <meta name="geo.placename" content="Mandaue City">
+
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="/">
+    <meta property="og:site_name" content="Memoria">
+    <meta property="og:title" content="Memoria | Cemetery Management System">
+    <meta property="og:description" content="Efficiently manage and locate records within the Cemetery.">
+    <meta property="og:image" content="https://cdn1.iconfinder.com/data/icons/government-buildings-5/504/cemetery-graveyard-tombstone-burial-memorial-512.png">
+
+    <meta name="twitter:card" content="summary_large_image">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+
+    <link rel="stylesheet" href="assets/css/root.css">
+    <link rel="stylesheet" href="api/rootcolors.php" onerror="console.error('Failed to load custom colors. Using default theme.')">
+    <link rel="stylesheet" href="assets/css/auth.css">
+</head>
+<body>
+    <header>
+        <div class="headerContainer">
+            <div class="logoSection">
+                <img src="assets/images/MandaueLogo.png" alt="Mandaue City Logo">
+                <img src="assets/images/DGSLogo.png" alt="Department of General Services Logo">
+                <div class="headerText">
+                    <h1>Department of General Services</h1>
+                    <h2>Mandaue City Public Cemetery</h2>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="login">
+        <section>
+            <div class="banner">
+                <img src="assets/images/MemoriaLogo.png" alt="Memoria Logo">
+                <p>Mandaue City Public Cemetery</p>
+            </div>
+        </section>
+
+        <section>
+            <div class="inputWrapper">
+                <h2 class="inputHeader">Log into Memoria</h2>
+
+                <form action="#">
+                    <div class="inputBox">
+                        <input type="text" placeholder="Username" required>
+                    </div>
+
+                    <div class="inputBox">
+                        <input type="password" placeholder="Password" required>
+                    </div>
+
+                    <button class="loginBtn" type="submit">Log In</button>
+
+                    <div class="forgotPassword">
+                        <a href="forgot_password.html">Forgot Password?</a>
+                    </div>
+
+                    <a href="signup.html" class="loginPage">Sign Up</a>
+                </form>
+
+                <div class="footer">
+                    <p>System access is restricted to authorized personnel only.</p>
+                    <a href="javascript:void(0)" id="open_contact_btn">Contact Administrator</a>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <div class="contactModal" id="contact_modal">
+        <div class="modalContent">
+            <div class="modalHeader">
+                <h3>Contact Info</h3>
+                <button class="closeBtn" id="close_contact_modal" aria-label="Close">&times;</button>
+            </div>
+            <div class="modalBody">
+                <a href="tel:+639123456789" class="contactItem">
+                    <svg class="contactIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M6.62 10.79a15.053 15.053 0 006.59 6.59l2.2-2.2a1 1 0 011.01-.24 11.36 11.36 0 003.58.57 1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1 11.36 11.36 0 00.57 3.58 1 1 0 01-.24 1.01l-2.21 2.2z" />
+                    </svg>
+                    <span>+63 912 3456 789</span>
+                </a>
+                <a href="mailto:memoria@gmail.com" class="contactItem">
+                    <svg class="contactIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M20 4H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V6a2 2 0 00-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" />
+                    </svg>
+                    <span>memoria@gmail.com</span>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <script src="assets/js/auth.js"></script>
+</body>
+</html>

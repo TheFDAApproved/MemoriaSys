@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memoria</title>
+
+    <meta name="description" content="Management system for the Cemetery. Locate plots, monitor leases, and manage notifications.">
+    <meta name="author" content="Team DND">
+    <meta name="theme-color" content="#2f3136">
+    <meta name="robots" content="index, follow">
+
+    <meta name="geo.region" content="PH-CEB">
+    <meta name="geo.placename" content="Mandaue City">
+
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="/">
+    <meta property="og:site_name" content="Memoria">
+    <meta property="og:title" content="Memoria | Cemetery Management System">
+    <meta property="og:description" content="Efficiently manage and locate records within the Cemetery.">
+    <meta property="og:image" content="https://cdn1.iconfinder.com/data/icons/government-buildings-5/504/cemetery-graveyard-tombstone-burial-memorial-512.png">
+
+    <meta name="twitter:card" content="summary_large_image">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+
+    <link rel="stylesheet" href="assets/css/root.css">
+    <link rel="stylesheet" href="api/rootcolors.php" onerror="console.error('Failed to load custom colors. Using default theme.')">
+    <link rel="stylesheet" href="assets/css/sidebar.css">
+
+    <script>
+        (function () {
+            var ROLE_PAGE = {
+                'Administrator': 'admin.html',
+                'Grounds Staff': 'grounds.html',
+                'Office Staff': 'office.html'
+            };
+
+            var current = (location.pathname.split('/').pop() || '').toLowerCase();
+            var required = null;
+            for (var r in ROLE_PAGE) {
+                if (ROLE_PAGE[r].toLowerCase() === current) { required = ROLE_PAGE[r]; break; }
+            }
+            if (!required) return;
+
+            document.documentElement.style.visibility = 'hidden';
+
+            fetch('api/auth.php', { credentials: 'same-origin' })
+                .then(function (res) {
+                    if (!res.ok) throw new Error('unauth');
+                    return res.json();
+                })
+                .then(function (body) {
+                    var payload = (body && body.data) ? body.data : body;
+                    var role = payload && payload.role;
+                    var target = ROLE_PAGE[role];
+
+                    if (!target) {
+                        location.replace('login.html');
+                        return;
+                    }
+                    if (target !== required) {
+                        location.replace(target);
+                        return;
+                    }
+                    document.documentElement.style.visibility = '';
+                })
+                .catch(function () {
+                    location.replace('login.html');
+                });
+        })();
+    </script>
+</head>
+
+<body>
+    <div class="sidebar" id="sidebar">
+        <script>
+            (function () {
+                var sidebarEl = document.getElementById('sidebar');
+                sidebarEl.classList.add('no-transition');
+                if (localStorage.getItem('sidebarCollapsed') === 'true') {
+                    sidebarEl.classList.add('collapsed');
+                }
+            })();
+        </script>
+
+        <div class="sidebarTop">
+            <div class="memoriaLogo" id="logo_toggle">
+                <img id="cemetery_logo" src="api/images/cemetery_logo.png" onerror="this.onerror = null; this.src = 'assets/images/MemoriaLogo.png'; console.error('Failed to load dynamic logo. Using default logo.');" alt="Memoria Logo" class="fullLogo" />
+                <img id="cemetery_logo_small" src="api/images/cemetery_logo_small.png" onerror="this.onerror = null; this.src='assets/images/MLogo.png'; console.error('Failed to load dynamic logo. Using default logo.');" alt="M Logo" class="collapsedLogo" />
+            </div>
+            <div class="sidebarDateTime" id="date_time_display"></div>
+        </div>
+
+        <div class="sidebarNav">
+            <div class="sidebarSection">Main</div>
+            <a href="dashboard.html" class="menu" target="contentFrame"><i class="fas fa-chart-pie"></i><span>Dashboard</span></a>
+            <a href="records.html" class="menu" target="contentFrame"><i class="fas fa-folder-open"></i><span>Records</span></a>
+            <a href="map.html" class="menu" target="contentFrame"><i class="fas fa-map"></i><span>Map</span></a>
+
+            <div class="sidebarSection">Management</div>
+            <a href="reserve.html" class="menu" target="contentFrame"><i class="fas fa-thumbtack"></i><span>Reserve</span></a>
+            <a href="monitor.html" class="menu" target="contentFrame"><i class="fas fa-bell"></i><span>Monitor</span></a>
+            <a href="payments.html" class="menu" target="contentFrame"><i class="fa-solid fa-receipt"></i><span>Payments</span></a>
+            <a href="accounts.html" class="menu" target="contentFrame"><i class="fas fa-user"></i><span>Accounts</span></a>
+            <a href="reports.html" class="menu" target="contentFrame"><i class="fas fa-file-alt"></i><span>Reports</span></a>
+
+            <div class="sidebarSection">System</div>
+            <a href="site_content.html" class="menu" target="contentFrame"><i class="fa-solid fa-pen-to-square"></i><span>Site Content</span></a>
+            <a href="logs.html" class="menu" target="contentFrame"><i class="fas fa-history"></i><span>Logs</span></a>
+            <a href="settings.html" class="menu" target="contentFrame"><i class="fas fa-cog"></i><span>Settings</span></a>
+        </div>
+
+        <div class="sidebarFooter">
+            <div class="userCard">
+                <div class="userAvatar">
+                    <div class="avatarBox" id="user_avatar">--</div>
+                    <div class="statusIndicator"></div>
+                </div>
+
+                <div class="userDetails">
+                    <span class="username" id="user_name"></span>
+                    <span class="userRole" id="user_role"></span>
+                </div>
+
+                <button class="logout" id="logoutBtn">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <main class="mainContent">
+        <iframe name="contentFrame" src="dashboard.html" title="Main Content Area"></iframe>
+    </main>
+
+    <script src="assets/js/sidebar.js"></script>
+</body>
+</html>
