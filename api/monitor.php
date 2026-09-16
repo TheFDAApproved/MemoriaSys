@@ -126,22 +126,22 @@ $formatTransfer = function ($row) {
 // GET – List all pending interments (or fetch a specific one)
 // -----------------------------------------------------------------------------
 if ($method === 'GET') {
-    // Base SQL
+    // Base SQL (unchanged query shape)
     // We join graves based on the new occupant's transfer_to_grave.
     // We join the old occupant based on who is currently 'Active' in that transfer_to_grave.
     $baseSql = "
-        SELECT 
+        SELECT
             p.*,
             o.interment_id AS old_interment_id, o.control_number AS old_control_number, o.deceased_name AS old_deceased_name,
             o.last_known_address AS old_last_known_address, o.death_certificate AS old_death_certificate,
             o.deceased_date_of_birth AS old_deceased_date_of_birth, o.deceased_date_of_death AS old_deceased_date_of_death,
-            o.current_grave_id AS old_current_grave_id, o.transfer_to_grave AS old_transfer_to_grave, 
-            o.contact_person_name AS old_contact_person_name, o.contact_person_phone_number AS old_contact_person_phone_number, 
-            o.contact_person_email AS old_contact_person_email, o.assistance_type AS old_assistance_type, 
-            o.burial_permit_number AS old_burial_permit_number, o.burial_permit_date AS old_burial_permit_date, 
-            o.transfer_permit_number AS old_transfer_permit_number, o.transfer_permit_issued_by AS old_transfer_permit_issued_by, 
-            o.transfer_permit_date AS old_transfer_permit_date, o.exhumation_permit_number AS old_exhumation_permit_number, 
-            o.exhumation_permit_date AS old_exhumation_permit_date, o.date_buried AS old_date_buried, 
+            o.current_grave_id AS old_current_grave_id, o.transfer_to_grave AS old_transfer_to_grave,
+            o.contact_person_name AS old_contact_person_name, o.contact_person_phone_number AS old_contact_person_phone_number,
+            o.contact_person_email AS old_contact_person_email, o.assistance_type AS old_assistance_type,
+            o.burial_permit_number AS old_burial_permit_number, o.burial_permit_date AS old_burial_permit_date,
+            o.transfer_permit_number AS old_transfer_permit_number, o.transfer_permit_issued_by AS old_transfer_permit_issued_by,
+            o.transfer_permit_date AS old_transfer_permit_date, o.exhumation_permit_number AS old_exhumation_permit_number,
+            o.exhumation_permit_date AS old_exhumation_permit_date, o.date_buried AS old_date_buried,
             o.date_exhumed AS old_date_exhumed, o.burial_clearance_date AS old_burial_clearance_date,
             o.lease_expiration_date AS old_lease_expiration_date, o.status AS old_status, o.remarks AS old_remarks,
             o.contact_person_address AS old_contact_person_address, o.deceased_sex AS old_deceased_sex,
@@ -155,7 +155,7 @@ if ($method === 'GET') {
           AND p.deleted_at IS NULL
     ";
 
-    // Scenario A: Requesting a SPECIFIC resource /monitor.php/{id}
+    // --- Scenario A: Requesting a SPECIFIC resource /monitor.php/{id} ---
     if ($resourceId) {
         $stmt = $pdo->prepare($baseSql . " AND p.interment_id = :id");
         $stmt->execute(['id' => $resourceId]);
@@ -167,24 +167,96 @@ if ($method === 'GET') {
             Response::error('Pending transfer not found.', 404);
         }
     }
-    // Scenario B: Requesting the COLLECTION /monitor.php
+
+    // --- Scenario B: COLLECTION with search + pagination (oldest first) ---
     else {
-        $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 100;
-        $limit = max(1, min($limit, 500));
-        $page  = isset($_GET['page']) ? (int) $_GET['page'] : 1;
-        $page  = max(1, $page);
+        // ---- Inputs ----
+        $searchTerm = isset($_GET['search_term']) ? trim((string) $_GET['search_term']) : '';
+        if ($searchTerm !== '' && mb_strlen($searchTerm) < 3) {
+            Response::error("Search term must be at least 3 characters long", 400);
+        }
 
-        // Count total (only pending, not soft‑deleted)
-        $countSql = "SELECT COUNT(*) FROM interments WHERE status = 'Pending' AND deleted_at IS NULL";
-        $totalRecords = (int) $pdo->query($countSql)->fetchColumn();
-        $totalPages = ceil($totalRecords / $limit);
-        $page = min($page, $totalPages ?: 1);
-        $offset = ($page - 1) * $limit;
+        $limit = max(1, min((int) ($_GET['limit'] ?? 100), 500));
+        $page  = max(1, (int) ($_GET['page'] ?? 1));
 
-        $paginatedSql = $baseSql . " ORDER BY p.interment_id DESC LIMIT $limit OFFSET $offset";
-        $stmt = $pdo->prepare($paginatedSql);
-        $stmt->execute();
-        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        // ---- Build search clause (aliases: p = pending, o = old occupant, g = grave, b = block) ----
+        $searchSQL    = '';
+        $searchParams = [];
+
+        if ($searchTerm !== '') {
+            $like = '%' . $searchTerm . '%';
+
+            $searchCols = [
+                // Pending occupant (p)
+                'p.control_number',
+                'p.deceased_name',
+                'p.deceased_sex',
+                'p.last_known_address',
+                'p.death_certificate',
+                'p.contact_person_name',
+                'p.contact_person_phone_number',
+                'p.contact_person_email',
+                'p.contact_person_address',
+                'p.assistance_type',
+                'p.burial_permit_number',
+                'p.transfer_permit_number',
+                'p.transfer_permit_issued_by',
+                'p.exhumation_permit_number',
+                'p.status',
+                'p.remarks',
+
+                // Old occupant (o)
+                'o.control_number',
+                'o.deceased_name',
+                'o.deceased_sex',
+                'o.last_known_address',
+                'o.death_certificate',
+                'o.contact_person_name',
+                'o.contact_person_phone_number',
+                'o.contact_person_email',
+                'o.contact_person_address',
+                'o.assistance_type',
+                'o.burial_permit_number',
+                'o.transfer_permit_number',
+                'o.transfer_permit_issued_by',
+                'o.exhumation_permit_number',
+                'o.status',
+                'o.remarks',
+
+                // Grave + Block
+                'g.grave_code',
+                'g.status',
+                'g.remarks',
+                'b.block_name',
+                'b.block_type',
+            ];
+
+            $parts = [];
+            foreach ($searchCols as $c) {
+                $parts[] = "$c LIKE ?";
+                $searchParams[] = $like;
+            }
+            $searchSQL = ' AND (' . implode(' OR ', $parts) . ')';
+        }
+
+        // Filtered query used by both COUNT and page fetch → guarantees consistent totals.
+        $filteredSql = $baseSql . $searchSQL;
+
+        // ---- COUNT ----
+        $countStmt = $pdo->prepare("SELECT COUNT(*) FROM ($filteredSql) AS combined");
+        $countStmt->execute($searchParams);
+        $totalRecords = (int) $countStmt->fetchColumn();
+
+        $totalPages = (int) ceil($totalRecords / $limit);
+        $page       = min($page, max(1, $totalPages));
+        $offset     = ($page - 1) * $limit;
+
+        // ---- Fetch page: oldest reserved first ----
+        // $limit / $offset are strict ints → safe to interpolate.
+        $pageSql = $filteredSql . " ORDER BY p.interment_id ASC LIMIT $limit OFFSET $offset";
+        $pageStmt = $pdo->prepare($pageSql);
+        $pageStmt->execute($searchParams);
+        $rows = $pageStmt->fetchAll(PDO::FETCH_ASSOC);
 
         $pendingTransfers = array_map($formatTransfer, $rows);
 
@@ -195,7 +267,16 @@ if ($method === 'GET') {
             'total_pages'   => $totalPages,
         ];
 
-        Response::success('Pending transfers retrieved', ['pagination' => $pagination, 'transfers' => $pendingTransfers]);
+        // ---- Response ----
+        $payload = [
+            'pagination' => $pagination,
+            'transfers'  => $pendingTransfers,
+        ];
+        if ($searchTerm !== '') {
+            $payload['search_term'] = $searchTerm;
+        }
+
+        Response::success('Pending transfers retrieved', $payload);
     }
 }
 
