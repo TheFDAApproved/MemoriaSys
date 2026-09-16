@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memoria</title>
+
+    <meta name="description" content="Management system for the Cemetery. Locate plots, monitor leases, and manage notifications.">
+    <meta name="author" content="Team DND">
+    <meta name="theme-color" content="#2f3136">
+    <meta name="robots" content="index, follow">
+
+    <meta name="geo.region" content="PH-CEB">
+    <meta name="geo.placename" content="Mandaue City">
+
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="/">
+    <meta property="og:site_name" content="Memoria">
+    <meta property="og:title" content="Memoria | Cemetery Management System">
+    <meta property="og:description" content="Efficiently manage and locate records within the Cemetery.">
+    <meta property="og:image" content="https://cdn1.iconfinder.com/data/icons/government-buildings-5/504/cemetery-graveyard-tombstone-burial-memorial-512.png">
+
+    <meta name="twitter:card" content="summary_large_image">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+
+    <link rel="stylesheet" href="assets/css/root.css">
+    <link rel="stylesheet" href="api/rootcolors.php" onerror="console.error('Failed to load custom colors. Using default theme.')">
+    <link rel="stylesheet" href="assets/css/accounts.css">
+</head>
+<body>
+    <div class="accountsContent">
+        <div class="tableControls">
+            <div class="searchBox">
+                <i class="fas fa-search"></i>
+                <input type="text" id="user_search" placeholder="Search...">
+            </div>
+
+            <div class="controlItem">
+                <select id="status_filter" class="mainSelect">
+                    <option value="all">All Status</option>
+                    <option value="verified">Verified</option>
+                    <option value="unverified">Unverified</option>
+                </select>
+            </div>
+
+            <div class="controlItem">
+                <select id="role_filter" class="mainSelect">
+                    <option value="all">All Roles</option>
+                    <option value="grounds">Ground Staff</option>
+                    <option value="office">Office Staff</option>
+                    <option value="admin">Administrator</option>
+                </select>
+            </div>
+
+            <button class="filterActionBtn" id="filter_btn">
+                <i class="fas fa-filter"></i>
+                <span>Filter</span>
+            </button>
+        </div>
+
+        <div class="table">
+            <div class="tableHeader">
+                <h3>User Accounts</h3>
+                <span class="pageInfoText">Page <strong id="current_page_num">1</strong> of <span id="total_pages_num">1</span></span>
+            </div>
+        </div>
+
+        <div class="tableScrollWrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Username</th>
+                        <th>Email</th>
+                        <th>Phone Number</th>
+                        <th>Role</th>
+                        <th>Status</th>
+                        <th>ID</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="accounts_table_body"></tbody>
+            </table>
+
+            <p class="noData" id="burial_no_data">
+                <i class="fas fa-inbox"></i>
+                No records found
+            </p>
+        </div>
+
+        <div class="paginationContainer">
+            <div class="paginationControls">
+                <button class="pageNavBtn" id="prev_page_btn" title="Previous Page">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+
+                <div class="carouselViewport" id="carousel_viewport">
+                    <div class="carouselTrack" id="carousel_track"></div>
+                </div>
+
+                <button class="pageNavBtn" id="next_page_btn" title="Next Page">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+    <script src="assets/js/accounts.js"></script>
+</body>
+
+</html>

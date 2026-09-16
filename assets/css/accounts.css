@@ -1,0 +1,494 @@
+body {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Inter', sans-serif;
+    background: #f5f6f7;
+    height: 100%;
+    overflow: hidden;
+}
+
+.accountsContent {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 24px;
+    overflow: hidden;
+}
+
+.accountsContent,
+.searchBox input,
+.mainSelect,
+.tableScrollWrapper,
+.carouselTrack button,
+.cellSelect {
+    box-sizing: border-box;
+}
+
+.tableControls {
+    flex-shrink: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.searchBox {
+    position: relative;
+    flex: 1 1 260px;
+    min-width: 220px;
+    max-width: 480px;
+}
+
+.searchBox+.controlItem {
+    margin-left: auto;
+}
+
+.searchBox i.fa-search {
+    position: absolute;
+    top: 50%;
+    left: 14px;
+    transform: translateY(-50%);
+    color: #606770;
+    font-size: 14px;
+    pointer-events: none;
+}
+
+.searchBox input,
+.mainSelect {
+    width: 100%;
+    font-size: 14px;
+    color: #1c1e21;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.searchBox input {
+    padding: 11px 14px 11px 40px;
+    background: #ffffff;
+}
+
+.searchBox input::placeholder {
+    color: #9ca3af;
+}
+
+.searchBox input:hover,
+.mainSelect:hover {
+    border-color: #d1d5db;
+}
+
+.searchBox input:focus,
+.mainSelect:focus {
+    border-color: var(--mainColor);
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.1);
+}
+
+.controlItem {
+    flex: 0 1 auto;
+    min-width: 160px;
+}
+
+.mainSelect {
+    padding: 11px 36px 11px 14px;
+    background-color: #ffffff;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23606770' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    background-size: 12px;
+}
+
+.filterActionBtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    color: #ffffff;
+    background: var(--mainColor);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.filterActionBtn i {
+    font-size: 13px;
+}
+
+.filterActionBtn:hover {
+    opacity: 0.9;
+}
+
+.filterActionBtn:active {
+    transform: translateY(1px);
+}
+
+.filterActionBtn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.25);
+}
+
+.searchClearBtn {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    transform: translateY(-50%);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    font-size: 13px;
+    color: #606770;
+    background: transparent;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.searchClearBtn.is-visible {
+    display: inline-flex;
+}
+
+.searchClearBtn:hover {
+    background: #f3f4f6;
+    color: #1c1e21;
+}
+
+.searchClearBtn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.15);
+}
+
+.table {
+    flex-shrink: 0;
+}
+
+.tableHeader {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 18px;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px 10px 0 0;
+}
+
+.tableHeader h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: #1c1e21;
+    letter-spacing: 0.2px;
+}
+
+.pageInfoText {
+    font-size: 13px;
+    color: #606770;
+}
+
+.pageInfoText strong,
+.pageInfoText span {
+    color: #1c1e21;
+    font-weight: 700;
+}
+
+.tableScrollWrapper {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: auto;
+    width: 100%;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-top: none;
+    border-radius: 0 0 10px 10px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.tableScrollWrapper::-webkit-scrollbar {
+    height: 8px;
+    width: 8px;
+}
+
+.tableScrollWrapper::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.tableScrollWrapper::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 8px;
+}
+
+.tableScrollWrapper::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+.tableScrollWrapper table {
+    flex: 0 0 auto;
+    width: 100%;
+    min-width: 960px;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+.tableScrollWrapper thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 14px 18px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #606770;
+    background: #f9fafb;
+    box-shadow: inset 0 -1px 0 #e5e7eb;
+    white-space: nowrap;
+}
+
+.tableScrollWrapper tbody td {
+    padding: 14px 18px;
+    color: #1c1e21;
+    border-bottom: 1px solid #e5e7eb;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.tableScrollWrapper tbody tr {
+    transition: background 0.2s ease;
+}
+
+.tableScrollWrapper tbody tr:hover {
+    background: #f8fafc;
+}
+
+.tableScrollWrapper tbody tr:last-child td {
+    border-bottom: none;
+}
+
+@keyframes rowFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.tableScrollWrapper tbody.animate {
+    animation: rowFadeIn 0.15s ease both;
+}
+
+.cellSelect {
+    width: 100%;
+    max-width: 160px;
+    padding: 6px 28px 6px 10px;
+    font-size: 13px;
+    font-family: inherit;
+    color: #1c1e21;
+    background-color: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    outline: none;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23606770' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    background-size: 11px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cellSelect:hover {
+    border-color: #d1d5db;
+}
+
+.cellSelect:focus {
+    border-color: var(--mainColor);
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.1);
+}
+
+.actionBtn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    font-size: 13px;
+    font-family: inherit;
+    color: #606770;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.actionBtn+.actionBtn {
+    margin-left: 6px;
+}
+
+.actionBtn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.15);
+}
+
+.actionBtn:active {
+    transform: translateY(1px);
+}
+
+.edit-action:hover {
+    background: #eef2ff;
+    border-color: #e0e7ff;
+    color: var(--mainColor);
+}
+
+.delete-action:hover {
+    background: #fef2f2;
+    border-color: #fee2e2;
+    color: #dc2626;
+}
+
+.save-action:hover {
+    background: #ecfdf5;
+    border-color: #d1fae5;
+    color: #16a34a;
+}
+
+.noData {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    padding: 48px 20px;
+    text-align: center;
+    font-size: 14px;
+    color: #606770;
+}
+
+.noData i {
+    display: block;
+    font-size: 30px;
+    margin-bottom: 10px;
+    color: #cbd5e1;
+}
+
+.paginationContainer {
+    flex-shrink: 0;
+    display: flex;
+    justify-content: center;
+    margin-top: 20px;
+}
+
+.paginationControls {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 999px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.pageNavBtn {
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: #1c1e21;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+}
+
+.pageNavBtn:hover:not(:disabled) {
+    background: var(--mainColor);
+    color: #ffffff;
+}
+
+.pageNavBtn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.2);
+}
+
+.pageNavBtn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.carouselViewport {
+    overflow: hidden;
+    max-width: 320px;
+}
+
+.carouselTrack {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: transform 0.25s ease;
+}
+
+.carouselTrack button {
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    color: #1c1e21;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.carouselTrack button:hover {
+    background: #f8fafc;
+    border-color: #e5e7eb;
+}
+
+.carouselTrack button:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.2);
+}
+
+.carouselTrack button.active {
+    background: var(--mainColor);
+    color: #ffffff;
+    border-color: var(--mainColor);
+}
