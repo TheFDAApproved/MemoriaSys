@@ -21,8 +21,8 @@
     # -> If hosting on InfinityFree/Production, comment out the line above and uncomment the line below:
     # -> If like not in root/memoria, and just directly to root ro RewriteBase / only
 
-    # RewriteBase /memoria/
-    RewriteBase /
+    RewriteBase /memoriasys/
+    # RewriteBase /
 
     Options -Indexes
 
@@ -90,20 +90,20 @@
 
 # LOCAL HOSTING / Not in root folder i guess:
 
-# ErrorDocument 400 /memoria/404.html
+ErrorDocument 400 /memoriasys/404.html
 
-# ErrorDocument 403 /memoria/404.html
+ErrorDocument 403 /memoriasys/404.html
 
-# ErrorDocument 404 /memoria/404.html
+ErrorDocument 404 /memoriasys/404.html
 
-# ErrorDocument 500 /memoria/500.html
+ErrorDocument 500 /memoriasys/500.html
 
 # PRODUCTION HOSTING:
 
-ErrorDocument 400 /404.html
-ErrorDocument 403 /404.html
-ErrorDocument 404 /404.html
-ErrorDocument 500 /500.html
+# ErrorDocument 400 /404.html
+# ErrorDocument 403 /404.html
+# cErrorDocument 404 /404.html
+# ErrorDocument 500 /500.html
 
 # ==========================================
 
