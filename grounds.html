@@ -32,48 +32,7 @@
     <link rel="stylesheet" href="api/rootcolors.php" onerror="console.error('Failed to load custom colors. Using default theme.')">
     <link rel="stylesheet" href="assets/css/sidebar.css">
 
-    <script>
-        (function () {
-            var ROLE_PAGE = {
-                'Administrator': 'admin.html',
-                'Grounds Staff': 'grounds.html',
-                'Office Staff': 'office.html'
-            };
-
-            var current = (location.pathname.split('/').pop() || '').toLowerCase();
-            var required = null;
-            for (var r in ROLE_PAGE) {
-                if (ROLE_PAGE[r].toLowerCase() === current) { required = ROLE_PAGE[r]; break; }
-            }
-            if (!required) return; 
-
-            document.documentElement.style.visibility = 'hidden';
-
-            fetch('api/auth.php', { credentials: 'same-origin' })
-                .then(function (res) {
-                    if (!res.ok) throw new Error('unauth');
-                    return res.json();
-                })
-                .then(function (body) {
-                    var payload = (body && body.data) ? body.data : body;
-                    var role = payload && payload.role;
-                    var target = ROLE_PAGE[role];
-
-                    if (!target) {                   
-                        location.replace('login.html');
-                        return;
-                    }
-                    if (target !== required) {     
-                        location.replace(target);
-                        return;
-                    }
-                    document.documentElement.style.visibility = '';
-                })
-                .catch(function () {            
-                    location.replace('login.html');
-                });
-        })();
-    </script>
+    <script src="assets/js/check_user.js"></script>
 </head>
 <body>
     <div class="sidebar" id="sidebar">

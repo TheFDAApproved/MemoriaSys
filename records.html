@@ -30,63 +30,72 @@
 
     <link rel="stylesheet" href="assets/css/root.css">
     <link rel="stylesheet" href="api/rootcolors.php" onerror="console.error('Failed to load custom colors. Using default theme.')">
-    <link rel="stylesheet" href="assets/css/accounts.css">
+    <link rel="stylesheet" href="assets/css/records.css">
+    <link rel="stylesheet" href="assets/css/burial_modal.css">
 
     <script src="assets/js/check_user.js"></script>
 </head>
 <body>
-    <div class="accountsContent">
+    <div class="recordsContent">
         <div class="tableControls">
             <div class="searchBox">
                 <i class="fas fa-search"></i>
                 <input type="text" id="user_search" placeholder="Search...">
             </div>
 
-            <div class="controlItem">
-                <select id="status_filter" class="mainSelect">
-                    <option value="all">All Status</option>
-                    <option value="verified">Verified</option>
-                    <option value="unverified">Unverified</option>
-                </select>
-            </div>
+            <div class="paginationContainer">
+                <div class="paginationControls">
+                    <button class="pageNavBtn" id="prev_page_btn" title="Previous Page">
+                        <i class="fas fa-chevron-left"></i>
+                    </button>
 
-            <div class="controlItem">
-                <select id="role_filter" class="mainSelect">
-                    <option value="all">All Roles</option>
-                    <option value="grounds">Ground Staff</option>
-                    <option value="office">Office Staff</option>
-                    <option value="admin">Administrator</option>
-                </select>
-            </div>
+                    <div class="carouselViewport" id="carousel_viewport">
+                        <div class="carouselTrack" id="carousel_track"></div>
+                    </div>
 
-            <button class="filterActionBtn" id="filter_btn">
-                <i class="fas fa-filter"></i>
-                <span>Filter</span>
-            </button>
+                    <button class="pageNavBtn" id="next_page_btn" title="Next Page">
+                        <i class="fas fa-chevron-right"></i>
+                    </button>
+                </div>
+            </div>
         </div>
 
         <div class="table">
             <div class="tableHeader">
-                <h3>User Accounts</h3>
+                <h3>Records</h3>
                 <span class="pageInfoText">Page <strong id="current_page_num">1</strong> of <span id="total_pages_num">1</span></span>
             </div>
         </div>
 
         <div class="tableScrollWrapper">
-            <table>
+            <table id="burial_records">
                 <thead>
                     <tr>
+                        <th>Control No.</th>
                         <th>Name</th>
-                        <th>Username</th>
-                        <th>Email</th>
-                        <th>Phone Number</th>
-                        <th>Role</th>
-                        <th>Status</th>
-                        <th>ID</th>
-                        <th>Action</th>
+                        <th>Sex</th>
+                        <th>Date of Birth</th>
+                        <th>Last Address</th>
+                        <th>Date Buried</th>
+                        <th>Block</th>
+                        <th>Grave Code</th>
+                        <th>Expiration Date</th>
+                        <th>Contact Person</th>
+                        <th>Contact No.</th>
+                        <th>Contact Address</th>
+                        <th>Remarks</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
-                <tbody id="accounts_table_body"></tbody>
+
+                <tbody id="burial_table_body"></tbody>
+
+                <td class="controlNoCell">
+                    <div class="controlNoCellInner">
+                        <button class="historyToggle">...</button>
+                        <span>ABC-1234</span>
+                    </div>
+                </td>
             </table>
 
             <p class="noData" id="burial_no_data">
@@ -95,23 +104,12 @@
             </p>
         </div>
 
-        <div class="paginationContainer">
-            <div class="paginationControls">
-                <button class="pageNavBtn" id="prev_page_btn" title="Previous Page">
-                    <i class="fas fa-chevron-left"></i>
-                </button>
-
-                <div class="carouselViewport" id="carousel_viewport">
-                    <div class="carouselTrack" id="carousel_track"></div>
-                </div>
-
-                <button class="pageNavBtn" id="next_page_btn" title="Next Page">
-                    <i class="fas fa-chevron-right"></i>
-                </button>
-            </div>
-        </div>
+        <button class="addRecordBtn" id="open_add_modal_btn" title="Add Record" aria-label="Add Record">
+            <i class="fas fa-plus"></i>
+        </button>
     </div>
-    <script src="assets/js/accounts.js"></script>
-</body>
 
+    <script src="assets/js/burial_modal.js"></script>
+    <script src="assets/js/records.js"></script>
+</body>
 </html>

@@ -1,0 +1,590 @@
+body {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Inter', sans-serif;
+    background: #f5f6f7;
+    height: 100%;
+    overflow: hidden;
+}
+
+.recordsContent {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding: 24px;
+    overflow: hidden;
+}
+
+.recordsContent,
+.searchBox input,
+.tableScrollWrapper,
+.carouselTrack button {
+    box-sizing: border-box;
+}
+
+.tableControls {
+    flex-shrink: 0;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.searchBox {
+    position: relative;
+    flex: 0 1 480px;
+    min-width: 220px;
+    max-width: 480px;
+}
+
+.searchBox i.fa-search {
+    position: absolute;
+    top: 50%;
+    left: 14px;
+    transform: translateY(-50%);
+    color: #606770;
+    font-size: 14px;
+    pointer-events: none;
+}
+
+.searchBox input {
+    width: 100%;
+    font-size: 14px;
+    color: #1c1e21;
+    background: #ffffff;
+    padding: 11px 14px 11px 40px;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.searchBox input::placeholder {
+    color: #9ca3af;
+}
+
+.searchBox input:hover {
+    border-color: #d1d5db;
+}
+
+.searchBox input:focus {
+    border-color: var(--mainColor);
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.1);
+}
+
+.searchClearBtn {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    transform: translateY(-50%);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    font-size: 13px;
+    color: #606770;
+    background: transparent;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.searchClearBtn.is-visible {
+    display: inline-flex;
+}
+
+.searchClearBtn:hover {
+    background: #f3f4f6;
+    color: #1c1e21;
+}
+
+.searchClearBtn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.15);
+}
+
+.paginationContainer {
+    flex: 0 0 auto;
+    margin-left: auto;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.paginationControls {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 999px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.pageNavBtn {
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: #1c1e21;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, opacity 0.2s ease;
+}
+
+.pageNavBtn:hover:not(:disabled) {
+    background: var(--mainColor);
+    color: #ffffff;
+}
+
+.pageNavBtn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.2);
+}
+
+.pageNavBtn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.carouselViewport {
+    overflow: hidden;
+    max-width: 320px;
+}
+
+.carouselTrack {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: transform 0.25s ease;
+}
+
+.carouselTrack button {
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    color: #1c1e21;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.carouselTrack button:hover {
+    background: #f8fafc;
+    border-color: #e5e7eb;
+}
+
+.carouselTrack button:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.2);
+}
+
+.carouselTrack button.active {
+    background: var(--mainColor);
+    color: #ffffff;
+    border-color: var(--mainColor);
+}
+
+.table {
+    flex-shrink: 0;
+}
+
+.tableHeader {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 18px;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px 10px 0 0;
+}
+
+.tableHeader h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 700;
+    color: #1c1e21;
+    letter-spacing: 0.2px;
+}
+
+.pageInfoText {
+    font-size: 13px;
+    color: #606770;
+}
+
+.pageInfoText strong,
+.pageInfoText span {
+    color: #1c1e21;
+    font-weight: 700;
+}
+
+.tableScrollWrapper {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: auto;
+    width: 100%;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-top: none;
+    border-radius: 0 0 10px 10px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.tableScrollWrapper::-webkit-scrollbar {
+    height: 8px;
+    width: 8px;
+}
+
+.tableScrollWrapper::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.tableScrollWrapper::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 8px;
+}
+
+.tableScrollWrapper::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+}
+
+.tableScrollWrapper table {
+    flex: 0 0 auto;
+    width: 100%;
+    min-width: 1400px;
+    border-collapse: collapse;
+    font-size: 14px;
+}
+
+.tableScrollWrapper thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: 14px 18px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #606770;
+    background: #f9fafb;
+    box-shadow: inset 0 -1px 0 #e5e7eb;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.tableScrollWrapper tbody td {
+    padding: 14px 18px;
+    color: #1c1e21;
+    border-bottom: 1px solid #e5e7eb;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.tableScrollWrapper tbody tr {
+    transition: background 0.2s ease;
+}
+
+.tableScrollWrapper tbody tr:hover {
+    background: #f8fafc;
+}
+
+.tableScrollWrapper tbody tr:last-child td {
+    border-bottom: none;
+}
+
+@keyframes rowFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.tableScrollWrapper tbody.animate {
+    animation: rowFadeIn 0.15s ease both;
+}
+
+.actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.actions button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    font-size: 13px;
+    font-family: inherit;
+    color: #606770;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.actions button:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.15);
+}
+
+.actions button:active {
+    transform: translateY(1px);
+}
+
+.viewBtn:hover {
+    background: #eff6ff;
+    border-color: #dbeafe;
+    color: #2563eb;
+}
+
+.editBtn:hover {
+    background: #eef2ff;
+    border-color: #e0e7ff;
+    color: var(--mainColor);
+}
+
+.deleteBtn:hover {
+    background: #fef2f2;
+    border-color: #fee2e2;
+    color: #dc2626;
+}
+
+.noData {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    margin: 0;
+    padding: 48px 20px;
+    text-align: center;
+    font-size: 14px;
+    color: #606770;
+}
+
+.noData i {
+    display: block;
+    font-size: 30px;
+    margin-bottom: 10px;
+    color: #cbd5e1;
+}
+
+.addRecordBtn {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background-color: var(--mainColor);
+    color: #ffffff;
+    border: none;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    font-size: 24px;
+    box-shadow: 0 10px 25px rgba(37, 99, 235, 0.4);
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), background-color 0.2s ease;
+    z-index: 999;
+}
+
+.addRecordBtn:hover {
+    background-color: #1e293b;
+    transform: scale(1.1) rotate(90deg);
+}
+
+.addRecordBtn:active {
+    transform: scale(0.9);
+}
+
+.addRecordBtn:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 3px;
+}
+
+.addRecordBtn i {
+    display: inline-block;
+    line-height: 1;
+    transform-origin: 50% 50%;
+}
+
+.tableScrollWrapper thead th .col-resizer {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    user-select: none;
+    z-index: 3;
+    background: transparent;
+}
+
+.tableScrollWrapper thead th .col-resizer::after {
+    content: '';
+    position: absolute;
+    top: 25%;
+    right: 2px;
+    width: 2px;
+    height: 50%;
+    background: transparent;
+    border-radius: 2px;
+    transition: background 0.15s ease;
+}
+
+.tableScrollWrapper thead th .col-resizer:hover::after,
+body.resizing .tableScrollWrapper thead th .col-resizer::after {
+    background: var(--mainColor);
+}
+
+body.resizing,
+body.resizing * {
+    cursor: col-resize !important;
+    user-select: none !important;
+}
+
+.controlNoCell {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.controlNoText {
+    white-space: nowrap;
+}
+
+.historyToggle {
+    width: 14px;
+    height: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: #9ca3af;
+    cursor: pointer;
+    border-radius: 3px;
+    font-size: 8px;
+    flex: 0 0 auto;
+    transition: transform 0.2s ease, color 0.2s ease, background 0.2s ease;
+}
+
+.historyToggle i {
+    line-height: 1;
+}
+
+.historyToggle:hover {
+    color: #1c1e21;
+    background: #f3f4f6;
+}
+
+.historyToggle:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.2);
+}
+
+.historyToggle[aria-expanded="true"] {
+    transform: rotate(90deg);
+    color: var(--mainColor);
+}
+
+tr.hasHistory {
+    cursor: pointer;
+}
+
+tr.hasHistory.expanded > td {
+    background: #f8fafc;
+    box-shadow: inset 0 -1px 0 #e5e7eb;
+}
+
+tr.historyRow td {
+    background: #f9fafb;
+    color: #64748b;
+    font-size: 13px;
+    padding: 10px 18px;
+    border-bottom: 1px solid #eef2f7;
+    white-space: nowrap;
+}
+
+tr.historyRow:last-child td {
+    border-bottom: 1px solid #e5e7eb;
+}
+
+tr.historyRow:hover td {
+    background: #f3f4f6;
+}
+
+tr.historyRow td:first-child {
+    box-shadow: inset 3px 0 0 var(--mainColor);
+}
+
+tr.historyRow.visible td {
+    animation: historyRowIn 0.2s ease;
+}
+
+@keyframes historyRowIn {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+.historyBadge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 7px;
+    background: #eef2ff;
+    color: var(--mainColor);
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    white-space: nowrap;
+}
+
+.historyBadge i {
+    font-size: 10px;
+}
+
+tr.historyRow td:nth-child(13) {
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}

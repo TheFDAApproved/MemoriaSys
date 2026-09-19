@@ -1,0 +1,209 @@
+/* ===============================
+   Burial Modal Overlay
+   =============================== */
+.modalOverlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    padding: 40px 20px;
+    overflow-y: auto;
+    background: rgba(15, 23, 42, 0.6);
+    backdrop-filter: blur(4px);
+    font-family: 'Inter', sans-serif;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+}
+
+.modalOverlay::-webkit-scrollbar {
+    display: none;
+}
+
+/* ===============================
+   Paper Form
+   =============================== */
+.modalOverlay .paperForm {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 840px;
+    margin: 0 auto;
+    padding: 40px;
+    background: #fff;
+    color: #333;
+    text-align: left;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+}
+
+.modalOverlay .paperForm .formTitle {
+    margin-bottom: 30px;
+    color: #222;
+    font-family: Arial, sans-serif;
+    font-size: 20px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    text-align: center;
+}
+
+.modalOverlay .paperForm .sectionTitle {
+    margin: 25px 0 15px;
+    padding: 6px 0;
+    border-bottom: 2px solid #1e293b;
+    color: #1e293b;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+}
+
+/* ===============================
+   Rows / Columns
+   =============================== */
+.modalOverlay .paperForm .row {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 15px;
+}
+
+.modalOverlay .paperForm .col {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+}
+
+/* ===============================
+   Labels
+   =============================== */
+.modalOverlay .paperForm label {
+    margin-bottom: 6px;
+    color: #475569;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.modalOverlay .paperForm label.required::after {
+    content: " *";
+    color: #dc2626;
+}
+
+/* ===============================
+   Inputs / Selects
+   =============================== */
+.modalOverlay .paperForm input[type="text"],
+.modalOverlay .paperForm input[type="date"],
+.modalOverlay .paperForm select {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    outline: none;
+    background: #fff;
+    color: #334155;
+    font-size: 14px;
+    transition: border 0.2s;
+}
+
+.modalOverlay .paperForm input[type="text"]:focus,
+.modalOverlay .paperForm input[type="date"]:focus,
+.modalOverlay .paperForm select:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.modalOverlay .paperForm select {
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    padding-right: 38px;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%2364748b' viewBox='0 0 16 16'><path d='M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/></svg>");
+    background-repeat: no-repeat;
+    background-position: calc(100% - 14px) center;
+    cursor: pointer;
+}
+
+/* ===============================
+   View Mode
+   =============================== */
+.modalOverlay.view-mode .paperForm select {
+    background-image: none;
+}
+
+/* ===============================
+   Actions
+   =============================== */
+.modalOverlay .paperForm .paperFormActions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 30px;
+}
+
+.modalOverlay .paperForm .paperCancelBtn {
+    padding: 10px 24px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #fff;
+    color: #64748b;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.modalOverlay .paperForm .paperCancelBtn:hover {
+    background: #f1f5f9;
+    color: #1e293b;
+}
+
+.modalOverlay .paperForm .paperSaveBtn {
+    padding: 10px 28px;
+    border: none;
+    border-radius: 6px;
+    background: #1e3a8a;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.modalOverlay .paperForm .paperSaveBtn:hover {
+    background: #172554;
+}
+
+.modalOverlay .paperForm .paperSaveBtn:disabled {
+    background: #94a3b8;
+    cursor: not-allowed;
+}
+
+/* ===============================
+   Responsive
+   =============================== */
+@media (max-width: 700px) {
+    .modalOverlay {
+        padding: 20px 12px;
+    }
+
+    .modalOverlay .paperForm {
+        padding: 24px 18px;
+    }
+
+    .modalOverlay .paperForm .row {
+        flex-wrap: wrap;
+        gap: 12px;
+    }
+
+    .modalOverlay .paperForm .col {
+        flex: 1 1 100%;
+    }
+
+    .modalOverlay .paperForm .paperFormActions {
+        flex-direction: column-reverse;
+    }
+
+    .modalOverlay .paperForm .paperCancelBtn,
+    .modalOverlay .paperForm .paperSaveBtn {
+        width: 100%;
+    }
+}

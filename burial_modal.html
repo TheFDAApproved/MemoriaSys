@@ -1,0 +1,172 @@
+<div class="modalOverlay" id="burial_modal_overlay">
+    <form id="burial_clearance_form">
+        <div class="paperForm">
+            <div class="formTitle">BURIAL CLEARANCE</div>
+
+            <div class="row">
+                <div class="col">
+                    <label>Date:</label>
+                    <input type="date" id="clearance_date">
+                </div>
+                <div class="col">
+                    <label>Control No.</label>
+                    <input type="text" id="control_no" placeholder="Auto-generated" readonly>
+                </div>
+            </div>
+
+            <div class="sectionTitle">REQUESTING PARTY (Contact Details)</div>
+            <div class="row">
+                <div class="col">
+                    <label class="required">That I (Full Name):</label>
+                    <input type="text" id="req_name" pattern="[A-Za-zÀ-ÖØ-öø-ÿ\s'.-]+" title="Letters only, please." required>
+                </div>
+                <div class="col">
+                    <label class="required">Purok / Zone / Street Name:</label>
+                    <input type="text" id="req_street" required>
+                </div>
+                <div class="col">
+                    <label class="required">Barangay Address:</label>
+                    <select id="requesting_barangay" required>
+                        <option value="" disabled selected>Select Barangay...</option>
+                        <option value="Alang-alang">Alang-alang</option>
+                        <option value="Bakilid">Bakilid</option>
+                        <option value="Banilad">Banilad</option>
+                        <option value="Basak">Basak</option>
+                        <option value="Cabancalan">Cabancalan</option>
+                        <option value="Cambaro">Cambaro</option>
+                        <option value="Canduman">Canduman</option>
+                        <option value="Casuntingan">Casuntingan</option>
+                        <option value="Casili">Casili</option>
+                        <option value="Centro">Centro</option>
+                        <option value="Cubacub">Cubacub</option>
+                        <option value="Guizo">Guizo</option>
+                        <option value="Ibabao-Estancia">Ibabao-Estancia</option>
+                        <option value="Jagobiao">Jagobiao</option>
+                        <option value="Labogon">Labogon</option>
+                        <option value="Looc">Looc</option>
+                        <option value="Maguikay">Maguikay</option>
+                        <option value="Mantuyong">Mantuyong</option>
+                        <option value="Opao">Opao</option>
+                        <option value="Pakna-an">Pakna-an</option>
+                        <option value="Pagsabungan">Pagsabungan</option>
+                        <option value="Subangdaku">Subangdaku</option>
+                        <option value="Tabok">Tabok</option>
+                        <option value="Tingub">Tingub</option>
+                        <option value="Tipolo">Tipolo</option>
+                        <option value="Umapad">Umapad</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col">
+                    <label class="required">Phone Number:</label>
+                    <input type="text" id="req_phone" required>
+                </div>
+                <div class="col">
+                    <label class="required">Seeking assistance in the form of:</label>
+                    <select id="req_assistance" required>
+                        <option>Burial of the late</option>
+                        <option>Transfer the remains of the late to the bone chamber</option>
+                        <option>Other...</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="sectionTitle">DECEASED INFORMATION</div>
+            <div class="row">
+                <div class="col">
+                    <label class="required">Name of Deceased:</label>
+                    <input type="text" id="deceased_name" placeholder="Full Name" pattern="[A-Za-zÀ-ÖØ-öø-ÿ\s'.-]+" title="Letters only, please." required>
+                </div>
+                <div class="col">
+                    <label class="required">Sex:</label>
+                    <select id="deceased_sex" required>
+                        <option value="" disabled selected>Select...</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                    </select>
+                </div>
+                <div class="col">
+                    <label class="required">Date of Birth:</label>
+                    <input type="date" id="deceased_dob" required>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col">
+                    <label class="required">Last Known Address:</label>
+                    <input type="text" id="deceased_address" required>
+                </div>
+                <div class="col">
+                    <label class="required">Date of Death:</label>
+                    <input type="date" id="deceased_bod" required>
+                </div>
+                <div class="col">
+                    <label class="required">Death Certificate No:</label>
+                    <input type="text" id="deceased_cert" required>
+                </div>
+            </div>
+
+            <div class="sectionTitle">PERMITS &amp; REQUIREMENTS</div>
+            <div class="row">
+                <div class="col">
+                    <label class="required">Burial Permit No.</label>
+                    <input type="text" id="permit_burial" required>
+                </div>
+                <div class="col">
+                    <label class="required">Exhumation Permit No.</label>
+                    <input type="text" id="permit_exhumation" required>
+                </div>
+                <div class="col">
+                    <label class="required">Transfer Permit No.</label>
+                    <input type="text" id="permit_transfer" required>
+                </div>
+            </div>
+
+            <div class="sectionTitle">LOCATION ASSIGNMENT</div>
+            <div class="row">
+                <div class="col">
+                    <label class="required">Burial Type:</label>
+                    <select id="burial_block" required>
+                        <option>Niche Wall</option>
+                        <option>Bone Chamber</option>
+                        <option>Lawn / Grounds</option>
+                        <option>Unmapped Area</option>
+                        <option>Private / Owned</option>
+                    </select>
+                </div>
+                <div class="col">
+                    <label class="required">Block:</label>
+                    <input type="text" id="block" required>
+                </div>
+                <div class="col">
+                    <label class="required">Grave Code:</label>
+                    <input type="text" id="grave_code" required>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col">
+                    <label class="required">Date of Interment:</label>
+                    <input type="date" id="date_interment" required>
+                </div>
+                <div class="col">
+                    <label>Expiration Date:</label>
+                    <input type="date" id="expiration_date" readonly required>
+                </div>
+            </div>
+
+            <div class="sectionTitle">REMARKS</div>
+            <div class="row">
+                <div class="col">
+                    <input type="text" id="deceased_remarks">
+                </div>
+            </div>
+
+            <div class="paperFormActions">
+                <button type="button" class="paperCancelBtn">Cancel</button>
+                <button type="submit" class="paperSaveBtn">Save</button>
+            </div>
+        </div>
+    </form>
+</div>
