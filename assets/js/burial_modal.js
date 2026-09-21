@@ -28,7 +28,10 @@ const BurialModal = (() => {
     }
 
     function formatControlNoInput(value) {
-        return String(value || "").toUpperCase();
+        let v = String(value || "").toUpperCase().replace(/[^A-Z0-9-]/g, "");
+        const parts = v.split("-");
+        if (parts.length > 2) v = parts[0] + "-" + parts.slice(1).join("");
+        return v.slice(0, 9); 
     }
 
     function generateGraveCode() {
@@ -105,7 +108,7 @@ const BurialModal = (() => {
             try {
                 const res = await fetch(path);
                 if (res.ok) { html = await res.text(); break; }
-            } catch (_) {}
+            } catch (_) { }
         }
 
         if (!html) {
@@ -218,8 +221,6 @@ const BurialModal = (() => {
 
             let strVal = pick(val);
 
-            if (isView && strVal === "") strVal = "-";
-
             if (field.tagName === "SELECT") {
                 const stale = field.querySelector('option[data-placeholder="true"]');
                 if (stale) stale.remove();
@@ -251,7 +252,7 @@ const BurialModal = (() => {
         };
 
         setFieldValue("clearance_date", pick(data.clearance_date, data.clearanceDate, data.control_date));
-        setFieldValue("control_no",     pick(data.control_no,     data.controlNo));
+        setFieldValue("control_no", pick(data.control_no, data.controlNo));
 
         setFieldValue("req_name", pick(data.req_name, data.contactName, data.applicant_full_name));
 
@@ -279,18 +280,19 @@ const BurialModal = (() => {
         if (/burial/i.test(rawAssist)) mappedAssist = "Burial of the late";
         else if (/transfer|exhumation/i.test(rawAssist))
             mappedAssist = "Transfer the remains of the late to the bone chamber";
+        else if (/^other/i.test(rawAssist)) mappedAssist = "Other...";
         setFieldValue("req_assistance", mappedAssist);
 
-        setFieldValue("deceased_name",    pick(data.deceased_name, data.name));
-        setFieldValue("deceased_sex",     pick(data.deceased_sex,  data.sex));
-        setFieldValue("deceased_dob",     pick(data.deceased_dob,  data.dob, data.deceased_date_of_birth));
-        setFieldValue("deceased_bod",     pick(data.deceased_bod,  data.dod, data.deceased_date_of_death));
+        setFieldValue("deceased_name", pick(data.deceased_name, data.name));
+        setFieldValue("deceased_sex", pick(data.deceased_sex, data.sex));
+        setFieldValue("deceased_dob", pick(data.deceased_dob, data.dob, data.deceased_date_of_birth));
+        setFieldValue("deceased_bod", pick(data.deceased_bod, data.dod, data.deceased_date_of_death));
         setFieldValue("deceased_address", pick(data.deceased_address, data.address, data.last_known_address));
-        setFieldValue("deceased_cert",    pick(data.deceased_cert, data.certNo, data.death_certificate_no));
+        setFieldValue("deceased_cert", pick(data.deceased_cert, data.certNo, data.death_certificate_no));
 
-        setFieldValue("permit_burial",     pick(data.permit_burial,     data.permitBurial,     data.burial_permit_no));
+        setFieldValue("permit_burial", pick(data.permit_burial, data.permitBurial, data.burial_permit_no));
         setFieldValue("permit_exhumation", pick(data.permit_exhumation, data.permitExhumation, data.exhumation_permit_no));
-        setFieldValue("permit_transfer",   pick(data.permit_transfer,   data.permitTransfer,   data.transfer_permit_no));
+        setFieldValue("permit_transfer", pick(data.permit_transfer, data.permitTransfer, data.transfer_permit_no));
 
         const rawType = pick(data.burialType, data.burial_type, data.burial_block);
         let mappedType = rawType;
@@ -299,10 +301,10 @@ const BurialModal = (() => {
         else if (/lawn|ground|standard/i.test(rawType)) mappedType = "Lawn / Grounds";
         setFieldValue("burial_block", mappedType);
 
-        setFieldValue("block",            pick(data.block, data.blockName));
-        setFieldValue("grave_code",       pick(data.grave_code, data.graveCode));
-        setFieldValue("date_interment",   pick(data.date_interment, data.dateInterment, data.date_of_interment));
-        setFieldValue("expiration_date",  pick(data.expiration_date, data.expiration));
+        setFieldValue("block", pick(data.block, data.blockName));
+        setFieldValue("grave_code", pick(data.grave_code, data.graveCode));
+        setFieldValue("date_interment", pick(data.date_interment, data.dateInterment, data.date_of_interment));
+        setFieldValue("expiration_date", pick(data.expiration_date, data.expiration));
         setFieldValue("deceased_remarks", pick(data.deceased_remarks, data.remarks));
     }
 
@@ -340,54 +342,62 @@ const BurialModal = (() => {
 
         const controlNoField = modalEl.querySelector("#control_no");
         const controlNo = (controlNoField?.value || "").trim().toUpperCase();
-        if (!isValidControlNo(controlNo)) {
-            alert("Please enter a valid Control No. (letters, numbers and dashes only).");
+        if (!/^[A-Z]{4}-\d{4}$/.test(controlNo)) {
+            alert("Control No. must follow the format XXXX-XXXX (4 uppercase letters, dash, 4 digits).");
             controlNoField?.focus();
             return;
         }
-
         if (controlNoExists(controlNo)) {
-            alert(`Control No. "${controlNo}" is already used by another record. Please enter a different one.`);
+            alert(`Control No. "${controlNo}" is already used by another record.`);
             controlNoField?.focus();
             return;
         }
 
-        const street   = modalEl.querySelector("#req_street")?.value.trim() || "";
+        const street = modalEl.querySelector("#req_street")?.value.trim() || "";
         const barangay = modalEl.querySelector("#requesting_barangay")?.value || "";
-        const contactAddr = barangay ? `${street}, Brgy. ${barangay}` : street;
 
-        const formData = {
-            id: activeRecordId,
-            clearance_date:      modalEl.querySelector("#clearance_date")?.value || "",
-            control_no:          controlNo,
-            req_name:            modalEl.querySelector("#req_name")?.value.trim() || "",
-            req_phone:           phoneRaw,
-            req_street:          street,
-            requesting_barangay: barangay,
-            contactAddress:      contactAddr,
-            req_assistance:      modalEl.querySelector("#req_assistance")?.value || "",
+        const assistRaw = modalEl.querySelector("#req_assistance")?.value || "";
+        let assistance = "Other";
+        if (/^burial/i.test(assistRaw)) assistance = "Burial";
+        else if (/transfer/i.test(assistRaw)) assistance = "Transfer the remains of the late";
 
-            deceased_name:    modalEl.querySelector("#deceased_name")?.value.trim() || "",
-            deceased_sex:     modalEl.querySelector("#deceased_sex")?.value || "",
-            deceased_dob:     modalEl.querySelector("#deceased_dob")?.value || "",
-            deceased_address: modalEl.querySelector("#deceased_address")?.value.trim() || "",
-            deceased_bod:     modalEl.querySelector("#deceased_bod")?.value || "",
-            deceased_cert:    modalEl.querySelector("#deceased_cert")?.value.trim() || "",
-            deceased_remarks: modalEl.querySelector("#deceased_remarks")?.value.trim() || "",
+        const burialTypeRaw = modalEl.querySelector("#burial_block")?.value || "";
 
-            permit_burial:     modalEl.querySelector("#permit_burial")?.value.trim() || "",
-            permit_exhumation: modalEl.querySelector("#permit_exhumation")?.value.trim() || "",
-            permit_transfer:   modalEl.querySelector("#permit_transfer")?.value.trim() || "",
+        const payload = {
+            interment_id: activeRecordId || undefined,         
+            control_number: controlNo,
+            deceased_name: modalEl.querySelector("#deceased_name")?.value.trim() || "",
+            deceased_sex: modalEl.querySelector("#deceased_sex")?.value || "",
+            deceased_date_of_birth: modalEl.querySelector("#deceased_dob")?.value || null,
+            deceased_date_of_death: modalEl.querySelector("#deceased_bod")?.value || null,
+            last_known_address: modalEl.querySelector("#deceased_address")?.value.trim() || "",
+            death_certificate: modalEl.querySelector("#deceased_cert")?.value.trim() || "",
 
-            burial_type:   modalEl.querySelector("#burial_block")?.value || "",
-            block:         modalEl.querySelector("#block")?.value.trim() || "",
-            grave_code:    modalEl.querySelector("#grave_code")?.value.trim() || "",
-            date_interment:  modalEl.querySelector("#date_interment")?.value || "",
-            expiration_date: modalEl.querySelector("#expiration_date")?.value || "",
+            contact_person_name: modalEl.querySelector("#req_name")?.value.trim() || "",
+            contact_person_phone_number: phoneRaw,
+            contact_person_address: street,
+            contact_person_address_barangay: barangay,
+
+            assistance_type: assistance,
+            burial_permit_number: modalEl.querySelector("#permit_burial")?.value.trim() || "",
+            exhumation_permit_number: modalEl.querySelector("#permit_exhumation")?.value.trim() || "",
+            transfer_permit_number: modalEl.querySelector("#permit_transfer")?.value.trim() || "",
+
+            burial_clearance_date: modalEl.querySelector("#clearance_date")?.value || null,
+            date_buried: modalEl.querySelector("#date_interment")?.value || null,
+            lease_expiration_date: modalEl.querySelector("#expiration_date")?.value || null,
+
+            remarks: modalEl.querySelector("#deceased_remarks")?.value.trim() || "",
+
+            block_name: modalEl.querySelector("#block")?.value.trim() || "",
+            grave_code: modalEl.querySelector("#grave_code")?.value.trim().toUpperCase() || "",
+            block_type: burialTypeRaw,
+
+            status: "Active"
         };
 
         document.dispatchEvent(new CustomEvent("burial_modal:save", {
-            detail: { mode: currentMode, data: formData },
+            detail: { mode: currentMode, data: payload }
         }));
 
         close();

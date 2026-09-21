@@ -1,19 +1,5 @@
 <?php
 
-/**
- * Records.php – Full CRUD for interments (Master Admin Editor)
- * 
- * This version ALLOWS multiple Active interments on the same grave (co‑interment).
- * It does NOT enforce grave.status = 'Vacant' for Active interments.
- * Grave status changes are left to the admin/front‑end.
- * 
- * GET    /records.php      : List all interments (paginated, filterable)
- * GET    /records.php/{id} : Get details of a specific interment by ID
- * POST   /records.php      : Create a new interment manually
- * PUT    /records.php/{id} : Update an interment manually (any field)
- * DELETE /records.php/{id} : Soft‑delete an interment (only if not active)
- */
-
 define('ITS_ME_JUSTTOVERIFY', true);
 
 require_once 'checkuser.php';
@@ -22,7 +8,6 @@ require_once 'logger.php';
 $userData = checkuser();
 $method   = $_SERVER['REQUEST_METHOD'] ?? null;
 
-// Only Admin and Office can manage records
 $role = $userData['role'] ?? null;
 if (!in_array($role, [ROLE_ADMIN, ROLE_OFFICE])) {
     Response::error("Forbidden. You do not have permission.", 403);
@@ -33,14 +18,10 @@ $rawData = array_merge(
     $_POST ?? []
 );
 
-// Parse path: /records.php/{id}
 $pathInfo   = $_GET['path_info'] ?? $_SERVER['PATH_INFO'] ?? '';
 $pathParts  = array_filter(explode('/', trim($pathInfo, '/')));
-$resourceId = array_shift($pathParts); // numeric ID or empty
+$resourceId = array_shift($pathParts);
 
-// -----------------------------------------------------------------------------
-// Helper function: Format an interment record with block & grave details
-// -----------------------------------------------------------------------------
 function formatInterment($row)
 {
     return [
@@ -52,12 +33,8 @@ function formatInterment($row)
         'death_certificate'          => $row['death_certificate'],
         'deceased_date_of_birth'     => $row['deceased_date_of_birth'],
         'deceased_date_of_death'     => $row['deceased_date_of_death'],
-
-        // Grave References
         'current_grave_id'           => $row['current_grave_id'] ? (int) $row['current_grave_id'] : null,
         'transfer_to_grave'          => $row['transfer_to_grave'] ? (int) $row['transfer_to_grave'] : null,
-
-        // Joined Current Grave Details
         'grave_code'                 => $row['grave_code'],
         'row_num'                    => $row['row_num'] ? (int) $row['row_num'] : null,
         'col_num'                    => $row['col_num'] ? (int) $row['col_num'] : null,
@@ -66,15 +43,11 @@ function formatInterment($row)
         'block_id'                   => $row['block_id'] ? (int) $row['block_id'] : null,
         'block_name'                 => $row['block_name'],
         'block_type'                 => $row['block_type'],
-
-        // Contact Person
         'contact_person_name'        => $row['contact_person_name'],
         'contact_person_phone_number' => $row['contact_person_phone_number'],
         'contact_person_email'       => $row['contact_person_email'],
         'contact_person_address'     => $row['contact_person_address'],
         'contact_person_address_barangay' => $row['contact_person_address_barangay'],
-
-        // Logistics & Permits
         'assistance_type'            => $row['assistance_type'],
         'burial_permit_number'       => $row['burial_permit_number'],
         'burial_permit_date'         => $row['burial_permit_date'],
@@ -83,8 +56,6 @@ function formatInterment($row)
         'transfer_permit_date'       => $row['transfer_permit_date'],
         'exhumation_permit_number'   => $row['exhumation_permit_number'],
         'exhumation_permit_date'     => $row['exhumation_permit_date'],
-
-        // Timeline & Status
         'date_buried'                => $row['date_buried'],
         'date_exhumed'               => $row['date_exhumed'],
         'burial_clearance_date'      => $row['burial_clearance_date'],
@@ -94,7 +65,6 @@ function formatInterment($row)
     ];
 }
 
-// Build the base SELECT with joins (joining on current physical location)
 function getIntermentSelectSQL()
 {
     return "
@@ -114,15 +84,38 @@ function getIntermentSelectSQL()
     ";
 }
 
-// -----------------------------------------------------------------------------
-// GET – List interments (with history flattened) or Get a specific one
-// -----------------------------------------------------------------------------
+function resolveGraveId(PDO $pdo, $blockName, $graveCode, $blockType = null)
+{
+    $graveCode = trim((string) $graveCode);
+    if ($graveCode === '') return null;
+
+    $stmt = $pdo->prepare("SELECT grave_id FROM graves WHERE grave_code = ? AND deleted_at IS NULL LIMIT 1");
+    $stmt->execute([$graveCode]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($row) return (int) $row['grave_id'];
+
+    $blockId = null;
+    $blockName = trim((string) $blockName);
+    if ($blockName !== '') {
+        $b = $pdo->prepare("SELECT block_id FROM blocks WHERE block_name = ? AND deleted_at IS NULL LIMIT 1");
+        $b->execute([$blockName]);
+        $br = $b->fetch(PDO::FETCH_ASSOC);
+        if ($br) {
+            $blockId = (int) $br['block_id'];
+        } else {
+            $ins = $pdo->prepare("INSERT INTO blocks (block_name, block_type) VALUES (?, ?)");
+            $ins->execute([$blockName, $blockType ?: null]);
+            $blockId = (int) $pdo->lastInsertId();
+        }
+    }
+
+    $ins = $pdo->prepare("INSERT INTO graves (grave_code, block_id, status) VALUES (?, ?, 'Occupied')");
+    $ins->execute([$graveCode, $blockId]);
+    return (int) $pdo->lastInsertId();
+}
+
 if ($method === 'GET') {
 
-    /**
-     * Helper: Build a flat list of interments (current + history) for ONE ID.
-     * Used by Scenario A only. Efficient because it scopes to a single interment.
-     */
     $buildFlatList = function ($filterId) use ($pdo) {
         $sql = getIntermentSelectSQL() . " WHERE i.deleted_at IS NULL AND i.interment_id = :id
                                           ORDER BY i.interment_id DESC";
@@ -191,7 +184,7 @@ if ($method === 'GET') {
             $historyRow['block_name']      = $log['history_block_name'];
             $historyRow['block_type']      = $log['history_block_type'];
             $historyRow['transfer_date']   = $log['transfer_date'];
-            $historyRow['remarks']         = "Moved on {$log['transfer_date']}. Reason: {$log['reason']}. " . ($historyRow['remarks'] ?? '');
+           
 
             $flatList[] = $historyRow;
         }
@@ -206,7 +199,6 @@ if ($method === 'GET') {
         return $flatList;
     };
 
-    // --- Scenario A: specific resource /records.php/{id} ---
     if ($resourceId) {
         $flatList = $buildFlatList($resourceId);
 
@@ -218,11 +210,7 @@ if ($method === 'GET') {
             'history_included' => true,
             'interments'       => $flatList,
         ]);
-    }
-
-    // --- Scenario B: collection /records.php ---
-    else {
-        // ---- Inputs ----
+    } else {
         $searchTerm = isset($_GET['search_term']) ? trim((string) $_GET['search_term']) : '';
         if ($searchTerm !== '' && mb_strlen($searchTerm) < 3) {
             Response::error("Search term must be at least 3 characters long", 400);
@@ -231,7 +219,6 @@ if ($method === 'GET') {
         $limit = max(1, min((int) ($_GET['limit'] ?? 100), 500));
         $page  = max(1, (int) ($_GET['page'] ?? 1));
 
-        // ---- Build search clauses (current branch: aliases i/g/b; history: i/tg/b/tl) ----
         $searchSQLCurrent = '';
         $searchSQLHistory = '';
         $searchParams     = [];
@@ -262,11 +249,6 @@ if ($method === 'GET') {
                 'b.block_type',
             ];
 
-            // For history we ALSO search:
-            //   - tl.transfer_date (so searching a date works)
-            //   - the display strings the API actually emits:
-            //       "[History <date>] <name>"
-            //       "Moved on <date>. Reason: <reason>. <remarks>"
             $historySearchCols = [
                 'i.control_number',
                 'i.deceased_name',
@@ -305,7 +287,6 @@ if ($method === 'GET') {
                 $searchParams[] = $like;
             }
 
-            // Extra: match against the *computed* strings shown in JSON.
             $hp[] = "CONCAT('[History ', COALESCE(tl.transfer_date, ''), '] ', COALESCE(i.deceased_name, '')) LIKE ?";
             $searchParams[] = $like;
 
@@ -315,7 +296,6 @@ if ($method === 'GET') {
             $searchSQLHistory = ' AND (' . implode(' OR ', $hp) . ')';
         }
 
-        // ---- Current branch (is_history = 0) ----
         $currentSQL = "
             SELECT
                 i.interment_id, 0 AS is_history,
@@ -341,7 +321,6 @@ if ($method === 'GET') {
             $searchSQLCurrent
         ";
 
-        // ---- History branch (is_history = 1) ----
         $historySQL = "
             SELECT
                 i.interment_id, 1 AS is_history,
@@ -356,8 +335,7 @@ if ($method === 'GET') {
                 i.exhumation_permit_number, i.exhumation_permit_date,
                 i.date_buried, i.date_exhumed, i.burial_clearance_date,
                 i.lease_expiration_date, i.status,
-                CONCAT('Moved on ', tl.transfer_date, '. Reason: ',
-                       COALESCE(tl.reason, ''), '. ', COALESCE(i.remarks, '')) AS remarks,
+                i.remarks AS remarks,
                 tg.grave_code, tg.row_num, tg.col_num,
                 tg.status AS grave_status, tg.remarks AS grave_remarks,
                 b.block_id, b.block_name, b.block_type,
@@ -370,11 +348,8 @@ if ($method === 'GET') {
             $searchSQLHistory
         ";
 
-        // ---- Union (note the outer parens around the WHOLE union) ----
         $unionSQL = "($currentSQL) UNION ALL ($historySQL)";
 
-        // ---- COUNT (filtered) ----
-        // Wrapped in outer parens so the alias attaches to the union, not just the 2nd branch.
         $countStmt = $pdo->prepare("SELECT COUNT(*) FROM ($unionSQL) AS combined");
         $countStmt->execute($searchParams);
         $totalRecords = (int) $countStmt->fetchColumn();
@@ -383,8 +358,6 @@ if ($method === 'GET') {
         $page       = min($page, max(1, $totalPages));
         $offset     = ($page - 1) * $limit;
 
-        // ---- Fetch page (filtered, ordered, limited) ----
-        // $limit and $offset are strict ints at this point → safe to interpolate.
         $pageSQL = "
             SELECT *
             FROM ($unionSQL) AS combined
@@ -395,7 +368,6 @@ if ($method === 'GET') {
         $pageStmt->execute($searchParams);
         $rows = $pageStmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // ---- Format current page only (≤500 rows) ----
         $items = [];
         foreach ($rows as $row) {
             $isHistory = (bool) $row['is_history'];
@@ -413,7 +385,6 @@ if ($method === 'GET') {
             $items[] = $formatted;
         }
 
-        // ---- Response ----
         $payload = [
             'pagination' => [
                 'current_page'  => $page,
@@ -431,45 +402,45 @@ if ($method === 'GET') {
     }
 }
 
-// -----------------------------------------------------------------------------
-// POST – Create a new interment manually (co‑interment allowed)
-// -----------------------------------------------------------------------------
 if ($method === 'POST') {
-    // Required fields
-    $required = ['control_number', 'deceased_name', 'assistance_type'];
-    foreach ($required as $field) {
-        if (empty($rawData[$field])) {
-            Response::error("Field '$field' is required.", 400);
-        }
+    if (empty($rawData['control_number']) && !empty($rawData['control_no'])) {
+        $rawData['control_number'] = $rawData['control_no'];
     }
-
-    // Validate status if provided
-    $status = $rawData['status'] ?? 'Pending';
-    if (!in_array($status, ['Pending', 'Active', 'Inactive'])) {
-        Response::error("Invalid status. Must be Pending, Active, or Inactive.", 400);
+    if (empty($rawData['assistance_type'])) {
+        $rawData['assistance_type'] = 'Burial';
     }
-
-    // Validate assistance_type
-    $assistance = $rawData['assistance_type'];
-    if (!in_array($assistance, ['Burial', 'Transfer the remains of the late', 'Other'])) {
+    if (empty($rawData['deceased_name'])) {
+        Response::error("Field 'deceased_name' is required.", 400);
+    }
+    if (empty($rawData['control_number'])) {
+        Response::error("Field 'control_number' is required.", 400);
+    }
+    if (!preg_match('/^[A-Z0-9-]+$/', (string) $rawData['control_number'])) {
+        Response::error("Invalid control_number format.", 400);
+    }
+    if (!in_array($rawData['assistance_type'], ['Burial', 'Transfer the remains of the late', 'Other'], true)) {
         Response::error("Invalid assistance_type.", 400);
     }
 
-    // If current_grave_id provided, validate existence ONLY (no vacancy check)
-    $currentGraveId = !empty($rawData['current_grave_id']) ? (int) $rawData['current_grave_id'] : null;
+    $currentGraveId = !empty($rawData['current_grave_id'])
+        ? (int) $rawData['current_grave_id']
+        : resolveGraveId(
+            $pdo,
+            $rawData['block_name'] ?? $rawData['block'] ?? '',
+            $rawData['grave_code'] ?? '',
+            $rawData['block_type'] ?? null
+        );
+
     if ($currentGraveId) {
-        $graveCheck = $pdo->prepare("
-            SELECT grave_id FROM graves 
-            WHERE grave_id = ? AND deleted_at IS NULL
-        ");
+        $graveCheck = $pdo->prepare("SELECT grave_id FROM graves WHERE grave_id = ? AND deleted_at IS NULL");
         $graveCheck->execute([$currentGraveId]);
         if (!$graveCheck->fetch()) {
             Response::error("Current grave does not exist or is deleted.", 400);
         }
-        // NO vacancy check – allows co‑interment
     }
 
-    // Prepare insert fields (including audit columns)
+    $status = 'Active';
+
     $fields = [
         'control_number',
         'deceased_name',
@@ -499,7 +470,6 @@ if ($method === 'POST') {
         'lease_expiration_date',
         'status',
         'remarks',
-        // Audit
         'created_by',
         'updated_by'
     ];
@@ -511,14 +481,16 @@ if ($method === 'POST') {
             $val = $status;
         } elseif ($field === 'created_by' || $field === 'updated_by') {
             $val = $userData['user_id'];
+        } elseif ($field === 'current_grave_id') {
+            $val = $currentGraveId;
         } else {
             $val = $rawData[$field] ?? null;
         }
-        // Validate date fields
         if (in_array($field, ['deceased_date_of_birth', 'deceased_date_of_death', 'burial_permit_date', 'transfer_permit_date', 'exhumation_permit_date', 'date_buried', 'date_exhumed', 'burial_clearance_date', 'lease_expiration_date'])) {
             if (!empty($val) && !strtotime($val)) {
                 Response::error("Invalid date format for '$field'.", 400);
             }
+            if ($val === '') $val = null;
         }
         $placeholders[] = '?';
         $values[] = $val;
@@ -526,18 +498,15 @@ if ($method === 'POST') {
 
     $pdo->beginTransaction();
     try {
-        // Insert interment (created_at/updated_at default automatically)
         $sql = "INSERT INTO interments (" . implode(', ', $fields) . ") VALUES (" . implode(', ', $placeholders) . ")";
         $stmt = $pdo->prepare($sql);
         $stmt->execute($values);
         $newId = $pdo->lastInsertId();
 
-        // --- NEW ADDITION: Automatically mark grave as Occupied ---
         if ($status === 'Active' && $currentGraveId) {
             $markOccupied = $pdo->prepare("UPDATE graves SET status = 'Occupied' WHERE grave_id = ?");
             $markOccupied->execute([$currentGraveId]);
         }
-        // ---------------------------------------------------------
 
         $pdo->commit();
         systemLog("Manually created interment $newId with status $status", $userData['user_id']);
@@ -552,35 +521,44 @@ if ($method === 'POST') {
     }
 }
 
-// -----------------------------------------------------------------------------
-// PUT – Update an interment manually (co‑interment allowed)
-// -----------------------------------------------------------------------------
 if ($method === 'PUT') {
-    // REST functionality: allow PUT /records.php/{id}
     if ($resourceId && is_numeric($resourceId)) {
         $rawData['interment_id'] = $resourceId;
     }
-
+    if (empty($rawData['interment_id']) && !empty($rawData['id'])) {
+        $rawData['interment_id'] = $rawData['id'];
+    }
     if (empty($rawData['interment_id'])) {
         Response::error("interment_id is required.", 400);
     }
     $id = (int) $rawData['interment_id'];
 
-    // Fetch current record (only if not soft‑deleted)
-    $currentStmt = $pdo->prepare("
-        SELECT * FROM interments 
-        WHERE interment_id = ? AND deleted_at IS NULL
-    ");
+    $currentStmt = $pdo->prepare("SELECT * FROM interments WHERE interment_id = ? AND deleted_at IS NULL");
     $currentStmt->execute([$id]);
     $current = $currentStmt->fetch(PDO::FETCH_ASSOC);
     if (!$current) {
         Response::error("Interment not found.", 404);
     }
 
+    if (empty($rawData['current_grave_id']) && !empty($rawData['grave_code'])) {
+        $rawData['current_grave_id'] = resolveGraveId(
+            $pdo,
+            $rawData['block_name'] ?? $rawData['block'] ?? '',
+            $rawData['grave_code'],
+            $rawData['block_type'] ?? null
+        );
+    }
+
+    if (!empty($rawData['assistance_type']) &&
+        !in_array($rawData['assistance_type'], ['Burial', 'Transfer the remains of the late', 'Other'], true)) {
+        Response::error("Invalid assistance_type.", 400);
+    }
+
+    $rawData['status'] = 'Active';
+
     $updates = [];
     $params = [];
 
-    // Allowed fields to update (excluding audit columns – they are managed automatically)
     $updatable = [
         'control_number',
         'deceased_name',
@@ -618,11 +596,11 @@ if ($method === 'PUT') {
     foreach ($updatable as $field) {
         if (array_key_exists($field, $rawData)) {
             $val = $rawData[$field];
-            // Validate date fields
             if (in_array($field, ['deceased_date_of_birth', 'deceased_date_of_death', 'burial_permit_date', 'transfer_permit_date', 'exhumation_permit_date', 'date_buried', 'date_exhumed', 'burial_clearance_date', 'lease_expiration_date'])) {
                 if (!empty($val) && !strtotime($val)) {
                     Response::error("Invalid date format for '$field'.", 400);
                 }
+                if ($val === '') $val = null;
             }
             if ($field === 'status') {
                 if (!in_array($val, ['Pending', 'Active', 'Inactive'])) {
@@ -641,39 +619,28 @@ if ($method === 'PUT') {
         Response::error("No fields to update.", 400);
     }
 
-    // --- Validation (co‑interment friendly) ---
-    // Only check that the new current_grave_id exists (if provided) and is not deleted
     if ($newCurrentGraveId) {
-        $graveCheck = $pdo->prepare("
-            SELECT grave_id FROM graves 
-            WHERE grave_id = ? AND deleted_at IS NULL
-        ");
+        $graveCheck = $pdo->prepare("SELECT grave_id FROM graves WHERE grave_id = ? AND deleted_at IS NULL");
         $graveCheck->execute([$newCurrentGraveId]);
         if (!$graveCheck->fetch()) {
             Response::error("Target current_grave_id does not exist or is deleted.", 400);
         }
-        // NO check for vacancy or other active interments – allows co‑interment
     }
 
-    // Add updated_by to the update list
     $updates[] = "updated_by = ?";
     $params[] = $userData['user_id'];
-    // updated_at will auto‑update via ON UPDATE CURRENT_TIMESTAMP
 
     $pdo->beginTransaction();
     try {
-        // Apply updates to interment
         $updateSql = "UPDATE interments SET " . implode(', ', $updates) . " WHERE interment_id = ? AND deleted_at IS NULL";
         $params[] = $id;
         $stmt = $pdo->prepare($updateSql);
         $stmt->execute($params);
 
-        // --- NEW ADDITION: Automatically mark grave as Occupied ---
         if ($newStatus === 'Active' && $newCurrentGraveId) {
             $markOccupied = $pdo->prepare("UPDATE graves SET status = 'Occupied' WHERE grave_id = ?");
             $markOccupied->execute([$newCurrentGraveId]);
         }
-        // ---------------------------------------------------------
 
         $pdo->commit();
         systemLog("Manually updated interment $id", $userData['user_id']);
@@ -688,26 +655,22 @@ if ($method === 'PUT') {
     }
 }
 
-// -----------------------------------------------------------------------------
-// DELETE – Soft‑delete an interment (only if not active and not already deleted)
-// -----------------------------------------------------------------------------
 if ($method === 'DELETE') {
-    // REST functionality: allow DELETE /records.php/{id}
     if ($resourceId && is_numeric($resourceId)) {
         $rawData['interment_id'] = $resourceId;
     }
-
+    if (empty($rawData['interment_id']) && !empty($_GET['interment_id'])) {
+        $rawData['interment_id'] = $_GET['interment_id'];
+    }
+    if (empty($rawData['interment_id']) && !empty($rawData['id'])) {
+        $rawData['interment_id'] = $rawData['id'];
+    }
     if (empty($rawData['interment_id'])) {
         Response::error("interment_id is required.", 400);
     }
     $id = (int) $rawData['interment_id'];
 
-    // Check if exists, not already deleted, and status is not Active
-    $check = $pdo->prepare("
-        SELECT status, current_grave_id 
-        FROM interments 
-        WHERE interment_id = ? AND deleted_at IS NULL
-    ");
+    $check = $pdo->prepare("SELECT status, current_grave_id FROM interments WHERE interment_id = ? AND deleted_at IS NULL");
     $check->execute([$id]);
     $row = $check->fetch(PDO::FETCH_ASSOC);
     if (!$row) {
@@ -717,12 +680,8 @@ if ($method === 'DELETE') {
         Response::error("Cannot delete an Active interment. Deactivate it first.", 400);
     }
 
-    // We do NOT free the grave automatically because there might be other active interments
-    // The admin must manually manage grave status via graves.php.
-
     $pdo->beginTransaction();
     try {
-        // Soft delete: set deleted_at, updated_at, updated_by
         $updateSql = "
             UPDATE interments 
             SET deleted_at = NOW(), 
@@ -737,7 +696,7 @@ if ($method === 'DELETE') {
         ]);
 
         $pdo->commit();
-        systemLog("Soft‑deleted interment $id", $userData['user_id']);
+        systemLog("Soft-deleted interment $id", $userData['user_id']);
         Response::success("Interment deleted (soft delete).");
     } catch (PDOException $e) {
         $pdo->rollBack();
@@ -746,5 +705,4 @@ if ($method === 'DELETE') {
     }
 }
 
-// If method not allowed
 Response::error("Method Not Allowed", 405);

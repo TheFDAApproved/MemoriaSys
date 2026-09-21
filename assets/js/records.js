@@ -96,9 +96,11 @@ document.addEventListener('DOMContentLoaded', function () {
         return { historyMap, parents };
     }
 
-    function mapHistoryEntry(h) {
+        function mapHistoryEntry(h) {
         const rawName = sanitizeVal(h.deceased_name);
         const cleanName = rawName.replace(/^\[History[^\]]*\]\s*/i, '').trim();
+        const street = sanitizeVal(h.contact_person_address || h.purok_zone_street);
+        const barangay = sanitizeVal(h.contact_person_address_barangay || h.barangay_address);
 
         return {
             transferDate: sanitizeVal(h.transfer_date),
@@ -113,8 +115,34 @@ document.addEventListener('DOMContentLoaded', function () {
             expiration: sanitizeVal(h.lease_expiration_date),
             contactName: sanitizeVal(h.contact_person_name),
             contactPhone: sanitizeVal(h.contact_person_phone_number),
-            contactAddress: sanitizeVal(h.contact_person_address),
-            remarks: sanitizeVal(h.remarks)
+            contactAddress: street && barangay ? `${street}, ${barangay}` : (street || barangay),
+            remarks: sanitizeVal(h.remarks),
+
+            control_no:          sanitizeVal(h.control_number || h.control_no),
+            clearance_date:      sanitizeVal(h.burial_clearance_date),
+            req_name:            sanitizeVal(h.contact_person_name),
+            req_phone:           sanitizeVal(h.contact_person_phone_number),
+            req_street:          street,
+            requesting_barangay: barangay,
+            req_assistance:      sanitizeVal(h.assistance_type),
+
+            deceased_name:       cleanName,
+            deceased_sex:        sanitizeVal(h.deceased_sex),
+            deceased_dob:        sanitizeVal(h.deceased_date_of_birth),
+            deceased_address:    sanitizeVal(h.last_known_address),
+            deceased_bod:        sanitizeVal(h.deceased_date_of_death),
+            deceased_cert:       sanitizeVal(h.death_certificate),
+            deceased_remarks:    sanitizeVal(h.remarks),
+
+            permit_burial:       sanitizeVal(h.burial_permit_number),
+            permit_exhumation:   sanitizeVal(h.exhumation_permit_number),
+            permit_transfer:     sanitizeVal(h.transfer_permit_number),
+
+            burial_block:        sanitizeVal(h.block_type),
+            block_name:          sanitizeVal(h.block_name),
+            grave_code:          sanitizeVal(h.grave_code),
+            date_interment:      sanitizeVal(h.date_buried),
+            expiration_date:     sanitizeVal(h.lease_expiration_date)
         };
     }
 
@@ -131,12 +159,14 @@ document.addEventListener('DOMContentLoaded', function () {
         return block + '-' + String(lot).padStart(3, '0');
     }
 
-    function mapRecord(item, index) {
+        function mapRecord(item, index) {
         const idVal = item.id || item.interment_id || (index + 101);
 
-        const fullContactAddress = item.purok_zone_street && item.barangay_address
-            ? `${item.purok_zone_street}, ${item.barangay_address}`
-            : (item.contact_person_address || '');
+        const street = sanitizeVal(item.contact_person_address || item.purok_zone_street);
+        const barangay = sanitizeVal(item.contact_person_address_barangay || item.barangay_address);
+        const fullContactAddress = street && barangay
+            ? `${street}, ${barangay}`
+            : (street || barangay);
 
         const block = autoBlock(item, index);
         const graveCode = autoGraveCode(item, block, index);
@@ -147,7 +177,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
         return {
             id: idVal,
-            controlNo: sanitizeVal(item.control_no || item.control_number),
+
+            controlNo: sanitizeVal(item.control_number || item.control_no),
             name: cleanName || 'Vacant / Unregistered',
             sex: sanitizeVal(item.deceased_sex),
             dob: sanitizeVal(item.deceased_date_of_birth),
@@ -162,7 +193,33 @@ document.addEventListener('DOMContentLoaded', function () {
             remarks: sanitizeVal(item.remarks),
             graveStatus: status,
             isHistory: false,
-            history: []
+            history: [],
+
+            control_no:          sanitizeVal(item.control_number || item.control_no),
+            clearance_date:      sanitizeVal(item.burial_clearance_date),
+            req_name:            sanitizeVal(item.contact_person_name || item.applicant_full_name),
+            req_phone:           sanitizeVal(item.contact_person_phone_number || item.phone_number),
+            req_street:          street,
+            requesting_barangay: barangay,
+            req_assistance:      sanitizeVal(item.assistance_type),
+
+            deceased_name:       cleanName,
+            deceased_sex:        sanitizeVal(item.deceased_sex),
+            deceased_dob:        sanitizeVal(item.deceased_date_of_birth),
+            deceased_address:    sanitizeVal(item.last_known_address),
+            deceased_bod:        sanitizeVal(item.deceased_date_of_death),
+            deceased_cert:       sanitizeVal(item.death_certificate),
+            deceased_remarks:    sanitizeVal(item.remarks),
+
+            permit_burial:       sanitizeVal(item.burial_permit_number),
+            permit_exhumation:   sanitizeVal(item.exhumation_permit_number),
+            permit_transfer:     sanitizeVal(item.transfer_permit_number),
+
+            burial_block:        sanitizeVal(item.block_type),
+            block_name:          sanitizeVal(item.block_name),
+            grave_code:          sanitizeVal(item.grave_code),
+            date_interment:      sanitizeVal(item.date_buried),
+            expiration_date:     sanitizeVal(item.lease_expiration_date)
         };
     }
 
@@ -660,27 +717,49 @@ document.addEventListener('DOMContentLoaded', function () {
     function handleModalSave(e) {
         const { mode, data } = e.detail;
         const method = mode === 'add' ? 'POST' : 'PUT';
+        const url = mode === 'add' ? API_URL : API_URL + '/' + data.interment_id;
 
-        fetch(API_URL, {
+        fetch(url, {
             method,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         })
-            .then(res => res.json())
-            .then(resData => {
-                if (resData.status === 'success') loadRecords();
-                else console.warn('[records] save failed:', resData);
+            .then(async (res) => {
+                let json = null;
+                try { json = await res.json(); } catch (_) { }
+                if (!res.ok || !json || json.status !== 'success') {
+                    const msg = (json && (json.message || json.error)) || ('HTTP ' + res.status);
+                    throw new Error(msg);
+                }
+                return json;
             })
-            .catch(err => console.error('[records] save request failed:', err));
+            .then(() => {
+                loadRecords();
+            })
+            .catch(err => {
+                console.error('[records] save failed:', err);
+                alert('Could not save record: ' + err.message);
+            });
     }
 
     function deleteRecord(id) {
         if (!confirm('Delete this record?')) return;
 
-        fetch(API_URL + '?id=' + id, { method: 'DELETE' })
-            .then(res => res.json())
+        fetch(API_URL + '?interment_id=' + id, { method: 'DELETE' })
+            .then(async (res) => {
+                let json = null;
+                try { json = await res.json(); } catch (_) { }
+                if (!res.ok || !json || json.status !== 'success') {
+                    const msg = (json && (json.message || json.error)) || ('HTTP ' + res.status);
+                    throw new Error(msg);
+                }
+                return json;
+            })
             .then(() => loadRecords())
-            .catch(err => console.error('[records] delete request failed:', err));
+            .catch(err => {
+                console.error('[records] delete failed:', err);
+                alert('Could not delete record: ' + err.message);
+            });
     }
 
     document.addEventListener('burial_modal:save', handleModalSave);
@@ -703,16 +782,65 @@ document.addEventListener('DOMContentLoaded', function () {
 
     window.addEventListener('resize', centerActivePage);
 
+        function updateTableMinWidth(table) {
+        const cols = table.querySelectorAll('colgroup col');
+        let sum = 0;
+        Array.prototype.forEach.call(cols, function (c) {
+            sum += parseFloat(c.style.width) || 0;
+        });
+        table.style.minWidth = sum + 'px';
+    }
+
+    function measureColumnWidths(table) {
+        const prevLayout = table.style.tableLayout;
+        const prevWidth = table.style.width;
+        const prevMinWidth = table.style.minWidth;
+
+        const colgroup = table.querySelector('colgroup');
+        const prevCols = colgroup ? colgroup.innerHTML : null;
+        if (colgroup) colgroup.innerHTML = '';
+
+        const hiddenRows = [];
+        Array.prototype.forEach.call(
+            table.querySelectorAll('tr.historyRow'),
+            function (tr) {
+                if (tr.style.display === 'none') {
+                    hiddenRows.push(tr);
+                    tr.style.display = 'table-row';
+                }
+            }
+        );
+
+        let widths = [];
+        try {
+            table.style.tableLayout = 'auto';
+            table.style.width = 'max-content';
+            table.style.minWidth = '0';
+
+            widths = Array.prototype.map.call(
+                table.querySelectorAll('thead th'),
+                function (th) { return Math.ceil(th.getBoundingClientRect().width); }
+            );
+        } finally {
+            hiddenRows.forEach(function (tr) { tr.style.display = 'none'; });
+            table.style.tableLayout = prevLayout;
+            table.style.width = prevWidth;
+            table.style.minWidth = prevMinWidth;
+            if (colgroup && prevCols !== null) colgroup.innerHTML = prevCols;
+        }
+
+        return widths;
+    }
+
     function ensureResizableColumns() {
         const table = els.table;
         if (!table) return;
-        if (state.columnsResized) return;
 
         const ths = Array.from(table.querySelectorAll('thead th'));
         if (!ths.length) return;
 
-        const widths = ths.map(th => th.getBoundingClientRect().width);
-        if (widths.some(w => !w)) return;
+        const widths = measureColumnWidths(table);
+        if (!widths.length || widths.some(function (w) { return !w; })) return;
 
         let colgroup = table.querySelector('colgroup');
         if (!colgroup) {
@@ -720,23 +848,18 @@ document.addEventListener('DOMContentLoaded', function () {
             table.insertBefore(colgroup, table.firstChild);
         }
         colgroup.innerHTML = '';
-        widths.forEach(w => {
+        widths.forEach(function (w) {
             const col = document.createElement('col');
             col.style.width = w + 'px';
             colgroup.appendChild(col);
         });
 
         table.style.tableLayout = 'fixed';
-        table.style.minWidth = widths.reduce((a, b) => a + b, 0) + 'px';
+        updateTableMinWidth(table);
 
-        const cols = Array.from(colgroup.children);
+        if (state.columnsResized) return;
 
-        const updateMinWidth = () => {
-            const sum = cols.reduce((a, c) => a + (parseFloat(c.style.width) || 0), 0);
-            table.style.minWidth = sum + 'px';
-        };
-
-        ths.forEach((th, i) => {
+        ths.forEach(function (th, i) {
             if (th.querySelector('.col-resizer')) return;
 
             const resizer = document.createElement('span');
@@ -747,19 +870,21 @@ document.addEventListener('DOMContentLoaded', function () {
             let startX = 0;
             let startW = 0;
 
-            const onMove = (e) => {
+            const onMove = function (e) {
+                const cols = table.querySelectorAll('colgroup col');
+                if (!cols[i]) return;
                 const w = Math.max(60, startW + (e.clientX - startX));
                 cols[i].style.width = w + 'px';
-                updateMinWidth();
+                updateTableMinWidth(table);
             };
 
-            const onUp = () => {
+            const onUp = function () {
                 document.removeEventListener('mousemove', onMove);
                 document.removeEventListener('mouseup', onUp);
                 document.body.classList.remove('resizing');
             };
 
-            resizer.addEventListener('mousedown', (e) => {
+            resizer.addEventListener('mousedown', function (e) {
                 e.preventDefault();
                 e.stopPropagation();
                 startX = e.clientX;

@@ -582,9 +582,3 @@ tr.historyRow.visible td {
 .historyBadge i {
     font-size: 10px;
 }
-
-tr.historyRow td:nth-child(13) {
-    max-width: 260px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
