@@ -64,7 +64,8 @@ $formatTransfer = function ($row) {
         'status'                 => $row['status'],
         'remarks'                => $row['remarks'],
         'deceased_sex'             => $row['deceased_sex'],
-        'contact_person_address'   => $row['contact_person_address']
+        'contact_person_address'   => $row['contact_person_address'],
+        'contact_person_address_barangay' => $row['contact_person_address_barangay']
     ];
 
     // Old occupant (if any, matching the target grave)
@@ -98,7 +99,8 @@ $formatTransfer = function ($row) {
             'status'                 => $row['old_status'],
             'remarks'                => $row['old_remarks'],
             'deceased_sex'             => $row['old_deceased_sex'],
-            'contact_person_address'   => $row['old_contact_person_address']
+            'contact_person_address'   => $row['old_contact_person_address'],
+            'contact_person_address_barangay' => $row['contact_person_address_barangay']
         ];
     }
 
@@ -144,7 +146,7 @@ if ($method === 'GET') {
             o.exhumation_permit_date AS old_exhumation_permit_date, o.date_buried AS old_date_buried,
             o.date_exhumed AS old_date_exhumed, o.burial_clearance_date AS old_burial_clearance_date,
             o.lease_expiration_date AS old_lease_expiration_date, o.status AS old_status, o.remarks AS old_remarks,
-            o.contact_person_address AS old_contact_person_address, o.deceased_sex AS old_deceased_sex,
+            o.contact_person_address AS old_contact_person_address, o.deceased_sex AS old_deceased_sex, o.contact_person_address_barangay AS old_contact_person_address_barangay,
             g.grave_id AS target_grave_id, g.grave_code, g.row_num, g.col_num, g.status AS grave_status, g.remarks AS grave_remarks,
             b.block_name, b.block_id, b.block_type
         FROM interments p
@@ -197,6 +199,7 @@ if ($method === 'GET') {
                 'p.contact_person_phone_number',
                 'p.contact_person_email',
                 'p.contact_person_address',
+                'p.contact_person_address_barangay',
                 'p.assistance_type',
                 'p.burial_permit_number',
                 'p.transfer_permit_number',
@@ -215,6 +218,7 @@ if ($method === 'GET') {
                 'o.contact_person_phone_number',
                 'o.contact_person_email',
                 'o.contact_person_address',
+                'o.contact_person_address_barangay',
                 'o.assistance_type',
                 'o.burial_permit_number',
                 'o.transfer_permit_number',

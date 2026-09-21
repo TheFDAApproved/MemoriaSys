@@ -76,7 +76,8 @@ $formatItem = function ($row) {
         'interment_status'         => $row['interment_status'],
         'interment_remarks'        => $row['interment_remarks'],
         'deceased_sex'             => $row['deceased_sex'],
-        'contact_person_address'   => $row['contact_person_address']
+        'contact_person_address'   => $row['contact_person_address'],
+        'contact_person_address_barangay' => $row['contact_person_address_barangay']
     ];
 };
 
@@ -98,7 +99,7 @@ if ($method === 'GET') {
                i.transfer_permit_issued_by, i.transfer_permit_date, i.exhumation_permit_number,
                i.exhumation_permit_date, i.date_buried, i.date_exhumed, i.burial_clearance_date,
                i.lease_expiration_date, i.status AS interment_status, i.remarks AS interment_remarks,
-               i.deceased_sex, i.contact_person_address,
+               i.deceased_sex, i.contact_person_address, i.contact_person_address_barangay,
                g.grave_id, g.grave_code, g.row_num, g.col_num, g.status AS grave_status, g.remarks AS grave_remarks,
                b.block_name, b.block_id, b.block_type
         FROM interments i
@@ -122,7 +123,7 @@ if ($method === 'GET') {
                NULL AS exhumation_permit_number, NULL AS exhumation_permit_date, NULL AS date_buried,
                NULL AS date_exhumed, NULL AS burial_clearance_date, NULL AS lease_expiration_date,
                NULL AS interment_status, NULL AS interment_remarks,
-               NULL AS deceased_sex, NULL AS contact_person_address,
+               NULL AS deceased_sex, NULL AS contact_person_address, NULL AS contact_person_address_barangay,
                g.grave_id, g.grave_code, g.row_num, g.col_num,
                g.status AS grave_status, g.remarks AS grave_remarks,
                b.block_name, b.block_id, b.block_type
@@ -225,6 +226,7 @@ if ($method === 'GET') {
                     'i.contact_person_phone_number',
                     'i.contact_person_email',
                     'i.contact_person_address',
+                    'i.contact_person_address_barangay',
                     'i.assistance_type',
                     'i.burial_permit_number',
                     'i.transfer_permit_number',
@@ -492,6 +494,8 @@ if ($method === 'POST') {
         'remarks',
         'deceased_sex',
         'contact_person_address',
+        'contact_person_address_barangay',
+
         // New audit columns (will be set explicitly)
         'created_at',
         'updated_at',
