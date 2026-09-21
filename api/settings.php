@@ -70,9 +70,9 @@ try {
             if ($resourceId) {
                 // Get single setting (only if not deleted)
                 $stmt = $pdo->prepare("
-                    SELECT * FROM settings 
-                    WHERE setting_id = :id AND deleted_at IS NULL
-                ");
+            SELECT * FROM settings 
+            WHERE setting_id = :id AND deleted_at IS NULL
+        ");
                 $stmt->execute([':id' => $resourceId]);
                 $setting = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -81,7 +81,7 @@ try {
                 }
 
                 // Decrypt specific sensitive value (only for admins)
-                if (stripos($setting['description'], 'sensitive') !== false) {
+                if (stripos((string)($setting['description'] ?? ''), 'sensitive') !== false) {
                     if ($userData['role'] !== ROLE_ADMIN) {
                         Response::error("Forbidden to access this resource", 403);
                     }
@@ -95,27 +95,22 @@ try {
                 Response::success("System setting retrieved", $setting);
             } else {
                 // Get all settings (only active ones)
-                $stmt = $pdo->prepare("
-                    SELECT * FROM settings WHERE deleted_at IS NULL
-                ");
+                $stmt = $pdo->prepare("SELECT * FROM settings WHERE deleted_at IS NULL");
                 $stmt->execute();
                 $settings = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
                 // Process sensitive values
                 foreach ($settings as &$setting) {
-                    if (stripos($setting['description'], 'sensitive') !== false) {
+                    if (stripos((string)($setting['description'] ?? ''), 'sensitive') !== false) {
                         if ($userData['role'] !== ROLE_ADMIN) {
-                            // Non-admins: remove the entire sensitive setting from the list
                             $setting = null; // mark for removal
                         } else {
-                            // Admins: decrypt the value
                             $setting['setting_value'] = decryptCredential($setting['setting_value']);
                         }
                     }
                 }
-                unset($setting); // break reference
+                unset($setting);
 
-                // Remove null entries (sensitive settings hidden from non-admins)
                 $settings = array_values(array_filter($settings, fn($s) => $s !== null));
 
                 systemLog(
