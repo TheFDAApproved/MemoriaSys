@@ -72,6 +72,7 @@ function formatInterment($row)
         'contact_person_phone_number' => $row['contact_person_phone_number'],
         'contact_person_email'       => $row['contact_person_email'],
         'contact_person_address'     => $row['contact_person_address'],
+        'contact_person_address_barangay' => $row['contact_person_address_barangay'],
 
         // Logistics & Permits
         'assistance_type'            => $row['assistance_type'],
@@ -158,9 +159,11 @@ if ($method === 'GET') {
                 b.block_name  AS history_block_name,
                 b.block_type  AS history_block_type
             FROM transfer_log tl
-            LEFT JOIN graves tg ON tl.to_grave_id = tg.grave_id
-            LEFT JOIN blocks b  ON tg.block_id    = b.block_id
+            LEFT JOIN graves tg ON tl.from_grave_id = tg.grave_id
+            LEFT JOIN blocks b  ON tg.block_id      = b.block_id
             WHERE tl.interment_id IN ($placeholders)
+              AND tl.from_grave_id IS NOT NULL
+            ORDER BY tl.transfer_date DESC
         ";
         $histStmt = $pdo->prepare($historySql);
         $histStmt->execute($ids);
@@ -246,6 +249,7 @@ if ($method === 'GET') {
                 'i.contact_person_phone_number',
                 'i.contact_person_email',
                 'i.contact_person_address',
+                'i.contact_person_address_barangay',
                 'i.assistance_type',
                 'i.burial_permit_number',
                 'i.transfer_permit_number',
@@ -273,6 +277,7 @@ if ($method === 'GET') {
                 'i.contact_person_phone_number',
                 'i.contact_person_email',
                 'i.contact_person_address',
+                'i.contact_person_address_barangay',
                 'i.assistance_type',
                 'i.burial_permit_number',
                 'i.transfer_permit_number',
@@ -319,7 +324,7 @@ if ($method === 'GET') {
                 i.deceased_date_of_birth, i.deceased_date_of_death,
                 i.current_grave_id, i.transfer_to_grave,
                 i.contact_person_name, i.contact_person_phone_number,
-                i.contact_person_email, i.contact_person_address,
+                i.contact_person_email, i.contact_person_address, i.contact_person_address_barangay,
                 i.assistance_type, i.burial_permit_number, i.burial_permit_date,
                 i.transfer_permit_number, i.transfer_permit_issued_by, i.transfer_permit_date,
                 i.exhumation_permit_number, i.exhumation_permit_date,
@@ -345,7 +350,7 @@ if ($method === 'GET') {
                 i.deceased_date_of_birth, i.deceased_date_of_death,
                 tg.grave_id AS current_grave_id, i.transfer_to_grave,
                 i.contact_person_name, i.contact_person_phone_number,
-                i.contact_person_email, i.contact_person_address,
+                i.contact_person_email, i.contact_person_address, i.contact_person_address_barangay,
                 i.assistance_type, i.burial_permit_number, i.burial_permit_date,
                 i.transfer_permit_number, i.transfer_permit_issued_by, i.transfer_permit_date,
                 i.exhumation_permit_number, i.exhumation_permit_date,
@@ -359,9 +364,9 @@ if ($method === 'GET') {
                 tl.transfer_date
             FROM transfer_log tl
             INNER JOIN interments i ON tl.interment_id = i.interment_id AND i.deleted_at IS NULL
-            LEFT  JOIN graves tg    ON tl.to_grave_id  = tg.grave_id
-            LEFT  JOIN blocks b     ON tg.block_id     = b.block_id
-            WHERE 1 = 1
+            LEFT  JOIN graves tg    ON tl.from_grave_id = tg.grave_id
+            LEFT  JOIN blocks b     ON tg.block_id      = b.block_id
+            WHERE tl.from_grave_id IS NOT NULL
             $searchSQLHistory
         ";
 
@@ -479,6 +484,7 @@ if ($method === 'POST') {
         'contact_person_phone_number',
         'contact_person_email',
         'contact_person_address',
+        'contact_person_address_barangay',
         'assistance_type',
         'burial_permit_number',
         'burial_permit_date',
@@ -589,6 +595,7 @@ if ($method === 'PUT') {
         'contact_person_phone_number',
         'contact_person_email',
         'contact_person_address',
+        'contact_person_address_barangay',
         'assistance_type',
         'burial_permit_number',
         'burial_permit_date',
