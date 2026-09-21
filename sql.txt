@@ -138,6 +138,7 @@ CREATE TABLE interments (
     contact_person_name VARCHAR(255),
     contact_person_phone_number VARCHAR(50),
     contact_person_email VARCHAR(150),
+    contact_person_address_barangay TEXT,
     contact_person_address TEXT,
 
     -- Assistance type
@@ -281,8 +282,11 @@ CREATE TRIGGER log_grave_transfer
 BEFORE UPDATE ON interments
 FOR EACH ROW
 BEGIN
-    -- Only fire if the current_grave_id has actually changed
-    IF (OLD.current_grave_id <=> NEW.current_grave_id) = 0 THEN
+    -- Only log a REAL transfer:
+    --   1. There was a previous grave (OLD.current_grave_id IS NOT NULL)
+    --   2. The grave actually changed
+    IF OLD.current_grave_id IS NOT NULL
+       AND (OLD.current_grave_id <=> NEW.current_grave_id) = 0 THEN
 
         INSERT INTO transfer_log (
             interment_id,
