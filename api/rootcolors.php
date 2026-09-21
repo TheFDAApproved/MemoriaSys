@@ -23,8 +23,16 @@ $hasColor = $isValidColor;
 
 // --- Background image ---
 $bgRelativePath = 'images/cemetery_background.png';
-$bgCssPath = "../../api/" . $bgRelativePath;   //change this if the path to the image is different and maybe on deployment on the webserver i guess
 
+$protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http";
+$domain = $_SERVER['HTTP_HOST'];
+// Fix: Strip trailing slashes to prevent double-slash bugs on live servers
+$folder = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/\\');
+
+$bgCssPath = $protocol . "://" . $domain . $folder . "/" . $bgRelativePath;
+
+// Note: This checks the server's hard drive relative to THIS PHP file. 
+// If this PHP file is in the "api" folder, the "images" folder MUST be inside the "api" folder too.
 $hasImage = file_exists($bgRelativePath);
 ?>
 
@@ -37,7 +45,8 @@ $hasImage = file_exists($bgRelativePath);
 <?php if ($hasColor): ?>
     --mainColor: <?= $mainColor ?>;
 
-    --sidebarText: contrast-color(var(--mainColor));
+    /* Replaced contrast-color() with a solid fallback until browsers support it */
+    --sidebarText: #ffffff; /* Or calculate this in PHP based on $mainColor brightness */
 
     --sidebar-hover: color-mix(in srgb, var(--mainColor), white 12%);
     --sidebar-border: color-mix(in srgb, var(--mainColor), white 18%);
