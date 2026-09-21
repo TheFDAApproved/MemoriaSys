@@ -6,4 +6,5 @@
 /api/images/*
 /api/test.php
 /api/backups
-map.html
+.htaccess
+/api/notallowed.php 
