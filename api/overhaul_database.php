@@ -317,6 +317,7 @@ SQL,
         "CREATE INDEX idx_users_deleted_at ON users(deleted_at)",
         "CREATE INDEX idx_users_session_token ON users(session_token(100))",
         "CREATE INDEX idx_payments_deleted_at ON payments(deleted_at)",
+        "CREATE INDEX idx_payments_confirmation ON payments(confirmed_office_staff, confirmed_ground_staff)",
     ];
 
     foreach ($ddl as $sql) {
@@ -647,7 +648,183 @@ SQL,
     }
 
     // -----------------------------------------------------------------
-    // 9. Soft-delete a few inactive interments
+    // 9. Seed payments
+    // -----------------------------------------------------------------
+    echo "Seeding payments...\n";
+
+    $paymentChannels = [
+        'GCash',
+        'Maya',
+        'Bank Transfer',
+        'Cash',
+        'Credit Card',
+        'Over the Counter',
+    ];
+
+    // purpose => [min, max]
+    $paymentPurposes = [
+        'Burial Fee'         => [5000, 15000],
+        'Lease/Renewal Fee'  => [2000, 5000],
+        'Exhumation Fee'     => [3000, 8000],
+        'Transfer Fee'       => [2500, 6000],
+        'Maintenance Fee'    => [1000, 3000],
+        'Grave Lot Purchase' => [20000, 80000],
+        'Niche Purchase'     => [15000, 40000],
+    ];
+
+    // Pull deceased names from the interments we just seeded, so payments
+    // link to realistic names that already exist in the system.
+    $deceasedNamesPool = $pdo->query("
+        SELECT deceased_name
+        FROM interments
+        WHERE deleted_at IS NULL
+        ORDER BY RAND()
+        LIMIT 100
+    ")->fetchAll(PDO::FETCH_COLUMN);
+
+    $payerRemarkTemplates = [
+        'Please confirm my payment.',
+        'Paid via {channel}. Reference on receipt.',
+        'Kindly verify the transaction.',
+        'Urgent processing please.',
+        'Payment sent, awaiting confirmation.',
+        null,
+        null,
+    ];
+
+    $stmtPayment = $pdo->prepare("
+        INSERT INTO payments (
+            reference_number, payment_channel, amount,
+            deceased_name, payers_phone_number, payers_email, payers_name,
+            purpose, image_link,
+            confirmed_office_staff, confirmed_ground_staff,
+            remarks_payer, remarks_office, remarks_grounds,
+            created_at, updated_at, created_by, updated_by
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), ?, ?)
+    ");
+
+    $paymentIds    = [];
+    $totalPayments = 40;
+
+    for ($i = 1; $i <= $totalPayments; $i++) {
+        $refNum  = 'PAY-' . date('Y') . '-' . str_pad((string)$i, 5, '0', STR_PAD_LEFT);
+        $channel = $paymentChannels[array_rand($paymentChannels)];
+
+        $purposeKeys = array_keys($paymentPurposes);
+        $purpose     = $purposeKeys[array_rand($purposeKeys)];
+        [$minAmt, $maxAmt] = $paymentPurposes[$purpose];
+
+        // Round to nearest 50 so amounts look like real receipts
+        $amount = round(mt_rand($minAmt, $maxAmt) / 50) * 50;
+
+        // ~70% of payments reference an actual deceased from interments
+        $deceasedName = (mt_rand(1, 10) <= 7 && !empty($deceasedNamesPool))
+            ? $deceasedNamesPool[array_rand($deceasedNamesPool)]
+            : null;
+
+        $payerName  = getRandomName($firstNames, $lastNames);
+        $payerPhone = '09' . mt_rand(100000000, 999999999);
+        $payerEmail = strtolower(str_replace(' ', '.', $payerName)) . mt_rand(1, 99) . '@example.com';
+
+        // Most payments have proof-of-payment uploaded
+        $imageLink = (mt_rand(1, 10) <= 8)
+            ? '/uploads/payments/' . strtolower($refNum) . '.jpg'
+            : null;
+
+        // Dual-approval workflow state:
+        //   40% -> fully confirmed (office + grounds)
+        //   25% -> office confirmed only
+        //   20% -> grounds confirmed only
+        //   15% -> unconfirmed (pending)
+        $confirmRoll      = mt_rand(1, 100);
+        $confirmedOffice  = null;
+        $confirmedGrounds = null;
+        $remarksOffice    = null;
+        $remarksGrounds   = null;
+
+        if ($confirmRoll <= 40) {
+            $confirmedOffice  = $adminId;
+            $confirmedGrounds = $adminId;
+            $remarksOffice    = 'Payment verified against receipt.';
+            $remarksGrounds   = 'Services/goods rendered confirmed.';
+        } elseif ($confirmRoll <= 65) {
+            $confirmedOffice = $adminId;
+            $remarksOffice   = 'Payment verified against receipt. Awaiting grounds confirmation.';
+        } elseif ($confirmRoll <= 85) {
+            $confirmedGrounds = $adminId;
+            $remarksGrounds   = 'Services rendered confirmed. Awaiting office confirmation.';
+        } else {
+            $remarksOffice = 'Pending verification.';
+        }
+
+        $remarkTemplate = $payerRemarkTemplates[array_rand($payerRemarkTemplates)];
+        $remarksPayer   = $remarkTemplate !== null
+            ? str_replace('{channel}', $remarkTemplate, $remarkTemplate)
+            : null;
+
+        $stmtPayment->execute([
+            $refNum,
+            $channel,
+            $amount,
+            $deceasedName,
+            $payerPhone,
+            $payerEmail,
+            $payerName,
+            $purpose,
+            $imageLink,
+            $confirmedOffice,
+            $confirmedGrounds,
+            $remarksPayer,
+            $remarksOffice,
+            $remarksGrounds,
+            $adminId,       // created_by
+            $adminId,       // updated_by
+        ]);
+
+        $paymentIds[] = (int)$pdo->lastInsertId();
+    }
+
+    echo "  - Inserted " . count($paymentIds) . " payment records.\n";
+
+    // -----------------------------------------------------------------
+    // 10. Seed settings (key/value config, featured people, etc.)
+    // -----------------------------------------------------------------
+    echo "Seeding settings...\n";
+
+    $settingsData = [
+        // Featured people / guardians (displayed on the public site)
+        ['people_name_1',   'Tsunayoshi Sawada',            'Featured person 1 - name'],
+        ['people_title_1',  '10th Vongola Boss',            'Featured person 1 - title'],
+        ['people_name_2',   'Kyoya Hibari',                 'Featured person 2 - name'],
+        ['people_title_2',  '10th Vongola Cloud Guardian',  'Featured person 2 - title'],
+        ['people_name_3',   'Chrome Dokuro',                'Featured person 3 - name'],
+        ['people_title_3',  '10th Vongola Mist Guardian',   'Featured person 3 - title'],
+        ['people_name_4',   'Lambo',                        'Featured person 4 - name'],
+        ['people_title_4',  '10th Vongola Thunder Guardian', 'Featured person 4 - title'],
+
+        // Site branding
+        ['cemetery_name',   'Cementeryo sa Patay HAHAHAHA', 'Displayed cemetery name'],
+    ];
+
+    $stmtSetting = $pdo->prepare("
+        INSERT INTO settings (setting_key, setting_value, description, created_at, updated_at, created_by, updated_by)
+        VALUES (?, ?, ?, NOW(), NOW(), ?, ?)
+    ");
+
+    foreach ($settingsData as $s) {
+        $stmtSetting->execute([
+            $s[0],
+            $s[1],
+            $s[2],
+            $adminId,
+            $adminId,
+        ]);
+    }
+
+    echo "  - Inserted " . count($settingsData) . " setting rows.\n";
+
+    // -----------------------------------------------------------------
+    // 11. Soft-delete a few inactive interments + unconfirmed payments
     // -----------------------------------------------------------------
     echo "Soft-deleting some inactive interments...\n";
 
@@ -670,18 +847,45 @@ SQL,
         echo "  - Soft-deleted interment #$id\n";
     }
 
+    // Also soft-delete a couple of unconfirmed payments for variety
+    echo "Soft-deleting some unconfirmed payments...\n";
+
+    $softDeletePaymentStmt = $pdo->prepare("
+        UPDATE payments
+        SET deleted_at = NOW(), updated_at = NOW()
+        WHERE payment_id = ?
+          AND confirmed_office_staff IS NULL
+          AND confirmed_ground_staff IS NULL
+    ");
+
+    $stalePaymentIds = $pdo->query("
+        SELECT payment_id
+        FROM payments
+        WHERE confirmed_office_staff IS NULL
+          AND confirmed_ground_staff IS NULL
+          AND deleted_at IS NULL
+        LIMIT 2
+    ")->fetchAll(PDO::FETCH_COLUMN);
+
+    foreach ($stalePaymentIds as $pid) {
+        $softDeletePaymentStmt->execute([$pid]);
+        echo "  - Soft-deleted payment #$pid\n";
+    }
+
     $pdo->commit();
 
     // -----------------------------------------------------------------
-    // 10. Summary
+    // 12. Summary
     // -----------------------------------------------------------------
     echo "\n✅ Successfully seeded realistic dummy data!\n";
     echo "   - Database: $db\n";
-    echo "   - Users: " . $pdo->query("SELECT COUNT(*) FROM users")->fetchColumn() . "\n";
-    echo "   - Blocks: " . $pdo->query("SELECT COUNT(*) FROM blocks")->fetchColumn() . "\n";
-    echo "   - Graves: " . $pdo->query("SELECT COUNT(*) FROM graves")->fetchColumn() . "\n";
-    echo "   - Interments: " . $pdo->query("SELECT COUNT(*) FROM interments")->fetchColumn() . "\n";
+    echo "   - Users: "         . $pdo->query("SELECT COUNT(*) FROM users")->fetchColumn()        . "\n";
+    echo "   - Blocks: "        . $pdo->query("SELECT COUNT(*) FROM blocks")->fetchColumn()       . "\n";
+    echo "   - Graves: "        . $pdo->query("SELECT COUNT(*) FROM graves")->fetchColumn()       . "\n";
+    echo "   - Interments: "    . $pdo->query("SELECT COUNT(*) FROM interments")->fetchColumn()   . "\n";
     echo "   - Transfer logs: " . $pdo->query("SELECT COUNT(*) FROM transfer_log")->fetchColumn() . "\n";
+    echo "   - Payments: "      . $pdo->query("SELECT COUNT(*) FROM payments")->fetchColumn()     . "\n";
+    echo "   - Settings: "      . $pdo->query("SELECT COUNT(*) FROM settings")->fetchColumn()     . "\n";
 } catch (Throwable $e) {
     if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
         $pdo->rollBack();
