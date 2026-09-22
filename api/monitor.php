@@ -485,13 +485,71 @@ if ($method === 'DELETE') {
                 // the admin must manually adjust the old occupant's status/remarks via the records module.
             }
         }
+        // 3. Revert old-occupant changes made when the reservation was created
+        $revertedIds = [];
+
+        // 3a. Find every interment whose remarks contain a REVERT marker
+        $findLinked = $pdo->prepare("
+            SELECT interment_id, remarks
+            FROM interments
+            WHERE remarks LIKE '%[REVERT:%'
+            AND deleted_at IS NULL
+        ");
+        $findLinked->execute();
+        $linked = $findLinked->fetchAll(PDO::FETCH_ASSOC);
+
+        $revertUpdate = $pdo->prepare("
+            UPDATE interments
+            SET transfer_to_grave = ?,
+                remarks = ?,
+                updated_at = NOW(),
+                updated_by = ?
+            WHERE interment_id = ?
+        ");
+
+        foreach ($linked as $occ) {
+            if (!preg_match('/\[REVERT:([A-Za-z0-9+\/=]+)\]/', $occ['remarks'], $m)) {
+                continue;
+            }
+            $decoded = json_decode(base64_decode($m[1]), true);
+            if (!is_array($decoded)) {
+                continue;
+            }
+            if ((int)($decoded['pending_id'] ?? 0) !== $pendingId) {
+                continue; // marker belongs to a different pending reservation
+            }
+
+            $prevTransfer = $decoded['prev_transfer'] ?? null;
+            $appended     = (string)($decoded['appended'] ?? '');
+            $marker       = $m[0];
+
+            // Strip exactly what we appended + the marker
+            $suffix = ' ' . $appended . ' ' . $marker;
+            $newRemarks = $occ['remarks'];
+            if (substr($newRemarks, -strlen($suffix)) === $suffix) {
+                $newRemarks = substr($newRemarks, 0, -strlen($suffix));
+            }
+            $newRemarks = trim($newRemarks);
+            if ($newRemarks === '') {
+                $newRemarks = null;
+            }
+
+            $revertUpdate->execute([
+                $prevTransfer,
+                $newRemarks,
+                $userData['user_id'],
+                $occ['interment_id'],
+            ]);
+            $revertedIds[] = (int) $occ['interment_id'];
+        }
 
         $pdo->commit();
         systemLog("Cancelled pending interment $pendingId", $userData['user_id']);
         Response::success("Pending interment cancelled.", [
             'pending_interment_id' => $pendingId,
             'target_grave_id'      => $targetGraveId,
-            'grave_freed'          => ($targetGraveId && !$hasActive) // True if grave went back to Vacant
+            'grave_freed'          => ($targetGraveId && !$hasActive),
+            'reverted_interments'  => $revertedIds,
         ]);
     } catch (PDOException $e) {
         $pdo->rollBack();

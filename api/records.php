@@ -11,7 +11,7 @@
  * GET    /records.php/{id} : Get details of a specific interment by ID
  * POST   /records.php      : Create a new interment manually
  * PUT    /records.php/{id} : Update an interment manually (any field)
- * DELETE /records.php/{id} : Soft‑delete an interment (only if not active)
+ * DELETE /records.php/{id} : Soft‑delete an interment (Active allowed; frees grave if empty)
  */
 
 define('ITS_ME_JUSTTOVERIFY', true);
@@ -469,6 +469,12 @@ if ($method === 'POST') {
         // NO vacancy check – allows co‑interment
     }
 
+    // An Inactive interment must not have a grave assignment.
+    if ($status === 'Inactive') {
+        $rawData['current_grave_id'] = null;
+        $currentGraveId = null;
+    }
+
     // Prepare insert fields (including audit columns)
     $fields = [
         'control_number',
@@ -532,12 +538,11 @@ if ($method === 'POST') {
         $stmt->execute($values);
         $newId = $pdo->lastInsertId();
 
-        // --- NEW ADDITION: Automatically mark grave as Occupied ---
+        // Automatically mark grave as Occupied when inserting an Active interment
         if ($status === 'Active' && $currentGraveId) {
             $markOccupied = $pdo->prepare("UPDATE graves SET status = 'Occupied' WHERE grave_id = ?");
             $markOccupied->execute([$currentGraveId]);
         }
-        // ---------------------------------------------------------
 
         $pdo->commit();
         systemLog("Manually created interment $newId with status $status", $userData['user_id']);
@@ -612,18 +617,25 @@ if ($method === 'PUT') {
         'remarks'
     ];
 
-    $newStatus = $current['status'];
+    // Snapshot the state BEFORE the update, so we can decide what to do with graves afterward
+    $oldStatus         = $current['status'];
+    $oldCurrentGraveId = $current['current_grave_id'] ? (int) $current['current_grave_id'] : null;
+
+    $newStatus         = $current['status'];
     $newCurrentGraveId = $current['current_grave_id'];
+    $graveIdChanged    = false;
 
     foreach ($updatable as $field) {
         if (array_key_exists($field, $rawData)) {
             $val = $rawData[$field];
+
             // Validate date fields
             if (in_array($field, ['deceased_date_of_birth', 'deceased_date_of_death', 'burial_permit_date', 'transfer_permit_date', 'exhumation_permit_date', 'date_buried', 'date_exhumed', 'burial_clearance_date', 'lease_expiration_date'])) {
                 if (!empty($val) && !strtotime($val)) {
                     Response::error("Invalid date format for '$field'.", 400);
                 }
             }
+
             if ($field === 'status') {
                 if (!in_array($val, ['Pending', 'Active', 'Inactive'])) {
                     Response::error("Invalid status.", 400);
@@ -631,18 +643,56 @@ if ($method === 'PUT') {
                 $newStatus = $val;
             } elseif ($field === 'current_grave_id') {
                 $newCurrentGraveId = !empty($val) ? (int) $val : null;
+                $graveIdChanged = ((int) ($current['current_grave_id'] ?? 0)) !== ((int) ($newCurrentGraveId ?? 0));
             }
+
             $updates[] = "$field = ?";
-            $params[] = $val;
+            $params[]  = $val;
         }
+    }
+
+    // If the interment is becoming Inactive and the caller did not explicitly
+    // provide a current_grave_id, clear it so we don't leave a stale grave
+    // reference behind.
+    if ($newStatus === 'Inactive' && !array_key_exists('current_grave_id', $rawData)) {
+        $newCurrentGraveId = null;
+        $graveIdChanged    = true;
+        $updates[]         = "current_grave_id = ?";
+        $params[]          = null;
     }
 
     if (empty($updates)) {
         Response::error("No fields to update.", 400);
     }
 
-    // --- Validation (co‑interment friendly) ---
-    // Only check that the new current_grave_id exists (if provided) and is not deleted
+    // --- Workflow safeguards (AFTER the payload has been read) ---
+
+    // 1. Cannot change a Pending interment's status via Records.
+    if ($current['status'] === 'Pending' && $newStatus !== 'Pending') {
+        if ($newStatus === 'Active') {
+            Response::error("Cannot activate a Pending interment directly. Use Monitor to execute the reservation.", 400);
+        }
+        if ($newStatus === 'Inactive') {
+            Response::error("Cannot cancel a Pending interment here. Use Monitor DELETE to cancel reservations.", 400);
+        }
+    }
+
+    // 2. Cannot move an interment whose current grave is targeted by a pending reservation.
+    if ($graveIdChanged && $current['current_grave_id']) {
+        $pendingOnGrave = $pdo->prepare("
+            SELECT interment_id FROM interments
+            WHERE transfer_to_grave = ?
+              AND status = 'Pending'
+              AND deleted_at IS NULL
+            LIMIT 1
+        ");
+        $pendingOnGrave->execute([$current['current_grave_id']]);
+        if ($pendingOnGrave->fetch()) {
+            Response::error("Cannot move this interment: its grave is targeted by a pending reservation. Cancel the reservation first.", 409);
+        }
+    }
+
+    // 3. Validate the new grave exists (if provided).
     if ($newCurrentGraveId) {
         $graveCheck = $pdo->prepare("
             SELECT grave_id FROM graves 
@@ -658,26 +708,64 @@ if ($method === 'PUT') {
     // Add updated_by to the update list
     $updates[] = "updated_by = ?";
     $params[] = $userData['user_id'];
-    // updated_at will auto‑update via ON UPDATE CURRENT_TIMESTAMP
+
+    // --- Decide whether the old grave needs to be freed ---
+    $vacatingOldGrave = false;
+    if ($oldCurrentGraveId && $oldStatus === 'Active') {
+        if ($newStatus !== 'Active' || (int) ($newCurrentGraveId ?? 0) !== $oldCurrentGraveId) {
+            $vacatingOldGrave = true;
+        }
+    }
+
+    $oldGraveFreed = false;
 
     $pdo->beginTransaction();
     try {
-        // Apply updates to interment
+        // 1. Apply updates to interment
         $updateSql = "UPDATE interments SET " . implode(', ', $updates) . " WHERE interment_id = ? AND deleted_at IS NULL";
         $params[] = $id;
         $stmt = $pdo->prepare($updateSql);
         $stmt->execute($params);
 
-        // --- NEW ADDITION: Automatically mark grave as Occupied ---
+        // 2. If the old grave is being vacated, check for co-interments and free it if empty
+        if ($vacatingOldGrave) {
+            $stillOccupied = $pdo->prepare("
+                SELECT interment_id FROM interments
+                WHERE current_grave_id = ?
+                  AND status = 'Active'
+                  AND deleted_at IS NULL
+                  AND interment_id != ?
+                LIMIT 1
+            ");
+            $stillOccupied->execute([$oldCurrentGraveId, $id]);
+            if (!$stillOccupied->fetch()) {
+                $freeGrave = $pdo->prepare("UPDATE graves SET status = 'Vacant' WHERE grave_id = ?");
+                $freeGrave->execute([$oldCurrentGraveId]);
+                $oldGraveFreed = true;
+            }
+        }
+
+        // 3. If the interment is Active and has a current grave, mark that grave as Occupied
         if ($newStatus === 'Active' && $newCurrentGraveId) {
             $markOccupied = $pdo->prepare("UPDATE graves SET status = 'Occupied' WHERE grave_id = ?");
             $markOccupied->execute([$newCurrentGraveId]);
         }
-        // ---------------------------------------------------------
 
         $pdo->commit();
-        systemLog("Manually updated interment $id", $userData['user_id']);
-        Response::success("Interment updated.");
+
+        systemLog(
+            "Manually updated interment $id" .
+                ($oldGraveFreed ? " and freed grave $oldCurrentGraveId" : ""),
+            $userData['user_id']
+        );
+
+        Response::success("Interment updated.", [
+            'interment_id'    => $id,
+            'old_grave_id'    => $oldCurrentGraveId,
+            'old_grave_freed' => $oldGraveFreed,
+            'new_grave_id'    => $newCurrentGraveId ? (int) $newCurrentGraveId : null,
+            'new_status'      => $newStatus,
+        ]);
     } catch (PDOException $e) {
         $pdo->rollBack();
         if ($e->getCode() == 23000) {
@@ -689,7 +777,7 @@ if ($method === 'PUT') {
 }
 
 // -----------------------------------------------------------------------------
-// DELETE – Soft‑delete an interment (only if not active and not already deleted)
+// DELETE – Soft‑delete an interment (Active allowed)
 // -----------------------------------------------------------------------------
 if ($method === 'DELETE') {
     // REST functionality: allow DELETE /records.php/{id}
@@ -702,7 +790,7 @@ if ($method === 'DELETE') {
     }
     $id = (int) $rawData['interment_id'];
 
-    // Check if exists, not already deleted, and status is not Active
+    // Check if exists and not already deleted
     $check = $pdo->prepare("
         SELECT status, current_grave_id 
         FROM interments 
@@ -713,16 +801,20 @@ if ($method === 'DELETE') {
     if (!$row) {
         Response::error("Interment not found or already deleted.", 404);
     }
-    if ($row['status'] === 'Active') {
-        Response::error("Cannot delete an Active interment. Deactivate it first.", 400);
+
+    // Still block Pending — those must be cancelled via Monitor so the
+    // old-occupant revert logic runs.
+    if ($row['status'] === 'Pending') {
+        Response::error("Cannot delete a Pending interment. Cancel the reservation first via Monitor.", 400);
     }
 
-    // We do NOT free the grave automatically because there might be other active interments
-    // The admin must manually manage grave status via graves.php.
+    $graveId       = $row['current_grave_id'] ? (int) $row['current_grave_id'] : null;
+    $graveFreed    = false;
+    $pendingExists = false;
 
     $pdo->beginTransaction();
     try {
-        // Soft delete: set deleted_at, updated_at, updated_by
+        // 1. Soft delete the interment
         $updateSql = "
             UPDATE interments 
             SET deleted_at = NOW(), 
@@ -736,9 +828,51 @@ if ($method === 'DELETE') {
             ':updated_by' => $userData['user_id']
         ]);
 
+        // 2. If it was in a grave, decide whether to free the grave
+        if ($graveId) {
+            // Any other Active interments still physically in this grave?
+            $stillOccupied = $pdo->prepare("
+                SELECT interment_id FROM interments
+                WHERE current_grave_id = ?
+                  AND status = 'Active'
+                  AND deleted_at IS NULL
+                LIMIT 1
+            ");
+            $stillOccupied->execute([$graveId]);
+            $activeOccupant = $stillOccupied->fetch(PDO::FETCH_ASSOC);
+
+            if (!$activeOccupant) {
+                // No co-interments remain → free the grave
+                $freeGrave = $pdo->prepare("UPDATE graves SET status = 'Vacant' WHERE grave_id = ?");
+                $freeGrave->execute([$graveId]);
+                $graveFreed = true;
+            }
+
+            // Inform the client if a pending reservation targets this grave,
+            // because deleting the occupant changes the reservation's shape
+            // (replacement → vacant-grave insertion).
+            $pendingCheck = $pdo->prepare("
+                SELECT interment_id FROM interments
+                WHERE transfer_to_grave = ?
+                  AND status = 'Pending'
+                  AND deleted_at IS NULL
+                LIMIT 1
+            ");
+            $pendingCheck->execute([$graveId]);
+            if ($pendingCheck->fetch()) {
+                $pendingExists = true;
+            }
+        }
+
         $pdo->commit();
-        systemLog("Soft‑deleted interment $id", $userData['user_id']);
-        Response::success("Interment deleted (soft delete).");
+        systemLog("Soft‑deleted interment $id" . ($graveFreed ? " and freed grave $graveId" : ""), $userData['user_id']);
+
+        Response::success("Interment deleted (soft delete).", [
+            'interment_id'        => $id,
+            'grave_id'            => $graveId,
+            'grave_freed'         => $graveFreed,
+            'pending_on_grave'    => $pendingExists,
+        ]);
     } catch (PDOException $e) {
         $pdo->rollBack();
         systemLog("Record deletion error: " . $e->getMessage(), 'System');

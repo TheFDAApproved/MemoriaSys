@@ -87,13 +87,15 @@ $formatItem = function ($row) {
 if ($method === 'GET') {
 
     // ---- Base SELECT: expiring/expired interments (aliases: i, g, b) ----
+    // Excludes any interment whose current grave is already targeted by a pending reservation.
     $expiringSelect = "
         SELECT
                CASE
                    WHEN i.lease_expiration_date < CURDATE() THEN 'expired'
                    ELSE 'expiring'
                END AS type,
-               i.interment_id, i.control_number, i.deceased_name, i.last_known_address,               i.death_certificate, i.deceased_date_of_birth, i.deceased_date_of_death, i.current_grave_id,
+               i.interment_id, i.control_number, i.deceased_name, i.last_known_address,
+               i.death_certificate, i.deceased_date_of_birth, i.deceased_date_of_death, i.current_grave_id,
                i.transfer_to_grave, i.contact_person_name, i.contact_person_phone_number, i.contact_person_email,
                i.assistance_type, i.burial_permit_number, i.burial_permit_date, i.transfer_permit_number,
                i.transfer_permit_issued_by, i.transfer_permit_date, i.exhumation_permit_number,
@@ -109,10 +111,17 @@ if ($method === 'GET') {
           AND i.deleted_at IS NULL
           AND i.lease_expiration_date IS NOT NULL
           AND i.lease_expiration_date <= DATE_ADD(CURDATE(), INTERVAL 1 MONTH)
+          AND NOT EXISTS (
+              SELECT 1 FROM interments p
+              WHERE p.transfer_to_grave = i.current_grave_id
+                AND p.status = 'Pending'
+                AND p.deleted_at IS NULL
+          )
     ";
 
     // ---- Base SELECT: vacant graves (aliases: g, b; interment fields are NULL) ----
     // IMPORTANT: column order must match $expiringSelect exactly (MySQL UNION ALL is positional).
+    // Excludes any grave that is already targeted by a pending reservation.
     $vacantSelect = "
         SELECT 'vacant' AS type, NULL AS interment_id, NULL AS control_number, NULL AS deceased_name,
                NULL AS last_known_address, NULL AS death_certificate, NULL AS deceased_date_of_birth,
@@ -136,6 +145,12 @@ if ($method === 'GET') {
               WHERE i.current_grave_id = g.grave_id
                 AND i.status = 'Active'
                 AND i.deleted_at IS NULL
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM interments p
+              WHERE p.transfer_to_grave = g.grave_id
+                AND p.status = 'Pending'
+                AND p.deleted_at IS NULL
           )
     ";
 
@@ -370,7 +385,7 @@ if ($method === 'POST') {
     }
 
     // -------------------------------------------------------------------------
-    // NEW: Helper to resolve grave_code to grave_id
+    // Helper to resolve grave_code to grave_id
     // -------------------------------------------------------------------------
     $resolveGraveCode = function ($code) use ($pdo) {
         $stmt = $pdo->prepare("SELECT grave_id FROM graves WHERE grave_code = ? AND deleted_at IS NULL");
@@ -395,7 +410,7 @@ if ($method === 'POST') {
 
     $graveId = null;
     $oldIntermentId = null;
-    $oldTransferToGrave = null; // New field for where the old occupant is going
+    $oldTransferToGrave = null; // Where the old occupant is going (null = Common Bone Chamber / out of cemetery)
 
     if (!empty($rawData['grave_id']) && is_numeric($rawData['grave_id'])) {
         // Case 1: Direct reservation on a vacant grave
@@ -418,12 +433,25 @@ if ($method === 'POST') {
         if (!$check->fetch()) {
             Response::error("The specified grave is not vacant or does not exist.", 400);
         }
+
+        // Reject if a pending reservation already targets this grave
+        $pendingCheck = $pdo->prepare("
+            SELECT interment_id FROM interments
+            WHERE transfer_to_grave = ?
+              AND status = 'Pending'
+              AND deleted_at IS NULL
+            LIMIT 1
+        ");
+        $pendingCheck->execute([$graveId]);
+        if ($pendingCheck->fetch()) {
+            Response::error("This grave already has a pending reservation. Cancel it first.", 409);
+        }
     } elseif (!empty($rawData['old_interment_id']) && is_numeric($rawData['old_interment_id'])) {
         // Case 2: Replace an existing occupant
         $oldIntermentId = (int) $rawData['old_interment_id'];
 
         $oldStmt = $pdo->prepare("
-            SELECT current_grave_id, deceased_name 
+            SELECT current_grave_id, deceased_name, transfer_to_grave 
             FROM interments 
             WHERE interment_id = ? 
               AND status = 'Active'
@@ -451,8 +479,21 @@ if ($method === 'POST') {
             Response::error("The grave is not currently occupied. Cannot replace.", 400);
         }
 
-        // Where is the old occupant going? (Can be null if moved out of cemetery completely)
-        $oldTransferToGrave = !empty($rawData['old_transfer_to_grave']) ? (int)$rawData['old_transfer_to_grave'] : null;
+        // Reject if a pending reservation already targets this grave
+        $pendingCheck = $pdo->prepare("
+            SELECT interment_id FROM interments
+            WHERE transfer_to_grave = ?
+              AND status = 'Pending'
+              AND deleted_at IS NULL
+            LIMIT 1
+        ");
+        $pendingCheck->execute([$graveId]);
+        if ($pendingCheck->fetch()) {
+            Response::error("This grave already has a pending reservation. Cancel it first.", 409);
+        }
+
+        // Where is the old occupant going? (null = Common Bone Chamber / out of cemetery)
+        $oldTransferToGrave = !empty($rawData['old_transfer_to_grave']) ? (int) $rawData['old_transfer_to_grave'] : null;
 
         // Prepare remarks update for old occupant
         $newDeceased = trim($rawData['deceased_name']);
@@ -496,7 +537,7 @@ if ($method === 'POST') {
         'contact_person_address',
         'contact_person_address_barangay',
 
-        // New audit columns (will be set explicitly)
+        // Audit columns
         'created_at',
         'updated_at',
         'created_by',
@@ -541,6 +582,18 @@ if ($method === 'POST') {
 
         // 2. If replacing an old occupant, update their target grave, remarks, and audit fields
         if ($oldIntermentId) {
+            // The exact text we're about to append to the old occupant's remarks
+            $appendedText = $oldRemarks . " (new interment ID: $newIntermentId)";
+
+            // Record what to undo if this reservation is later cancelled.
+            // Stored as [REVERT:<base64(JSON)>] so Monitor.php can find & decode it.
+            $markerData = json_encode([
+                'pending_id'    => (int) $newIntermentId,
+                'prev_transfer' => $old['transfer_to_grave'] !== null ? (int) $old['transfer_to_grave'] : null,
+                'appended'      => $appendedText,
+            ]);
+            $revertMarker = '[REVERT:' . base64_encode($markerData) . ']';
+
             $updateOld = $pdo->prepare("
                 UPDATE interments 
                 SET transfer_to_grave = ?, 
@@ -549,7 +602,7 @@ if ($method === 'POST') {
                     updated_by = ?
                 WHERE interment_id = ?
             ");
-            $fullRemarks = $oldRemarks . " (new interment ID: $newIntermentId)";
+            $fullRemarks = $appendedText . ' ' . $revertMarker;
             $updateOld->execute([$oldTransferToGrave, $fullRemarks, $userData['user_id'], $oldIntermentId]);
         }
 
