@@ -1,0 +1,1012 @@
+/* =========================================================================
+   MEMORIA — REPORTS
+   Sections:
+     1. Variables & Reset
+     2. Control workspace (dropdown + print button + filter panels)
+     3. Report card shell (letter-size, three-zone flex layout)
+     4. Card content blocks (tables, bullet lists, block headers)
+     5. Signatories
+     6. Print rules
+     7. Animations
+   ========================================================================= */
+
+/* -------------------------------------------------------------------------
+   1. VARIABLES & RESET
+   ------------------------------------------------------------------------- */
+
+:root {
+  /* Backgrounds */
+  --bg-body: #f5f6f7;
+  --bg-card: #ffffff;
+  --bg-hover: #f8fafc;
+  --bg-active: #f1f5f9;
+
+  /* Text Colors */
+  --text-main: #1e293b;
+  --text-muted: #334155;
+  --text-light: #475569;
+  --text-lighter: #64748b;
+  --text-placeholder: #94a3b8;
+
+  /* Borders */
+  --border-light: #e2e8f0;
+  --border-base: #cbd5e1;
+  --border-card: #dcdcdc;
+
+  /* Accents */
+  --accent-primary: #0056b3;
+  --accent-hover: #004494;
+  --accent-light: rgba(0, 86, 179, 0.15);
+
+  /* Status Colors */
+  --status-danger: #dc3545;
+  --status-danger-bg: #f8d7da;
+  --status-danger-text: #ef4444;
+  --status-danger-badge: #fee2e2;
+
+  --status-warning: #b45309;
+  --status-warning-bg: #fef3c7;
+
+  --status-success: #16a34a;
+  --status-success-alt: #15803d;
+
+  --status-info: #2563eb;
+  --status-partial: #0e7490;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  font-family:
+    "Inter",
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-main);
+  background: var(--bg-body);
+  overflow: hidden;
+}
+
+.reportsContent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100vh;
+  width: 100%;
+  padding: 24px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  gap: 24px;
+}
+
+/* -------------------------------------------------------------------------
+   2. CONTROL WORKSPACE
+   ------------------------------------------------------------------------- */
+
+.controlWorkspaceDeck {
+  width: 100%;
+  max-width: 816px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.deckTopBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 16px;
+  width: 100%;
+}
+
+/* ----- Dropdown ----- */
+
+.dropdownWrapper {
+  flex: 1;
+  max-width: 460px;
+  position: relative;
+  user-select: none;
+}
+
+.dropdownLabel {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-light);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.customSelectTrigger {
+  width: 100%;
+  background: var(--bg-card);
+  border: 1px solid var(--border-base);
+  padding: 0 18px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-main);
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  height: 48px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.customSelectTrigger:hover {
+  border-color: var(--text-placeholder);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.customSelectTrigger i.fa-chevron-down {
+  font-size: 13px;
+  color: var(--text-lighter);
+  transition: transform 0.2s ease;
+}
+
+.dropdownWrapper.open .customSelectTrigger {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.dropdownWrapper.open .customSelectTrigger i.fa-chevron-down {
+  transform: rotate(180deg);
+}
+
+.selectedOptionDisplay {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  overflow: hidden;
+}
+
+.selectedOptionDisplay i {
+  color: var(--accent-primary);
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.selectedOptionDisplay .optionText {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.customOptionsPanel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 100%;
+  background: var(--bg-card);
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+  box-shadow: 0 12px 20px -4px rgba(0, 0, 0, 0.12);
+  z-index: 100;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-8px);
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease,
+    visibility 0.18s ease;
+  overflow: hidden;
+  padding: 6px 0;
+}
+
+.dropdownWrapper.open .customOptionsPanel {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
+.customOptionRow {
+  padding: 12px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.customOptionRow:hover {
+  background: var(--bg-hover);
+}
+
+.customOptionRow.active {
+  background: var(--bg-active);
+}
+
+.optionContent {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.optionContent i {
+  font-size: 15px;
+  color: var(--text-lighter);
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.customOptionRow.active .optionContent i,
+.customOptionRow.active .optionText {
+  color: var(--accent-primary);
+  font-weight: 600;
+}
+
+.optionText {
+  font-size: 14.5px;
+  color: var(--text-muted);
+}
+
+.optionBadge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: var(--bg-active);
+  color: var(--text-lighter);
+  white-space: nowrap;
+}
+
+.optionBadge.badgeAlert {
+  background: var(--status-danger-badge);
+  color: var(--status-danger-text);
+}
+
+.customOptionRow.active .optionBadge {
+  background: rgba(0, 86, 179, 0.1);
+  color: var(--accent-primary);
+}
+
+/* ----- Print button ----- */
+
+.printPdfBtn {
+  background: var(--accent-primary);
+  color: #fff;
+  border: none;
+  padding: 0 20px;
+  border-radius: 8px;
+  font-size: 14.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 48px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  transition:
+    background-color 0.15s ease,
+    transform 0.1s ease;
+  flex-shrink: 0;
+}
+
+.printPdfBtn:hover {
+  background: var(--accent-hover);
+  transform: translateY(-1px);
+}
+
+/* ----- Filter panels ----- */
+
+.filterEngineContainer {
+  background: var(--bg-card);
+  border: 1px solid var(--border-base);
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  display: none;
+}
+
+.filterEngineContainer.visible {
+  display: block;
+  animation: fadeIn 0.25s ease-out;
+}
+
+.filterGroupTitle {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-light);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.filterPanelHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.filterPanelHeader .filterGroupTitle {
+  margin-bottom: 0;
+}
+
+.clearFiltersBtn {
+  background: transparent;
+  border: none;
+  color: var(--accent-primary);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background-color 0.15s ease;
+}
+
+.clearFiltersBtn:hover {
+  background: rgba(0, 86, 179, 0.08);
+}
+
+.filterPillsRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.filterPill {
+  background: var(--bg-hover);
+  border: 1px solid var(--border-base);
+  padding: 7px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--text-light);
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.filterPill:hover {
+  border-color: var(--text-placeholder);
+  color: var(--text-main);
+  background: var(--bg-active);
+}
+
+.filterPill.active {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: #fff;
+  font-weight: 600;
+}
+
+.filterPill i {
+  margin-right: 6px;
+  font-size: 12px;
+}
+
+.filterControlsStack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.filterControlBlock {
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  animation: fadeIn 0.18s ease-out;
+}
+
+.filterControlBlock.visible {
+  display: flex;
+}
+
+.filterControlBlock .paramLabel {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-light);
+}
+
+.inlineSelect {
+  padding: 6px 12px;
+  font-size: 13.5px;
+  font-family: inherit;
+  border: 1px solid var(--border-base);
+  border-radius: 5px;
+  outline: none;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  width: 100%;
+  min-width: 0;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.inlineSelect:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.rangeRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rangeRow .inlineSelect {
+  flex: 1;
+  min-width: 0;
+}
+
+.rangeDash {
+  color: var(--text-placeholder);
+  font-weight: 600;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+/* -------------------------------------------------------------------------
+   3. REPORT CARD — THREE-ZONE LETTER SIZE
+   ------------------------------------------------------------------------- */
+
+.reportCard {
+  width: 816px;
+  min-height: 1056px;
+  flex-shrink: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-card);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+  display: none;
+  flex-direction: column;
+  position: relative;
+  margin: 0 auto;
+}
+
+.reportCard.active {
+  display: flex;
+  animation: fadeIn 0.35s ease-out;
+}
+
+.docHeader {
+  flex-shrink: 0;
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg-card);
+}
+
+.docHeader .reportHeaderImage,
+.docFooter .reportFooterImage {
+  display: block;
+  width: 100%;
+  height: auto;
+  object-fit: contain;
+  object-position: center;
+}
+
+.docBody {
+  flex: 1 1 auto;
+  padding: 24px 60px;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.docContentTitle {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text-main);
+  text-align: center;
+  margin: 0 0 6px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+.docMetaSummary {
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-lighter);
+  margin: 0 0 20px 0;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.docSection {
+  flex: 1 1 auto;
+  position: relative;
+  min-height: 120px;
+  animation: fadeIn 0.25s ease-out;
+}
+
+.docFooter {
+  flex-shrink: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  margin-top: auto;
+}
+
+/* -------------------------------------------------------------------------
+   4. CARD CONTENT BLOCKS
+   ------------------------------------------------------------------------- */
+
+.docBlockHeader {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 2px solid var(--border-base);
+  padding-bottom: 4px;
+  margin: 20px 0 12px 0;
+}
+
+.docBlockHeader:first-child {
+  margin-top: 0;
+}
+
+.docBlockHeader.danger {
+  color: var(--status-danger);
+  border-bottom-color: var(--status-danger-bg);
+}
+
+.docBlockHeader.warning {
+  color: var(--status-warning);
+  border-bottom-color: var(--status-warning-bg);
+}
+
+/* ----- Tables ----- */
+
+.cleanTable {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 15px;
+  font-size: 13px;
+  page-break-inside: auto;
+}
+
+.cleanTable thead {
+  display: table-header-group;
+}
+
+.cleanTable tr {
+  page-break-inside: avoid;
+}
+
+.cleanTable th {
+  background: var(--bg-hover);
+  color: var(--text-light);
+  font-weight: 600;
+  text-align: left;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-light);
+  font-size: 12.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.cleanTable td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--bg-active);
+  color: var(--text-muted);
+  vertical-align: top;
+}
+
+.cleanTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* ----- Bullet items ----- */
+
+.bulletItem {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  margin-bottom: 14px;
+  padding-left: 10px;
+  page-break-inside: avoid;
+}
+
+.bulletItem strong {
+  color: var(--text-main);
+}
+
+.itemDetailBlock {
+  margin-left: 15px;
+  margin-top: 3px;
+  font-size: 12.5px;
+  color: var(--text-lighter);
+  line-height: 1.55;
+}
+
+.itemDetailBlock strong {
+  color: var(--text-light);
+}
+
+/* ----- Empty / error state ----- */
+
+.noDataFallbackMessage {
+  display: none;
+  text-align: center;
+  padding: 30px;
+  font-size: 14px;
+  color: var(--text-placeholder);
+  font-style: italic;
+  border: 1px dashed var(--border-base);
+  border-radius: 6px;
+  margin-top: 15px;
+}
+
+.noDataFallbackMessage.visible {
+  display: block;
+}
+
+/* ----- Status Colors & Summaries ----- */
+
+.statusPending {
+  color: var(--status-warning);
+  font-weight: 600;
+}
+.statusPartial {
+  color: var(--status-partial);
+  font-weight: 600;
+}
+.statusConfirmed {
+  color: var(--status-success-alt);
+  font-weight: 600;
+}
+
+.paymentSummaryGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.paymentSummaryCell {
+  padding: 12px 14px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  text-align: center;
+}
+
+.paymentSummaryCell .cellLabel {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-lighter);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  margin-bottom: 4px;
+}
+
+.paymentSummaryCell .cellValue {
+  display: block;
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--text-main);
+}
+
+.paymentSummaryCell .cellSub {
+  display: block;
+  font-size: 11px;
+  color: var(--text-placeholder);
+  margin-top: 2px;
+}
+
+/* -------------------------------------------------------------------------
+   5. SIGNATORIES
+   ------------------------------------------------------------------------- */
+
+.signatorySection {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 26px 34px;
+  padding: 0 60px 20px 60px;
+  border-top: 1px dashed var(--border-base);
+  padding-top: 15px;
+  page-break-inside: avoid;
+}
+
+.sigContainer {
+  display: flex;
+  flex-direction: column;
+  min-height: 82px;
+}
+
+.sigName {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  line-height: 1.4;
+  border-bottom: 1px solid var(--text-main);
+  width: 85%;
+  margin-top: 28px;
+  margin-bottom: 6px;
+  padding-bottom: 2px;
+  min-height: 20px;
+}
+
+.sigName:empty {
+  border-bottom-color: transparent;
+}
+
+.sigTitle {
+  font-size: 10px;
+  color: var(--text-lighter);
+  text-transform: uppercase;
+  letter-spacing: 0.35px;
+  line-height: 1.4;
+}
+
+/* Hide print spacers on screen */
+.print-header-spacer,
+.print-footer-spacer {
+  display: none;
+}
+/* Table pagination resets for the Master Table */
+.printPaginationTable {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.printPaginationTable td {
+  padding: 0;
+  vertical-align: top;
+  border: none;
+}
+
+/* -------------------------------------------------------------------------
+   6. PRINT
+   ------------------------------------------------------------------------- */
+@media print {
+  @page {
+    margin: 0; /* Zero margin pushes elements flush to the paper edge */
+    size: letter portrait; /* Enforces Short Bond Paper */
+  }
+
+  html,
+  body,
+  .reportsContent,
+  .reportCard.active {
+    display: block !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    position: static !important;
+    background: #fff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Hide screen-only UI */
+  .controlWorkspaceDeck,
+  .deckTopBar,
+  .dropdownWrapper,
+  .filterEngineContainer,
+  .customOptionsPanel,
+  .printPdfBtn,
+  .noDataFallbackMessage {
+    display: none !important;
+  }
+
+  .reportCard {
+    width: 100%;
+    max-width: none;
+    border: none;
+    box-shadow: none;
+  }
+  .reportCard:not(.active) {
+    display: none !important;
+  }
+
+  /* 
+     ===================================================
+     THE MAGIC: Fixed positions force repeating in Chrome 
+     ===================================================
+  */
+  .print-fixed-header {
+    position: fixed !important;
+    top: 0;
+    left: 0;
+    width: 100%;
+    background: #fff;
+    z-index: 1000;
+  }
+
+  .print-fixed-footer {
+    position: fixed !important;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: #fff;
+    z-index: 1000;
+  }
+
+  /* 
+     ===================================================
+     TABLE SPACERS: Prevents text from hiding behind header/footer 
+     ===================================================
+  */
+  .printPaginationTable {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .printPaginationTable thead {
+    display: table-header-group !important;
+  }
+  .printPaginationTable tfoot {
+    display: table-footer-group !important;
+  }
+
+  .print-header-spacer,
+  .print-footer-spacer {
+    display: block !important;
+  }
+
+  /* INCREASE THIS IF TEXT OVERLAPS THE HEADER */
+  .print-header-spacer {
+    height: 130px !important;
+  }
+
+  /* INCREASE THIS IF TEXT OVERLAPS THE FOOTER */
+  .print-footer-spacer {
+    height: 150px !important; /* Changed from 80px. Increase to 180px or 200px if it still overlaps! */
+  }
+
+  /* Ensure the signatures look good at the end of the report */
+  .signatorySection {
+    margin-top: 40px !important;
+    page-break-inside: avoid !important;
+  }
+
+  /* General print formatting */
+  .docBody {
+    padding: 0 40px !important;
+  }
+  .reportHeaderImage,
+  .reportFooterImage {
+    max-width: 100%;
+    height: auto !important;
+    display: block;
+  }
+
+  /* Prevent blocks from slicing in half */
+  .docBlockHeader,
+  .bulletItem,
+  .cleanTable tr,
+  .paymentSummaryGrid,
+  .signatorySection {
+    page-break-inside: avoid !important;
+  }
+}
+/* -------------------------------------------------------------------------
+   7. ANIMATIONS & LOADERS
+   ------------------------------------------------------------------------- */
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.loadingPlaceholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 70px 20px;
+  color: var(--text-lighter);
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.loadingPlaceholder i {
+  font-size: 22px;
+  color: var(--accent-primary);
+}
+
+.docSection.is-loading > * {
+  opacity: 0.35;
+  transition: opacity 0.15s ease;
+  pointer-events: none;
+}
+
+.docSection.is-loading::before {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 6px;
+  z-index: 5;
+  animation: fadeIn 0.15s ease-out;
+}
+
+.docSection.is-loading::after {
+  content: "\f110";
+  font-family: "Font Awesome 6 Free";
+  font-weight: 900;
+  position: absolute;
+  top: 40px;
+  left: 50%;
+  margin-left: -12px;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--accent-primary);
+  z-index: 6;
+  animation: fa-spin 1s infinite linear;
+}
+
+@supports not (font-family: "Font Awesome 6 Free") {
+  .docSection.is-loading::after {
+    content: "…";
+    font-family: inherit;
+    font-size: 26px;
+    margin-left: -8px;
+  }
+}
+
+/* -------------------------------------------------------------------------
+   8. RESPONSIVE
+   ------------------------------------------------------------------------- */
+
+@media screen and (max-width: 900px) {
+  .reportsContent {
+    padding: 16px;
+  }
+  .reportCard {
+    width: 100%;
+    min-height: auto;
+  }
+  .docBody,
+  .signatorySection {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+  .deckTopBar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .dropdownWrapper {
+    max-width: none;
+  }
+}

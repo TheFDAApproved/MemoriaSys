@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Memoria</title>
+
+    <meta
+      name="description"
+      content="Management system for the Cemetery. Locate plots, monitor leases, and manage notifications."
+    />
+    <meta name="author" content="Team DND" />
+    <meta name="theme-color" content="#2f3136" />
+    <meta name="robots" content="index, follow" />
+
+    <meta name="geo.region" content="PH-CEB" />
+    <meta name="geo.placename" content="Mandaue City" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+    />
+
+    <link rel="stylesheet" href="assets/css/root.css" />
+    <link
+      rel="stylesheet"
+      href="api/rootcolors.php"
+      onerror="
+        console.error('Failed to load custom colors. Using default theme.')
+      "
+    />
+    <link rel="stylesheet" href="assets/css/reports.css" />
+
+    <script src="assets/js/check_user.js"></script>
+  </head>
+
+  <body>
+    <main class="reportsContent">
+      <!-- ============================================================
+           CONTROL WORKSPACE
+           ============================================================ -->
+      <section class="controlWorkspaceDeck">
+        <div class="deckTopBar">
+          <div class="dropdownWrapper" id="customDropdown">
+            <span class="dropdownLabel">Report Type</span>
+
+            <button
+              type="button"
+              class="customSelectTrigger"
+              onclick="toggleDropdown()"
+              aria-haspopup="listbox"
+              aria-expanded="false"
+            >
+              <span class="selectedOptionDisplay" id="selectedOptionTarget">
+                <i class="fas fa-id-badge"></i>
+                <span class="optionText">Interment Directory</span>
+              </span>
+              <i class="fas fa-chevron-down"></i>
+            </button>
+
+            <div class="customOptionsPanel" role="listbox">
+              <div
+                class="customOptionRow"
+                data-value="capacity"
+                onclick="selectOption(this, 'Cemetery Capacity Summary')"
+              >
+                <div class="optionContent">
+                  <i class="fas fa-chart-pie"></i>
+                  <span class="optionText">Cemetery Capacity Summary</span>
+                </div>
+                <span class="optionBadge">Stats</span>
+              </div>
+
+              <div
+                class="customOptionRow"
+                data-value="expirations"
+                onclick="selectOption(this, 'Lease Expirations')"
+              >
+                <div class="optionContent">
+                  <i class="fas fa-exclamation-triangle"></i>
+                  <span class="optionText">Lease Expirations</span>
+                </div>
+                <span class="optionBadge badgeAlert">Alerts</span>
+              </div>
+
+              <div
+                class="customOptionRow active"
+                data-value="interments"
+                onclick="selectOption(this, 'Interment Directory')"
+              >
+                <div class="optionContent">
+                  <i class="fas fa-id-badge"></i>
+                  <span class="optionText">Interment Directory</span>
+                </div>
+                <span class="optionBadge">Logs</span>
+              </div>
+
+              <div
+                class="customOptionRow"
+                data-value="graves"
+                onclick="selectOption(this, 'All Graves Registry')"
+              >
+                <div class="optionContent">
+                  <i class="fas fa-th"></i>
+                  <span class="optionText">All Graves Registry</span>
+                </div>
+                <span class="optionBadge">Matrix</span>
+              </div>
+
+              <div
+                class="customOptionRow"
+                data-value="payments"
+                onclick="selectOption(this, 'Payment Ledger')"
+              >
+                <div class="optionContent">
+                  <i class="fas fa-receipt"></i>
+                  <span class="optionText">Payment Ledger</span>
+                </div>
+                <span class="optionBadge">Finance</span>
+              </div>
+            </div>
+          </div>
+
+          <button type="button" onclick="window.print()" class="printPdfBtn">
+            <i class="fas fa-file-pdf"></i>
+            Export / Print PDF
+          </button>
+        </div>
+
+        <!-- ---------- Interment filter panel ---------- -->
+        <div id="filter-panel-interments" class="filterEngineContainer visible">
+          <div class="filterPanelHeader">
+            <div class="filterGroupTitle">
+              <i class="fas fa-filter"></i> Filter Configuration
+            </div>
+            <button
+              type="button"
+              class="clearFiltersBtn"
+              onclick="clearAllFilters('interments')"
+            >
+              Clear all
+            </button>
+          </div>
+
+          <div class="filterPillsRow" id="interments-pills">
+            <button
+              type="button"
+              class="filterPill"
+              data-filter="address"
+              onclick="toggleFilter('interments', 'address')"
+            >
+              <i class="fas fa-map-marker-alt"></i> Address
+            </button>
+            <button
+              type="button"
+              class="filterPill"
+              data-filter="gender"
+              onclick="toggleFilter('interments', 'gender')"
+            >
+              <i class="fas fa-venus-mars"></i> Gender
+            </button>
+            <button
+              type="button"
+              class="filterPill"
+              data-filter="year"
+              onclick="toggleFilter('interments', 'year')"
+            >
+              <i class="fas fa-calendar"></i> Year
+            </button>
+            <button
+              type="button"
+              class="filterPill"
+              data-filter="contact"
+              onclick="toggleFilter('interments', 'contact')"
+            >
+              <i class="fas fa-user-friends"></i> Contact Person
+            </button>
+          </div>
+
+          <div class="filterControlsStack" id="interments-controls">
+            <div
+              id="interments-filter-address"
+              class="filterControlBlock"
+              data-filter="address"
+            >
+              <label class="paramLabel" for="interments-input-address"
+                >Search — Barangay, Street, or Contact Person Address</label
+              >
+              <input
+                id="interments-input-address"
+                type="text"
+                class="inlineSelect"
+                placeholder="e.g. Tipolo, Mabini St."
+                oninput="
+                  onFilterValueChange('interments', 'address', this.value)
+                "
+              />
+            </div>
+            <div
+              id="interments-filter-gender"
+              class="filterControlBlock"
+              data-filter="gender"
+            >
+              <label class="paramLabel" for="interments-input-gender"
+                >Gender of Deceased</label
+              >
+              <select
+                id="interments-input-gender"
+                class="inlineSelect"
+                onchange="
+                  onFilterValueChange('interments', 'gender', this.value)
+                "
+              >
+                <option value="">Any gender</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Unknown">Unknown</option>
+              </select>
+            </div>
+            <div
+              id="interments-filter-year"
+              class="filterControlBlock"
+              data-filter="year"
+            >
+              <label class="paramLabel" for="interments-input-year"
+                >Year of Burial (or Death, if unburied)</label
+              >
+              <select
+                id="interments-input-year"
+                class="inlineSelect"
+                onchange="onFilterValueChange('interments', 'year', this.value)"
+              >
+                <option value="">Any year</option>
+              </select>
+            </div>
+            <div
+              id="interments-filter-contact"
+              class="filterControlBlock"
+              data-filter="contact"
+            >
+              <label class="paramLabel" for="interments-input-contact"
+                >Contact Person on Record</label
+              >
+              <select
+                id="interments-input-contact"
+                class="inlineSelect"
+                onchange="
+                  onFilterValueChange('interments', 'contact', this.value)
+                "
+              >
+                <option value="">Any record</option>
+                <option value="has">Has contact person</option>
+                <option value="none">No contact person (CSWS-handled)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- ---------- Graves filter panel ---------- -->
+        <div id="filter-panel-graves" class="filterEngineContainer">
+          <div class="filterPanelHeader">
+            <div class="filterGroupTitle">
+              <i class="fas fa-filter"></i> Filter Configuration
+            </div>
+            <button
+              type="button"
+              class="clearFiltersBtn"
+              onclick="clearAllFilters('graves')"
+            >
+              Clear all
+            </button>
+          </div>
+
+          <div class="filterPillsRow" id="graves-pills">
+            <button
+              type="button"
+              class="filterPill"
+              data-filter="status"
+              onclick="toggleFilter('graves', 'status')"
+            >
+              <i class="fas fa-circle-notch"></i> Grave Status
+            </button>
+          </div>
+
+          <div class="filterControlsStack" id="graves-controls">
+            <div
+              id="graves-filter-status"
+              class="filterControlBlock"
+              data-filter="status"
+            >
+              <label class="paramLabel" for="graves-input-status"
+                >Grave Occupancy Status</label
+              >
+              <select
+                id="graves-input-status"
+                class="inlineSelect"
+                onchange="onFilterValueChange('graves', 'status', this.value)"
+              >
+                <option value="">Any status</option>
+                <option value="Vacant">Vacant</option>
+                <option value="Occupied">Occupied</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- ---------- Payments filter panel ---------- -->
+        <div id="filter-panel-payments" class="filterEngineContainer">
+          <div class="filterPanelHeader">
+            <div class="filterGroupTitle">
+              <i class="fas fa-filter"></i> Filter Configuration
+            </div>
+            <button
+              type="button"
+              class="clearFiltersBtn"
+              onclick="clearAllFilters('payments')"
+            >
+              Clear all
+            </button>
+          </div>
+
+          <div class="filterPillsRow" id="payments-pills">
+            <button
+              type="button"
+              class="filterPill"
+              data-filter="purpose"
+              onclick="toggleFilter('payments', 'purpose')"
+            >
+              <i class="fas fa-tag"></i> Purpose
+            </button>
+            <button
+              type="button"
+              class="filterPill"
+              data-filter="channel"
+              onclick="toggleFilter('payments', 'channel')"
+            >
+              <i class="fas fa-money-check"></i> Channel
+            </button>
+            <button
+              type="button"
+              class="filterPill"
+              data-filter="status"
+              onclick="toggleFilter('payments', 'status')"
+            >
+              <i class="fas fa-circle-check"></i> Status
+            </button>
+            <button
+              type="button"
+              class="filterPill"
+              data-filter="amount"
+              onclick="toggleFilter('payments', 'amount')"
+            >
+              <i class="fas fa-peso-sign"></i> Amount Range
+            </button>
+            <button
+              type="button"
+              class="filterPill"
+              data-filter="search"
+              onclick="toggleFilter('payments', 'search')"
+            >
+              <i class="fas fa-magnifying-glass"></i> Search
+            </button>
+          </div>
+
+          <div class="filterControlsStack" id="payments-controls">
+            <div
+              id="payments-filter-purpose"
+              class="filterControlBlock"
+              data-filter="purpose"
+            >
+              <label class="paramLabel" for="payments-input-purpose"
+                >Payment Purpose</label
+              >
+              <select
+                id="payments-input-purpose"
+                class="inlineSelect"
+                onchange="
+                  onFilterValueChange('payments', 'purpose', this.value)
+                "
+              >
+                <option value="">Any purpose</option>
+              </select>
+            </div>
+            <div
+              id="payments-filter-channel"
+              class="filterControlBlock"
+              data-filter="channel"
+            >
+              <label class="paramLabel" for="payments-input-channel"
+                >Payment Channel</label
+              >
+              <select
+                id="payments-input-channel"
+                class="inlineSelect"
+                onchange="
+                  onFilterValueChange('payments', 'channel', this.value)
+                "
+              >
+                <option value="">Any channel</option>
+              </select>
+            </div>
+            <div
+              id="payments-filter-status"
+              class="filterControlBlock"
+              data-filter="status"
+            >
+              <label class="paramLabel" for="payments-input-status"
+                >Confirmation Status</label
+              >
+              <select
+                id="payments-input-status"
+                class="inlineSelect"
+                onchange="onFilterValueChange('payments', 'status', this.value)"
+              >
+                <option value="">Any status</option>
+                <option value="pending">Pending — awaiting both offices</option>
+                <option value="partial">Partial — one office confirmed</option>
+                <option value="confirmed">
+                  Confirmed — both offices signed
+                </option>
+              </select>
+            </div>
+            <div
+              id="payments-filter-amount"
+              class="filterControlBlock"
+              data-filter="amount"
+            >
+              <label class="paramLabel">Amount Range (₱)</label>
+              <div class="rangeRow">
+                <input
+                  id="payments-input-amount_min"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  class="inlineSelect"
+                  placeholder="Minimum"
+                  oninput="
+                    onFilterValueChange('payments', 'amount_min', this.value)
+                  "
+                />
+                <span class="rangeDash">—</span>
+                <input
+                  id="payments-input-amount_max"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  class="inlineSelect"
+                  placeholder="Maximum"
+                  oninput="
+                    onFilterValueChange('payments', 'amount_max', this.value)
+                  "
+                />
+              </div>
+            </div>
+            <div
+              id="payments-filter-search"
+              class="filterControlBlock"
+              data-filter="search"
+            >
+              <label class="paramLabel" for="payments-input-search"
+                >Search — Reference Number, Payer, or Deceased Name</label
+              >
+              <input
+                id="payments-input-search"
+                type="text"
+                class="inlineSelect"
+                placeholder="e.g. REF-2025-001, Juan Dela Cruz"
+                oninput="onFilterValueChange('payments', 'search', this.value)"
+              />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================
+           MASTER REPORT CARD
+           ============================================================ -->
+      <article id="master-report-card" class="reportCard active">
+        <!-- 1. VISUAL HEADER (Fixed at top during print) -->
+        <header class="docHeader print-fixed-header">
+          <img
+            class="reportHeaderImage"
+            src="api/images/header.png"
+            alt="Report Header"
+            onerror="
+              this.onerror = null;
+              this.src = 'assets/images/header.png';
+            "
+          />
+        </header>
+
+        <!-- 2. THE TABLE (Handles page breaks and invisible spacing) -->
+        <table class="printPaginationTable">
+          <!-- Invisible Top Spacer -->
+          <thead>
+            <tr>
+              <td><div class="print-header-spacer"></div></td>
+            </tr>
+          </thead>
+
+          <!-- Main Content -->
+          <tbody>
+            <tr>
+              <td>
+                <div class="docBody">
+                  <h2 id="report-dynamic-title" class="docContentTitle">
+                    Interment Directory
+                  </h2>
+                  <p class="docMetaSummary"></p>
+
+                  <section
+                    class="docSection"
+                    id="capacity-content"
+                    style="display: none"
+                  ></section>
+                  <section
+                    class="docSection"
+                    id="expirations-content"
+                    style="display: none"
+                  ></section>
+                  <section
+                    class="docSection"
+                    id="interments-content"
+                    style="display: block"
+                  ></section>
+                  <section
+                    class="docSection"
+                    id="graves-content"
+                    style="display: none"
+                  ></section>
+                  <section
+                    class="docSection"
+                    id="payments-content"
+                    style="display: none"
+                  ></section>
+                </div>
+
+                <!-- SIGNATURES (Moved here so they only print once at the end of the data) -->
+                <div class="signatorySection">
+                  <div class="sigContainer">
+                    <span class="sigName"></span><span class="sigTitle"></span>
+                  </div>
+                  <div class="sigContainer">
+                    <span class="sigName"></span><span class="sigTitle"></span>
+                  </div>
+                  <div class="sigContainer">
+                    <span class="sigName"></span><span class="sigTitle"></span>
+                  </div>
+                  <div class="sigContainer">
+                    <span class="sigName"></span><span class="sigTitle"></span>
+                  </div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+
+          <!-- Invisible Bottom Spacer -->
+          <tfoot>
+            <tr>
+              <td><div class="print-footer-spacer"></div></td>
+            </tr>
+          </tfoot>
+        </table>
+
+        <!-- 3. VISUAL FOOTER IMAGE (Fixed at absolute bottom during print) -->
+        <footer class="docFooter print-fixed-footer">
+          <img
+            class="reportFooterImage"
+            src="api/images/footer.png"
+            alt="Report Footer"
+            onerror="
+              this.onerror = null;
+              this.src = 'assets/images/footer.png';
+            "
+          />
+        </footer>
+      </article>
+    </main>
+
+    <script src="assets/js/reports.js"></script>
+  </body>
+</html>

@@ -64,7 +64,8 @@ $formatTransfer = function ($row) {
         'status'                 => $row['status'],
         'remarks'                => $row['remarks'],
         'deceased_sex'             => $row['deceased_sex'],
-        'contact_person_address'   => $row['contact_person_address']
+        'contact_person_address'   => $row['contact_person_address'],
+        'contact_person_address_barangay' => $row['contact_person_address_barangay']
     ];
 
     // Old occupant (if any, matching the target grave)
@@ -98,7 +99,8 @@ $formatTransfer = function ($row) {
             'status'                 => $row['old_status'],
             'remarks'                => $row['old_remarks'],
             'deceased_sex'             => $row['old_deceased_sex'],
-            'contact_person_address'   => $row['old_contact_person_address']
+            'contact_person_address'   => $row['old_contact_person_address'],
+            'contact_person_address_barangay' => $row['contact_person_address_barangay']
         ];
     }
 
@@ -144,7 +146,7 @@ if ($method === 'GET') {
             o.exhumation_permit_date AS old_exhumation_permit_date, o.date_buried AS old_date_buried,
             o.date_exhumed AS old_date_exhumed, o.burial_clearance_date AS old_burial_clearance_date,
             o.lease_expiration_date AS old_lease_expiration_date, o.status AS old_status, o.remarks AS old_remarks,
-            o.contact_person_address AS old_contact_person_address, o.deceased_sex AS old_deceased_sex,
+            o.contact_person_address AS old_contact_person_address, o.deceased_sex AS old_deceased_sex, o.contact_person_address_barangay AS old_contact_person_address_barangay,
             g.grave_id AS target_grave_id, g.grave_code, g.row_num, g.col_num, g.status AS grave_status, g.remarks AS grave_remarks,
             b.block_name, b.block_id, b.block_type
         FROM interments p
@@ -197,6 +199,7 @@ if ($method === 'GET') {
                 'p.contact_person_phone_number',
                 'p.contact_person_email',
                 'p.contact_person_address',
+                'p.contact_person_address_barangay',
                 'p.assistance_type',
                 'p.burial_permit_number',
                 'p.transfer_permit_number',
@@ -215,6 +218,7 @@ if ($method === 'GET') {
                 'o.contact_person_phone_number',
                 'o.contact_person_email',
                 'o.contact_person_address',
+                'o.contact_person_address_barangay',
                 'o.assistance_type',
                 'o.burial_permit_number',
                 'o.transfer_permit_number',
@@ -481,13 +485,71 @@ if ($method === 'DELETE') {
                 // the admin must manually adjust the old occupant's status/remarks via the records module.
             }
         }
+        // 3. Revert old-occupant changes made when the reservation was created
+        $revertedIds = [];
+
+        // 3a. Find every interment whose remarks contain a REVERT marker
+        $findLinked = $pdo->prepare("
+            SELECT interment_id, remarks
+            FROM interments
+            WHERE remarks LIKE '%[REVERT:%'
+            AND deleted_at IS NULL
+        ");
+        $findLinked->execute();
+        $linked = $findLinked->fetchAll(PDO::FETCH_ASSOC);
+
+        $revertUpdate = $pdo->prepare("
+            UPDATE interments
+            SET transfer_to_grave = ?,
+                remarks = ?,
+                updated_at = NOW(),
+                updated_by = ?
+            WHERE interment_id = ?
+        ");
+
+        foreach ($linked as $occ) {
+            if (!preg_match('/\[REVERT:([A-Za-z0-9+\/=]+)\]/', $occ['remarks'], $m)) {
+                continue;
+            }
+            $decoded = json_decode(base64_decode($m[1]), true);
+            if (!is_array($decoded)) {
+                continue;
+            }
+            if ((int)($decoded['pending_id'] ?? 0) !== $pendingId) {
+                continue; // marker belongs to a different pending reservation
+            }
+
+            $prevTransfer = $decoded['prev_transfer'] ?? null;
+            $appended     = (string)($decoded['appended'] ?? '');
+            $marker       = $m[0];
+
+            // Strip exactly what we appended + the marker
+            $suffix = ' ' . $appended . ' ' . $marker;
+            $newRemarks = $occ['remarks'];
+            if (substr($newRemarks, -strlen($suffix)) === $suffix) {
+                $newRemarks = substr($newRemarks, 0, -strlen($suffix));
+            }
+            $newRemarks = trim($newRemarks);
+            if ($newRemarks === '') {
+                $newRemarks = null;
+            }
+
+            $revertUpdate->execute([
+                $prevTransfer,
+                $newRemarks,
+                $userData['user_id'],
+                $occ['interment_id'],
+            ]);
+            $revertedIds[] = (int) $occ['interment_id'];
+        }
 
         $pdo->commit();
         systemLog("Cancelled pending interment $pendingId", $userData['user_id']);
         Response::success("Pending interment cancelled.", [
             'pending_interment_id' => $pendingId,
             'target_grave_id'      => $targetGraveId,
-            'grave_freed'          => ($targetGraveId && !$hasActive) // True if grave went back to Vacant
+            'grave_freed'          => ($targetGraveId && !$hasActive),
+            'reverted_interments'  => $revertedIds,
         ]);
     } catch (PDOException $e) {
         $pdo->rollBack();
