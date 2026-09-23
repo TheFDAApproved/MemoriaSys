@@ -456,12 +456,12 @@ SQL,
     echo "Seeding blocks...\n";
 
     $blocksData = [
-        ['name' => 'St. Peter Niche A',          'type' => 'Niche',        'prefix' => 'SP-A', 'rows' => 4, 'cols' => 10],
-        ['name' => 'St. John Lawn',              'type' => 'Lawn/Grounds', 'prefix' => 'SJL',  'rows' => 5, 'cols' => 20],
-        ['name' => 'Holy Family Mausoleum',      'type' => 'Mausoleum',    'prefix' => 'HFM',  'rows' => 2, 'cols' => 5],
-        ['name' => 'San Antonio Bone Chamber',   'type' => 'Bone Chamber', 'prefix' => 'SABC', 'rows' => 3, 'cols' => 8],
-        ['name' => 'St. Mary Lawn',              'type' => 'Lawn/Grounds', 'prefix' => 'SML',  'rows' => 4, 'cols' => 15],
-        ['name' => 'Cluster A',                  'type' => 'Cluster',      'prefix' => 'CA',   'rows' => 6, 'cols' => 6],
+        ['name' => 'St. Peter Niche A',          'type' => 'Niche',         'rows' => 4, 'cols' => 10],
+        ['name' => 'St. John Lawn',              'type' => 'Lawn/Grounds',  'rows' => 5, 'cols' => 20],
+        ['name' => 'Holy Family Mausoleum',      'type' => 'Mausoleum',     'rows' => 2, 'cols' => 5],
+        ['name' => 'San Antonio Bone Chamber',   'type' => 'Bone Chamber',  'rows' => 3, 'cols' => 8],
+        ['name' => 'St. Mary Lawn',              'type' => 'Lawn/Grounds',  'rows' => 4, 'cols' => 15],
+        ['name' => 'Cluster A',                  'type' => 'Cluster',       'rows' => 6, 'cols' => 6],
     ];
 
     $blockIds = [];
@@ -497,7 +497,7 @@ SQL,
     foreach ($blocksData as $b) {
         for ($r = 1; $r <= $b['rows']; $r++) {
             for ($c = 1; $c <= $b['cols']; $c++) {
-                $code = $b['prefix'] . "-R{$r}C{$c}";
+                $code = sprintf('%s-%02d-%02d', $b['name'], $r, $c);
                 $stmtGrave->execute([$b['id'], $code, $r, $c, 'Vacant', '']);
 
                 $graveId = (int)$pdo->lastInsertId();
