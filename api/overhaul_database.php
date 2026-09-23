@@ -123,6 +123,8 @@ CREATE TABLE graves (
 );
 SQL,
 
+        // NOTE: transfer_to_grave removed. A new CHECK constraint enforces that
+        // Pending/Inactive rows have NULL current_grave_id.
         <<<'SQL'
 CREATE TABLE interments (
     interment_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -137,7 +139,6 @@ CREATE TABLE interments (
     deceased_sex ENUM('Male', 'Female', 'Unknown') DEFAULT 'Unknown',
 
     current_grave_id INT,
-    transfer_to_grave INT,
 
     contact_person_name VARCHAR(255),
     contact_person_phone_number VARCHAR(50),
@@ -176,9 +177,59 @@ CREATE TABLE interments (
     CONSTRAINT uk_active_control_number UNIQUE (active_control_number),
 
     FOREIGN KEY (current_grave_id) REFERENCES graves(grave_id) ON DELETE RESTRICT,
-    FOREIGN KEY (transfer_to_grave) REFERENCES graves(grave_id) ON DELETE RESTRICT,
     FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE SET NULL,
-    FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
+    FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL,
+
+    -- If status is Pending or Inactive, current_grave_id must be NULL.
+    -- Active rows may have NULL (Common Bone Chamber / location unknown).
+    CONSTRAINT chk_status_grave CHECK (
+        status = 'Active' OR current_grave_id IS NULL
+    )
+);
+SQL,
+
+        // NOTE: the reservation is a first-class row now — one per active plan.
+        // The pending interment carries the *incoming* person's data; this table
+        // carries the *plan* for the grave and (optionally) the displaced occupant.
+        <<<'SQL'
+CREATE TABLE reservation_details (
+    reservation_id INT AUTO_INCREMENT PRIMARY KEY,
+
+    pending_interment_id INT NOT NULL,
+    target_grave_id INT NOT NULL,
+
+    old_interment_id INT NULL,
+
+    old_new_grave_id        INT NULL,
+    old_new_status          ENUM('Active','Inactive') NULL,
+    old_new_assistance_type ENUM('Burial','Transfer the remains of the late','Other') NULL,
+    old_new_remarks         TEXT NULL,
+
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL,
+    created_by INT NULL,
+    updated_by INT NULL,
+
+    UNIQUE KEY uk_pending_interment (pending_interment_id),
+
+    active_target_grave_id INT
+        GENERATED ALWAYS AS (CASE WHEN deleted_at IS NULL THEN target_grave_id ELSE NULL END) STORED,
+    CONSTRAINT uk_active_target_grave UNIQUE (active_target_grave_id),
+
+    FOREIGN KEY (pending_interment_id) REFERENCES interments(interment_id) ON DELETE RESTRICT,
+    FOREIGN KEY (target_grave_id)      REFERENCES graves(grave_id)          ON DELETE RESTRICT,
+    FOREIGN KEY (old_interment_id)     REFERENCES interments(interment_id)  ON DELETE RESTRICT,
+    FOREIGN KEY (old_new_grave_id)     REFERENCES graves(grave_id)          ON DELETE RESTRICT,
+    FOREIGN KEY (created_by)           REFERENCES users(user_id)            ON DELETE SET NULL,
+    FOREIGN KEY (updated_by)           REFERENCES users(user_id)            ON DELETE SET NULL,
+
+    CONSTRAINT chk_old_pairing CHECK (
+        old_interment_id IS NOT NULL
+        OR (old_new_grave_id IS NULL
+            AND old_new_status IS NULL
+            AND old_new_assistance_type IS NULL)
+    )
 );
 SQL,
 
@@ -292,6 +343,7 @@ SQL,
         "ALTER TABLE blocks    COMMENT = 'Cemetery sections/areas (Niche, Lawn, etc.)'",
         "ALTER TABLE graves    COMMENT = 'Individual burial slots inside a block'",
         "ALTER TABLE interments COMMENT = 'Burial/transfer records with status workflow (Pending → Active → Inactive)'",
+        "ALTER TABLE reservation_details COMMENT = 'Planned grave changes (one row per active reservation; consumed on execute/cancel)'",
         "ALTER TABLE transfer_log COMMENT = 'Audit trail of grave location changes (auto-logged by trigger)'",
         "ALTER TABLE settings  COMMENT = 'System configuration key-value store'",
         "ALTER TABLE payments  COMMENT = 'Payment records with dual-approval workflow'",
@@ -302,13 +354,16 @@ SQL,
         "CREATE INDEX idx_graves_block_status ON graves(block_id, status)",
         "CREATE INDEX idx_graves_deleted_at ON graves(deleted_at)",
         "CREATE INDEX idx_interments_current_grave_id ON interments(current_grave_id)",
-        "CREATE INDEX idx_interments_transfer_to_grave ON interments(transfer_to_grave)",
         "CREATE INDEX idx_interments_status ON interments(status)",
         "CREATE INDEX idx_interments_deceased_name ON interments(deceased_name(100))",
         "CREATE INDEX idx_interments_lease_expiration ON interments(lease_expiration_date)",
         "CREATE INDEX idx_interments_status_grave ON interments(status, current_grave_id)",
         "CREATE INDEX idx_interments_date_buried ON interments(date_buried)",
         "CREATE INDEX idx_interments_deleted_at ON interments(deleted_at)",
+        "CREATE INDEX idx_reservation_details_target_grave ON reservation_details(target_grave_id)",
+        "CREATE INDEX idx_reservation_details_old_interment ON reservation_details(old_interment_id)",
+        "CREATE INDEX idx_reservation_details_old_new_grave ON reservation_details(old_new_grave_id)",
+        "CREATE INDEX idx_reservation_details_deleted_at ON reservation_details(deleted_at)",
         "CREATE INDEX idx_transfer_log_interment_id ON transfer_log(interment_id)",
         "CREATE INDEX idx_transfer_log_transfer_date ON transfer_log(transfer_date)",
         "CREATE INDEX idx_transfer_log_interment_date ON transfer_log(interment_id, transfer_date)",
@@ -454,38 +509,51 @@ SQL,
 
     // -----------------------------------------------------------------
     // 7. Seed interments
+    //
+    //    NOTE: transfer_to_grave no longer exists. For Pending rows we
+    //    remember the intended target grave and write a reservation_details
+    //    row immediately after the interment insert.
     // -----------------------------------------------------------------
     echo "Seeding interments...\n";
 
     $stmtInterment = $pdo->prepare("
         INSERT INTO interments (
             control_number, deceased_name, last_known_address, death_certificate,
-            deceased_date_of_birth, deceased_date_of_death, current_grave_id, transfer_to_grave,
+            deceased_date_of_birth, deceased_date_of_death, current_grave_id,
             contact_person_name, contact_person_phone_number, contact_person_email,
             contact_person_address_barangay, contact_person_address,
             assistance_type, burial_permit_number, burial_permit_date,
             date_buried, date_exhumed, burial_clearance_date, lease_expiration_date,
             status, remarks, deceased_sex,
             created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+    ");
+
+    $stmtReservation = $pdo->prepare("
+        INSERT INTO reservation_details (
+            pending_interment_id, target_grave_id,
+            old_interment_id,
+            old_new_grave_id, old_new_status, old_new_assistance_type, old_new_remarks,
+            created_at, updated_at, created_by, updated_by
+        ) VALUES (?, ?, NULL, NULL, NULL, NULL, NULL, NOW(), NOW(), ?, ?)
     ");
 
     $stmtUpdateGrave = $pdo->prepare("UPDATE graves SET status = 'Occupied' WHERE grave_id = ?");
 
     $stmtUpdateInterment = $pdo->prepare("
         UPDATE interments
-        SET current_grave_id = ?, status = 'Active', transfer_to_grave = NULL, date_buried = ?, updated_at = NOW()
+        SET current_grave_id = ?, status = 'Active', date_buried = ?, updated_at = NOW()
         WHERE interment_id = ?
     ");
 
     $graveOccupants = [];
     $intermentIds   = [];
+    $pendingCount   = 0;
 
     for ($i = 1; $i <= 60; $i++) {
         $controlNum = 'CTRL-' . date('Y') . '-' . str_pad((string)$i, 4, '0', STR_PAD_LEFT);
         $decName    = getRandomName($firstNames, $lastNames);
 
-        // Deceased's last known address (barangay included as part of full address)
         $address = mt_rand(1, 999) . ' ' . $streets[array_rand($streets)] . ', ' . $barangays[array_rand($barangays)];
 
         $dob = getRandomDate('1930-01-01', '1995-12-31');
@@ -496,9 +564,7 @@ SQL,
         $contactPhone = '09' . mt_rand(100000000, 999999999);
         $contactEmail = strtolower(str_replace(' ', '.', $contactName)) . mt_rand(1, 99) . '@example.com';
 
-        // Barangay ONLY (matches contact_person_address_barangay column intent)
         $contactBarangay = $barangays[array_rand($barangays)];
-        // Full street address (barangay included here as part of the address)
         $contactAddress  = mt_rand(1, 999) . ' ' . $streets[array_rand($streets)];
 
         $permit = 'BP-' . mt_rand(10000, 99999);
@@ -516,7 +582,7 @@ SQL,
         }
 
         $currentGraveId  = null;
-        $transferToGrave = null;
+        $reservedGrave   = null;   // target grave for Pending rows
         $leaseExp        = null;
         $dateExhumed     = null;
         $burialClearance = null;
@@ -543,15 +609,16 @@ SQL,
             }
             $remarks = "Active burial in grave " . $currentGraveId;
         } elseif ($status === 'Pending' && !empty($vacantGraveIds)) {
+            // Pick the target grave now; write the reservation AFTER the insert
+            // so we have the new interment_id.
             $graveIndex = array_rand($vacantGraveIds);
-            $transferToGrave = $vacantGraveIds[$graveIndex];
+            $reservedGrave = $vacantGraveIds[$graveIndex];
             unset($vacantGraveIds[$graveIndex]);
             $vacantGraveIds = array_values($vacantGraveIds);
 
-            $remarks = "Pending reservation for grave " . $transferToGrave . ". Awaiting execution.";
+            $remarks = "Pending reservation for grave " . $reservedGrave . ". Awaiting execution.";
         } elseif ($status === 'Inactive') {
             $currentGraveId  = null;
-            $transferToGrave = null;
             $dateExhumed     = $dod;
             $remarks         = "Remains transferred/exhumed. No longer in cemetery.";
         }
@@ -564,12 +631,11 @@ SQL,
             $dob,
             $dod,
             $currentGraveId,
-            $transferToGrave,
             $contactName,
             $contactPhone,
             $contactEmail,
-            $contactBarangay,        // <- barangay only
-            $contactAddress,         // <- full street address
+            $contactBarangay,
+            $contactAddress,
             'Burial',
             $permit,
             $dod,
@@ -582,8 +648,22 @@ SQL,
             $sex
         ]);
 
-        $intermentIds[] = (int)$pdo->lastInsertId();
+        $newIntermentId = (int)$pdo->lastInsertId();
+        $intermentIds[] = $newIntermentId;
+
+        // Pending rows get a reservation_details entry immediately
+        if ($status === 'Pending' && $reservedGrave) {
+            $stmtReservation->execute([
+                $newIntermentId,
+                $reservedGrave,
+                $adminId,
+                $adminId,
+            ]);
+            $pendingCount++;
+        }
     }
+
+    echo "  - Created " . count($intermentIds) . " interments, $pendingCount with active reservations.\n";
 
     // -----------------------------------------------------------------
     // 8. Create transfer history for some active interments
@@ -617,6 +697,7 @@ SQL,
 
         $moveReason = "Transferred from grave " . $oldGraveId . " to " . $newGraveId . " for family plot consolidation.";
 
+        // NOTE: transfer_to_grave removed from the UPDATE.
         $stmtUpdateInterment->execute([
             $newGraveId,
             date('Y-m-d'),
@@ -661,7 +742,6 @@ SQL,
         'Over the Counter',
     ];
 
-    // purpose => [min, max]
     $paymentPurposes = [
         'Burial Fee'         => [5000, 15000],
         'Lease/Renewal Fee'  => [2000, 5000],
@@ -672,8 +752,6 @@ SQL,
         'Niche Purchase'     => [15000, 40000],
     ];
 
-    // Pull deceased names from the interments we just seeded, so payments
-    // link to realistic names that already exist in the system.
     $deceasedNamesPool = $pdo->query("
         SELECT deceased_name
         FROM interments
@@ -714,10 +792,8 @@ SQL,
         $purpose     = $purposeKeys[array_rand($purposeKeys)];
         [$minAmt, $maxAmt] = $paymentPurposes[$purpose];
 
-        // Round to nearest 50 so amounts look like real receipts
         $amount = round(mt_rand($minAmt, $maxAmt) / 50) * 50;
 
-        // ~70% of payments reference an actual deceased from interments
         $deceasedName = (mt_rand(1, 10) <= 7 && !empty($deceasedNamesPool))
             ? $deceasedNamesPool[array_rand($deceasedNamesPool)]
             : null;
@@ -726,16 +802,10 @@ SQL,
         $payerPhone = '09' . mt_rand(100000000, 999999999);
         $payerEmail = strtolower(str_replace(' ', '.', $payerName)) . mt_rand(1, 99) . '@example.com';
 
-        // Most payments have proof-of-payment uploaded
         $imageLink = (mt_rand(1, 10) <= 8)
             ? '/uploads/payments/' . strtolower($refNum) . '.jpg'
             : null;
 
-        // Dual-approval workflow state:
-        //   40% -> fully confirmed (office + grounds)
-        //   25% -> office confirmed only
-        //   20% -> grounds confirmed only
-        //   15% -> unconfirmed (pending)
         $confirmRoll      = mt_rand(1, 100);
         $confirmedOffice  = null;
         $confirmedGrounds = null;
@@ -777,8 +847,8 @@ SQL,
             $remarksPayer,
             $remarksOffice,
             $remarksGrounds,
-            $adminId,       // created_by
-            $adminId,       // updated_by
+            $adminId,
+            $adminId,
         ]);
 
         $paymentIds[] = (int)$pdo->lastInsertId();
@@ -792,7 +862,6 @@ SQL,
     echo "Seeding settings...\n";
 
     $settingsData = [
-        // Featured people / guardians (displayed on the public site)
         ['people_name_1',   'Tsunayoshi Sawada',            'Featured person 1 - name'],
         ['people_title_1',  '10th Vongola Boss',            'Featured person 1 - title'],
         ['people_name_2',   'Kyoya Hibari',                 'Featured person 2 - name'],
@@ -802,7 +871,6 @@ SQL,
         ['people_name_4',   'Lambo',                        'Featured person 4 - name'],
         ['people_title_4',  '10th Vongola Thunder Guardian', 'Featured person 4 - title'],
 
-        // Site branding
         ['cemetery_name',   'Cementeryo sa Patay HAHAHAHA', 'Displayed cemetery name'],
     ];
 
@@ -847,7 +915,6 @@ SQL,
         echo "  - Soft-deleted interment #$id\n";
     }
 
-    // Also soft-delete a couple of unconfirmed payments for variety
     echo "Soft-deleting some unconfirmed payments...\n";
 
     $softDeletePaymentStmt = $pdo->prepare("
@@ -879,13 +946,14 @@ SQL,
     // -----------------------------------------------------------------
     echo "\n✅ Successfully seeded realistic dummy data!\n";
     echo "   - Database: $db\n";
-    echo "   - Users: "         . $pdo->query("SELECT COUNT(*) FROM users")->fetchColumn()        . "\n";
-    echo "   - Blocks: "        . $pdo->query("SELECT COUNT(*) FROM blocks")->fetchColumn()       . "\n";
-    echo "   - Graves: "        . $pdo->query("SELECT COUNT(*) FROM graves")->fetchColumn()       . "\n";
-    echo "   - Interments: "    . $pdo->query("SELECT COUNT(*) FROM interments")->fetchColumn()   . "\n";
-    echo "   - Transfer logs: " . $pdo->query("SELECT COUNT(*) FROM transfer_log")->fetchColumn() . "\n";
-    echo "   - Payments: "      . $pdo->query("SELECT COUNT(*) FROM payments")->fetchColumn()     . "\n";
-    echo "   - Settings: "      . $pdo->query("SELECT COUNT(*) FROM settings")->fetchColumn()     . "\n";
+    echo "   - Users: "                 . $pdo->query("SELECT COUNT(*) FROM users")->fetchColumn()                 . "\n";
+    echo "   - Blocks: "                . $pdo->query("SELECT COUNT(*) FROM blocks")->fetchColumn()                . "\n";
+    echo "   - Graves: "                . $pdo->query("SELECT COUNT(*) FROM graves")->fetchColumn()                . "\n";
+    echo "   - Interments: "            . $pdo->query("SELECT COUNT(*) FROM interments")->fetchColumn()            . "\n";
+    echo "   - Reservations: "          . $pdo->query("SELECT COUNT(*) FROM reservation_details")->fetchColumn()  . "\n";
+    echo "   - Transfer logs: "         . $pdo->query("SELECT COUNT(*) FROM transfer_log")->fetchColumn()         . "\n";
+    echo "   - Payments: "              . $pdo->query("SELECT COUNT(*) FROM payments")->fetchColumn()             . "\n";
+    echo "   - Settings: "              . $pdo->query("SELECT COUNT(*) FROM settings")->fetchColumn()             . "\n";
 } catch (Throwable $e) {
     if (isset($pdo) && $pdo instanceof PDO && $pdo->inTransaction()) {
         $pdo->rollBack();

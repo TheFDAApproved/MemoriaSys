@@ -7,6 +7,9 @@
  * It does NOT enforce grave.status = 'Vacant' for Active interments.
  * Grave status changes are left to the admin/front‑end.
  * 
+ * Reservations live in `reservation_details`; this file never touches that table
+ * except to CHECK whether a grave is targeted by an active reservation.
+ * 
  * GET    /records.php      : List all interments (paginated, filterable)
  * GET    /records.php/{id} : Get details of a specific interment by ID
  * POST   /records.php      : Create a new interment manually
@@ -53,9 +56,8 @@ function formatInterment($row)
         'deceased_date_of_birth'     => $row['deceased_date_of_birth'],
         'deceased_date_of_death'     => $row['deceased_date_of_death'],
 
-        // Grave References
+        // Grave Reference (current physical location only)
         'current_grave_id'           => $row['current_grave_id'] ? (int) $row['current_grave_id'] : null,
-        'transfer_to_grave'          => $row['transfer_to_grave'] ? (int) $row['transfer_to_grave'] : null,
 
         // Joined Current Grave Details
         'grave_code'                 => $row['grave_code'],
@@ -316,13 +318,14 @@ if ($method === 'GET') {
         }
 
         // ---- Current branch (is_history = 0) ----
+        // NOTE: transfer_to_grave no longer exists. Removed from SELECT list.
         $currentSQL = "
             SELECT
                 i.interment_id, 0 AS is_history,
                 i.control_number, i.deceased_name, i.deceased_sex,
                 i.last_known_address, i.death_certificate,
                 i.deceased_date_of_birth, i.deceased_date_of_death,
-                i.current_grave_id, i.transfer_to_grave,
+                i.current_grave_id,
                 i.contact_person_name, i.contact_person_phone_number,
                 i.contact_person_email, i.contact_person_address, i.contact_person_address_barangay,
                 i.assistance_type, i.burial_permit_number, i.burial_permit_date,
@@ -342,13 +345,14 @@ if ($method === 'GET') {
         ";
 
         // ---- History branch (is_history = 1) ----
+        // NOTE: transfer_to_grave no longer exists. Removed from SELECT list.
         $historySQL = "
             SELECT
                 i.interment_id, 1 AS is_history,
                 i.control_number, i.deceased_name, i.deceased_sex,
                 i.last_known_address, i.death_certificate,
                 i.deceased_date_of_birth, i.deceased_date_of_death,
-                tg.grave_id AS current_grave_id, i.transfer_to_grave,
+                tg.grave_id AS current_grave_id,
                 i.contact_person_name, i.contact_person_phone_number,
                 i.contact_person_email, i.contact_person_address, i.contact_person_address_barangay,
                 i.assistance_type, i.burial_permit_number, i.burial_permit_date,
@@ -470,12 +474,21 @@ if ($method === 'POST') {
     }
 
     // An Inactive interment must not have a grave assignment.
+    // (The DB CHECK chk_status_grave enforces this too, but we clear it here
+    //  so we return a clean response instead of a raw PDO error.)
     if ($status === 'Inactive') {
         $rawData['current_grave_id'] = null;
         $currentGraveId = null;
     }
 
+    // If the status is Pending, current_grave_id must be NULL as well.
+    if ($status === 'Pending') {
+        $rawData['current_grave_id'] = null;
+        $currentGraveId = null;
+    }
+
     // Prepare insert fields (including audit columns)
+    // NOTE: transfer_to_grave removed – it no longer exists on the schema.
     $fields = [
         'control_number',
         'deceased_name',
@@ -485,7 +498,6 @@ if ($method === 'POST') {
         'deceased_date_of_birth',
         'deceased_date_of_death',
         'current_grave_id',
-        'transfer_to_grave',
         'contact_person_name',
         'contact_person_phone_number',
         'contact_person_email',
@@ -586,6 +598,7 @@ if ($method === 'PUT') {
     $params = [];
 
     // Allowed fields to update (excluding audit columns – they are managed automatically)
+    // NOTE: transfer_to_grave removed – it no longer exists on the schema.
     $updatable = [
         'control_number',
         'deceased_name',
@@ -595,7 +608,6 @@ if ($method === 'PUT') {
         'deceased_date_of_birth',
         'deceased_date_of_death',
         'current_grave_id',
-        'transfer_to_grave',
         'contact_person_name',
         'contact_person_phone_number',
         'contact_person_email',
@@ -653,8 +665,10 @@ if ($method === 'PUT') {
 
     // If the interment is becoming Inactive and the caller did not explicitly
     // provide a current_grave_id, clear it so we don't leave a stale grave
-    // reference behind.
-    if ($newStatus === 'Inactive' && !array_key_exists('current_grave_id', $rawData)) {
+    // reference behind. Same for Pending.
+    if (($newStatus === 'Inactive' || $newStatus === 'Pending')
+        && !array_key_exists('current_grave_id', $rawData)
+    ) {
         $newCurrentGraveId = null;
         $graveIdChanged    = true;
         $updates[]         = "current_grave_id = ?";
@@ -677,18 +691,18 @@ if ($method === 'PUT') {
         }
     }
 
-    // 2. Cannot move an interment whose current grave is targeted by a pending reservation.
+    // 2. Cannot move an interment whose current grave is targeted by an active reservation.
+    //    Previously looked at interments.transfer_to_grave; now reads reservation_details.
     if ($graveIdChanged && $current['current_grave_id']) {
         $pendingOnGrave = $pdo->prepare("
-            SELECT interment_id FROM interments
-            WHERE transfer_to_grave = ?
-              AND status = 'Pending'
+            SELECT reservation_id FROM reservation_details
+            WHERE target_grave_id = ?
               AND deleted_at IS NULL
             LIMIT 1
         ");
         $pendingOnGrave->execute([$current['current_grave_id']]);
         if ($pendingOnGrave->fetch()) {
-            Response::error("Cannot move this interment: its grave is targeted by a pending reservation. Cancel the reservation first.", 409);
+            Response::error("Cannot move this interment: its grave is targeted by an active reservation. Cancel the reservation first.", 409);
         }
     }
 
@@ -803,7 +817,7 @@ if ($method === 'DELETE') {
     }
 
     // Still block Pending — those must be cancelled via Monitor so the
-    // old-occupant revert logic runs.
+    // reservation_details row is properly consumed.
     if ($row['status'] === 'Pending') {
         Response::error("Cannot delete a Pending interment. Cancel the reservation first via Monitor.", 400);
     }
@@ -848,13 +862,13 @@ if ($method === 'DELETE') {
                 $graveFreed = true;
             }
 
-            // Inform the client if a pending reservation targets this grave,
+            // Inform the client if an active reservation targets this grave,
             // because deleting the occupant changes the reservation's shape
             // (replacement → vacant-grave insertion).
+            // Previously looked at interments.transfer_to_grave; now reads reservation_details.
             $pendingCheck = $pdo->prepare("
-                SELECT interment_id FROM interments
-                WHERE transfer_to_grave = ?
-                  AND status = 'Pending'
+                SELECT reservation_id FROM reservation_details
+                WHERE target_grave_id = ?
                   AND deleted_at IS NULL
                 LIMIT 1
             ");

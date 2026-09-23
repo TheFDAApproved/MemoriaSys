@@ -108,12 +108,12 @@ CREATE TABLE graves (
 
 --  ----------------------------------------------------------------------
 --  INTERMENTS (burial records)
---      Pending means that the burial is not yet executed.
---      Inactive means not in the cemetery anymore, maybe moved to family or others in remarks
---      Active means in the cemetery
---      To reserve, fill what is needed, and their status is Pending
---      The current occupant is needed to be find a new grave or location so they will still be active if in the cemetery
---      After the current occupant is transfered, then the pending can be now active
+--      Pending  = burial is not yet executed (not physically interred yet).
+--      Active   = in the cemetery.
+--      Inactive = was interred, now removed (moved to family, exhumed, etc.).
+--
+--      Reservations live in reservation_details; this table only tracks
+--      where the body is *right now* via current_grave_id.
 --  ----------------------------------------------------------------------
 CREATE TABLE interments (
     interment_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -132,7 +132,6 @@ CREATE TABLE interments (
     -- Grave (current location)
     -- Can be null if not yet found or maybe in somewhere in the cemetery but forgotten or something
     current_grave_id INT,
-    transfer_to_grave INT,
 
     -- Contact person (stored directly)
     contact_person_name VARCHAR(255),
@@ -179,9 +178,81 @@ CREATE TABLE interments (
     CONSTRAINT uk_active_control_number UNIQUE (active_control_number),
 
     FOREIGN KEY (current_grave_id) REFERENCES graves(grave_id) ON DELETE RESTRICT,
-    FOREIGN KEY (transfer_to_grave) REFERENCES graves(grave_id) ON DELETE RESTRICT,
     FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE SET NULL,
-    FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
+    FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL,
+
+    -- If status is Pending or Inactive, current_grave_id must be NULL.
+    -- Active rows may have NULL (Common Bone Chamber / location unknown).
+    CONSTRAINT chk_status_grave CHECK (
+        status = 'Active' OR current_grave_id IS NULL
+    )
+);
+
+--  ----------------------------------------------------------------------
+--  RESERVATION_DETAILS (planned changes)
+--      One row per active reservation. Describes:
+--        - the Pending interment (incoming occupant),
+--        - the grave it targets,
+--        - which Active interment is being displaced (if any),
+--        - where the displaced occupant goes when the reservation executes.
+--
+--      This row is CONSUMED (deleted) when the reservation is either
+--      executed or cancelled. No [REVERT:...] marker is needed anymore
+--      because the old occupant's row is never touched at reserve time.
+--  ----------------------------------------------------------------------
+CREATE TABLE reservation_details (
+    reservation_id INT AUTO_INCREMENT PRIMARY KEY,
+
+    -- The incoming occupant. The Pending interment row itself carries
+    -- the new person's name, permits, contact info, etc. This table only
+    -- carries the *change* being planned.
+    pending_interment_id INT NOT NULL,
+
+    -- The grave being reserved for the incoming occupant.
+    target_grave_id INT NOT NULL,
+
+    -- The Active interment being displaced.
+    -- NULL when the target grave was vacant (no one to displace).
+    old_interment_id INT NULL,
+
+    -- Where the displaced occupant goes when the reservation executes.
+    -- All NULL when old_interment_id is NULL.
+    old_new_grave_id        INT NULL,     -- NULL = Common Bone Chamber / removed
+    old_new_status          ENUM('Active','Inactive') NULL,
+    old_new_assistance_type ENUM('Burial','Transfer the remains of the late','Other') NULL,
+    old_new_remarks         TEXT NULL,
+
+    -- Audit
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    deleted_at DATETIME NULL,
+    created_by INT NULL,
+    updated_by INT NULL,
+
+    -- One active reservation per pending interment
+    UNIQUE KEY uk_pending_interment (pending_interment_id),
+
+    -- One active reservation per target grave (prevents double-booking).
+    -- Uses a shadow column so soft-deleted rows don't block the slot.
+    active_target_grave_id INT
+        GENERATED ALWAYS AS (CASE WHEN deleted_at IS NULL THEN target_grave_id ELSE NULL END) STORED,
+    CONSTRAINT uk_active_target_grave UNIQUE (active_target_grave_id),
+
+    FOREIGN KEY (pending_interment_id) REFERENCES interments(interment_id) ON DELETE RESTRICT,
+    FOREIGN KEY (target_grave_id)      REFERENCES graves(grave_id)          ON DELETE RESTRICT,
+    FOREIGN KEY (old_interment_id)     REFERENCES interments(interment_id)  ON DELETE RESTRICT,
+    FOREIGN KEY (old_new_grave_id)     REFERENCES graves(grave_id)          ON DELETE RESTRICT,
+    FOREIGN KEY (created_by)           REFERENCES users(user_id)            ON DELETE SET NULL,
+    FOREIGN KEY (updated_by)           REFERENCES users(user_id)            ON DELETE SET NULL,
+
+    -- If there is no old occupant, there must be nothing about them.
+    -- (phrased so it stays true even if the FK ever nulls old_interment_id)
+    CONSTRAINT chk_old_pairing CHECK (
+        old_interment_id IS NOT NULL
+        OR (old_new_grave_id IS NULL
+            AND old_new_status IS NULL
+            AND old_new_assistance_type IS NULL)
+    )
 );
 
 -- ----------------------------------------------------------------------
@@ -310,13 +381,14 @@ DELIMITER ;
 -- ----------------------------------------------------------------------
 -- Add comments to existing tables (for clarity in DB tools)
 -- ----------------------------------------------------------------------
-ALTER TABLE users     COMMENT = 'System users with role-based access';
-ALTER TABLE blocks    COMMENT = 'Cemetery sections/areas (Niche, Lawn, etc.)';
-ALTER TABLE graves    COMMENT = 'Individual burial slots inside a block';
-ALTER TABLE interments COMMENT = 'Burial/transfer records with status workflow (Pending → Active → Inactive)';
-ALTER TABLE transfer_log COMMENT = 'Audit trail of grave location changes (auto-logged by trigger)';
-ALTER TABLE settings  COMMENT = 'System configuration key-value store';
-ALTER TABLE payments  COMMENT = 'Payment records with dual-approval workflow';
+ALTER TABLE users            COMMENT = 'System users with role-based access';
+ALTER TABLE blocks           COMMENT = 'Cemetery sections/areas (Niche, Lawn, etc.)';
+ALTER TABLE graves           COMMENT = 'Individual burial slots inside a block';
+ALTER TABLE interments       COMMENT = 'Burial/transfer records with status workflow (Pending → Active → Inactive)';
+ALTER TABLE reservation_details COMMENT = 'Planned grave changes (one row per active reservation; consumed on execute/cancel)';
+ALTER TABLE transfer_log     COMMENT = 'Audit trail of grave location changes (auto-logged by trigger)';
+ALTER TABLE settings         COMMENT = 'System configuration key-value store';
+ALTER TABLE payments         COMMENT = 'Payment records with dual-approval workflow';
 
 -- ----------------------------------------------------------------------
 -- INDEXES
@@ -333,13 +405,18 @@ CREATE INDEX idx_graves_deleted_at ON graves(deleted_at);
 
 -- Interments
 CREATE INDEX idx_interments_current_grave_id ON interments(current_grave_id);
-CREATE INDEX idx_interments_transfer_to_grave ON interments(transfer_to_grave);
 CREATE INDEX idx_interments_status ON interments(status);
 CREATE INDEX idx_interments_deceased_name ON interments(deceased_name(100));
 CREATE INDEX idx_interments_lease_expiration ON interments(lease_expiration_date);
 CREATE INDEX idx_interments_status_grave ON interments(status, current_grave_id);
 CREATE INDEX idx_interments_date_buried ON interments(date_buried);
 CREATE INDEX idx_interments_deleted_at ON interments(deleted_at);
+
+-- Reservation details
+CREATE INDEX idx_reservation_details_target_grave ON reservation_details(target_grave_id);
+CREATE INDEX idx_reservation_details_old_interment ON reservation_details(old_interment_id);
+CREATE INDEX idx_reservation_details_old_new_grave ON reservation_details(old_new_grave_id);
+CREATE INDEX idx_reservation_details_deleted_at ON reservation_details(deleted_at);
 
 -- Transfer log
 CREATE INDEX idx_transfer_log_interment_id ON transfer_log(interment_id);
