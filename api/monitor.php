@@ -382,6 +382,23 @@ if ($method === 'POST') {
 
     $pdo->beginTransaction();
     try {
+
+        // Acquire an exclusive lock on the pending interment row for the
+        // duration of this transaction. Serializes concurrent POST/DELETE
+        // requests so only one wins; the loser sees the state change and
+        // bails out with 409 instead of interleaving its writes.
+        $lockStmt = $pdo->prepare("
+            SELECT interment_id FROM interments 
+            WHERE interment_id = ? AND status = 'Pending' AND deleted_at IS NULL
+            FOR UPDATE
+        ");
+        $lockStmt->execute([$pendingId]);
+        if (!$lockStmt->fetch()) {
+            throw new Exception(
+                "Pending interment is no longer Pending (already processed by another request)."
+            );
+        }
+
         // --- CASE: Handle Old Occupant first if they exist ---
         if ($old) {
             // Frontend can optionally override the old occupant's fate during execution.
@@ -586,11 +603,40 @@ if ($method === 'DELETE') {
 
     $pdo->beginTransaction();
     try {
+
+        // Acquire an exclusive lock on the pending interment row so a
+        // concurrent POST (execute) cannot interleave with this cancel.
+        $lockStmt = $pdo->prepare("
+            SELECT interment_id FROM interments 
+            WHERE interment_id = ? AND status = 'Pending' AND deleted_at IS NULL
+            FOR UPDATE
+        ");
+        $lockStmt->execute([$pendingId]);
+        if (!$lockStmt->fetch()) {
+            throw new Exception(
+                "Pending interment is no longer Pending (already processed by another request)."
+            );
+        }
+
         // 1. Mark pending interment as Inactive (its plan is being discarded).
+        //    We explicitly null current_grave_id so the chk_status_grave CHECK
+        //    (status = 'Active' OR current_grave_id IS NULL) always passes,
+        //    even if the row unexpectedly had a grave attached due to drift.
+        //    Log a warning so the anomaly is visible for investigation.
+        if (!empty($pending['current_grave_id'])) {
+            systemLog(
+                "Pending interment $pendingId unexpectedly had current_grave_id="
+                    . $pending['current_grave_id']
+                    . "; clearing it on cancellation.",
+                $userData['user_id']
+            );
+        }
+
         $cancelRemark = "Cancelled on " . date('Y-m-d H:i:s');
         $update = $pdo->prepare("
             UPDATE interments 
-            SET status = 'Inactive', 
+            SET status = 'Inactive',
+                current_grave_id = NULL,
                 remarks = CONCAT(COALESCE(remarks, ''), ' ', ?),
                 updated_by = ?
             WHERE interment_id = ?
@@ -646,6 +692,10 @@ if ($method === 'DELETE') {
         $pdo->rollBack();
         systemLog("Monitor cancellation error: " . $e->getMessage(), 'System');
         Response::error("Database error while cancelling.", 500);
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        systemLog("Monitor cancellation error: " . $e->getMessage(), 'System');
+        Response::error($e->getMessage(), 409);
     }
 }
 

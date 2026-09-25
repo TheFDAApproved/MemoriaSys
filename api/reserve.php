@@ -605,6 +605,28 @@ if ($method === 'POST') {
 
     $pdo->beginTransaction();
     try {
+
+        // Lock the target grave row for the duration of the transaction.
+        // Serializes concurrent reservations against the same grave so
+        // only one can commit; the loser sees the winner's row and bails.
+        $lockStmt = $pdo->prepare("SELECT grave_id FROM graves WHERE grave_id = ? FOR UPDATE");
+        $lockStmt->execute([$graveId]);
+        if (!$lockStmt->fetch()) {
+            throw new Exception("Target grave does not exist.");
+        }
+
+        // Re-check inside the lock.
+        $pendingCheck = $pdo->prepare("
+            SELECT reservation_id FROM reservation_details
+            WHERE target_grave_id = ?
+              AND deleted_at IS NULL
+            LIMIT 1
+        ");
+        $pendingCheck->execute([$graveId]);
+        if ($pendingCheck->fetch()) {
+            throw new Exception("This grave already has a pending reservation. Cancel it first.");
+        }
+
         // 1. Insert new pending interment (with audit columns)
         $sql = "INSERT INTO interments (" . implode(', ', $insertFields) . ") VALUES (" . implode(', ', $placeholders) . ")";
         $stmt = $pdo->prepare($sql);
@@ -656,10 +678,40 @@ if ($method === 'POST') {
     } catch (PDOException $e) {
         $pdo->rollBack();
         if ($e->getCode() == 23000) {
-            Response::error("Conflict: Control number already exists.", 409);
+            $msg = $e->getMessage();
+
+            // MySQL embeds the violated index name in the error text, so we
+            // can route to a precise message instead of guessing.
+            //
+            //  uk_active_control_number      -> from the interments INSERT
+            //  uk_active_target_grave        -> from the reservation_details INSERT
+            //                                    (usually a race between two
+            //                                    concurrent requests for the
+            //                                    same grave)
+            //  uk_active_pending_interment   -> from the reservation_details INSERT
+            //                                    (the pending interment already
+            //                                    has a live reservation)
+            if (strpos($msg, 'uk_active_control_number') !== false) {
+                Response::error("Conflict: Control number already exists.", 409);
+            }
+            if (strpos($msg, 'uk_active_target_grave') !== false) {
+                Response::error("Conflict: This grave already has a pending reservation.", 409);
+            }
+            if (strpos($msg, 'uk_active_pending_interment') !== false) {
+                Response::error("Conflict: This pending interment already has a reservation.", 409);
+            }
+
+            // Unknown integrity violation — log it, then give a generic 409.
+            systemLog("Reservation integrity violation: " . $msg, 'System');
+            Response::error("Conflict: Reservation could not be created.", 409);
         }
+
         systemLog("Reservation error: " . $e->getMessage(), 'System');
         Response::error("Database error while creating reservation.", 500);
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        systemLog("Reservation validation error: " . $e->getMessage(), 'System');
+        Response::error($e->getMessage(), 409);
     }
 }
 
