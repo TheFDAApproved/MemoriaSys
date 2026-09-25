@@ -191,6 +191,11 @@ SQL,
         // NOTE: the reservation is a first-class row now — one per active plan.
         // The pending interment carries the *incoming* person's data; this table
         // carries the *plan* for the grave and (optionally) the displaced occupant.
+        //
+        // Both uniqueness rules (one reservation per pending interment, one per
+        // target grave) use soft-delete-aware shadow columns so a soft-deleted
+        // reservation does not block a later re-reservation for the same
+        // pending interment or grave.
         <<<'SQL'
 CREATE TABLE reservation_details (
     reservation_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -211,8 +216,12 @@ CREATE TABLE reservation_details (
     created_by INT NULL,
     updated_by INT NULL,
 
-    UNIQUE KEY uk_pending_interment (pending_interment_id),
+    -- One active reservation per pending interment.
+    active_pending_interment_id INT
+        GENERATED ALWAYS AS (CASE WHEN deleted_at IS NULL THEN pending_interment_id ELSE NULL END) STORED,
+    CONSTRAINT uk_active_pending_interment UNIQUE (active_pending_interment_id),
 
+    -- One active reservation per target grave (prevents double-booking).
     active_target_grave_id INT
         GENERATED ALWAYS AS (CASE WHEN deleted_at IS NULL THEN target_grave_id ELSE NULL END) STORED,
     CONSTRAINT uk_active_target_grave UNIQUE (active_target_grave_id),
@@ -248,7 +257,9 @@ CREATE TABLE transfer_log (
     created_by INT NULL,
     updated_by INT NULL,
 
-    FOREIGN KEY (interment_id) REFERENCES interments(interment_id) ON DELETE CASCADE,
+    -- RESTRICT (not CASCADE): the audit trail must not silently vanish if
+    -- someone ever hard-deletes the interment row. Forces a deliberate choice.
+    FOREIGN KEY (interment_id) REFERENCES interments(interment_id) ON DELETE RESTRICT,
     FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE SET NULL,
     FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
