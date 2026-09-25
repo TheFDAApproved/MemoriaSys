@@ -196,7 +196,7 @@ CREATE TABLE interments (
 --        - which Active interment is being displaced (if any),
 --        - where the displaced occupant goes when the reservation executes.
 --
---      This row is CONSUMED (deleted) when the reservation is either
+--      This row is CONSUMED (soft-deleted) when the reservation is either
 --      executed or cancelled. No [REVERT:...] marker is needed anymore
 --      because the old occupant's row is never touched at reserve time.
 --  ----------------------------------------------------------------------
@@ -229,8 +229,12 @@ CREATE TABLE reservation_details (
     created_by INT NULL,
     updated_by INT NULL,
 
-    -- One active reservation per pending interment
-    UNIQUE KEY uk_pending_interment (pending_interment_id),
+    -- One active reservation per pending interment.
+    -- Uses a shadow column so soft-deleted rows don't block a re-reservation
+    -- for the same pending interment.
+    active_pending_interment_id INT
+        GENERATED ALWAYS AS (CASE WHEN deleted_at IS NULL THEN pending_interment_id ELSE NULL END) STORED,
+    CONSTRAINT uk_active_pending_interment UNIQUE (active_pending_interment_id),
 
     -- One active reservation per target grave (prevents double-booking).
     -- Uses a shadow column so soft-deleted rows don't block the slot.
@@ -273,7 +277,7 @@ CREATE TABLE transfer_log (
     created_by INT NULL,
     updated_by INT NULL,
 
-    FOREIGN KEY (interment_id) REFERENCES interments(interment_id) ON DELETE CASCADE,
+    FOREIGN KEY (interment_id) REFERENCES interments(interment_id) ON DELETE RESTRICT,
     FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE SET NULL,
     FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
