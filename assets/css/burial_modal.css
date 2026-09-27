@@ -1,6 +1,3 @@
-/* ===============================
-   Burial Modal Overlay
-   =============================== */
 .modalOverlay {
     display: none;
     position: fixed;
@@ -19,9 +16,6 @@
     display: none;
 }
 
-/* ===============================
-   Paper Form
-   =============================== */
 .modalOverlay .paperForm {
     box-sizing: border-box;
     width: 100%;
@@ -55,9 +49,6 @@
     text-transform: uppercase;
 }
 
-/* ===============================
-   Rows / Columns
-   =============================== */
 .modalOverlay .paperForm .row {
     display: flex;
     gap: 20px;
@@ -71,9 +62,6 @@
     min-width: 0;
 }
 
-/* ===============================
-   Labels
-   =============================== */
 .modalOverlay .paperForm label {
     margin-bottom: 6px;
     color: #475569;
@@ -86,9 +74,6 @@
     color: #dc2626;
 }
 
-/* ===============================
-   Inputs / Selects
-   =============================== */
 .modalOverlay .paperForm input[type="text"],
 .modalOverlay .paperForm input[type="date"],
 .modalOverlay .paperForm select {
@@ -122,16 +107,10 @@
     cursor: pointer;
 }
 
-/* ===============================
-   View Mode
-   =============================== */
 .modalOverlay.view-mode .paperForm select {
     background-image: none;
 }
 
-/* ===============================
-   Actions
-   =============================== */
 .modalOverlay .paperForm .paperFormActions {
     display: flex;
     justify-content: flex-end;
@@ -177,9 +156,6 @@
     cursor: not-allowed;
 }
 
-/* ===============================
-   Responsive
-   =============================== */
 @media (max-width: 700px) {
     .modalOverlay {
         padding: 20px 12px;
@@ -206,4 +182,10 @@
     .modalOverlay .paperForm .paperSaveBtn {
         width: 100%;
     }
+}
+
+.modalOverlay .paperForm select.select-readonly {
+    background-image: none;
+    padding-right: 10px;
+    cursor: default;
 }

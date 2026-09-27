@@ -3,45 +3,99 @@
 /**
  * Reserve.php – Discover graves and initiate a reservation (REST API)
  *
- * GET  /reserve.php      : List all graves that can be reserved (paginated)
- * GET  /reserve.php/{id} : Check availability of a specific grave by ID
- * POST /reserve.php      : Create a reservation (provide `grave_id` or `old_interment_id` in body)
- * POST /reserve.php/{id} : Create a reservation specifically for grave {id}
+ * POST /reserve.php?action=update_reservation_plan : Save edits from View Detail Burial Clearance
  *
- * NOTE (schema v2):
- *   - interments.transfer_to_grave no longer exists.
- *   - Planned changes live in reservation_details (one row per active reservation).
- *   - The OLD occupant's row is NOT touched at reserve time. Their fate is
- *     stored in reservation_details and applied when Monitor executes.
+ * NOTE (Old Occupant editable fields):
+ *   - The Reserve View Detail modal can edit the Old Occupant's
+ *     Date of Interment, Expiration Date, Exhumation Permit No. and
+ *     Transfer Permit No.
+ *   - All four are stored in reservation_details.old_new_remarks as JSON
+ *     alongside burial_type / remarks. The dedicated columns
+ *     reservation_details.exhumation_permit_number and
+ *     reservation_details.transfer_permit_number are now also written and
+ *     are the canonical source on read.
+ *   - The original interments row remains unchanged until Monitor confirmation.
  */
 
 define('ITS_ME_JUSTTOVERIFY', true);
 
 require_once 'checkuser.php';
-require_once 'logger.php';      // for systemLog
+require_once 'logger.php';
 
-$userData = checkuser();        // Must be authenticated
+$userData = checkuser();
 $method   = $_SERVER['REQUEST_METHOD'] ?? null;
 
-// Only Admin and Office are allowed
 $role = $userData['role'] ?? null;
 if (!in_array($role, [ROLE_ADMIN, ROLE_OFFICE])) {
     Response::error("Forbidden. You do not have permission to perform this action.", 403);
 }
 
-// Hybrid input parser (JSON + form)
 $rawData = array_merge(
     json_decode(file_get_contents("php://input"), true) ?: [],
     $_POST ?? []
 );
 
-// Parse path: /reserve.php/{id} or /reserve.php
 $pathInfo   = $_GET['path_info'] ?? $_SERVER['PATH_INFO'] ?? '';
 $pathParts  = array_filter(explode('/', trim($pathInfo, '/')));
-$resourceId = array_shift($pathParts); // numeric ID or empty
+$resourceId = array_shift($pathParts);
 
-// Helper function to format the flat item response
-$formatItem = function ($row) {
+// -----------------------------------------------------------------------------
+// Helper: parse a reservation_details.old_new_remarks value that may be JSON
+// (written by the View Detail modal) or plain text (written by the reserve flow).
+// Returns burial_type, remarks, date_interment, expiration_date,
+// exhumation_permit_number, transfer_permit_number.
+// -----------------------------------------------------------------------------
+$parsePlanRemarks = function ($raw) {
+    if ($raw === null || $raw === '') {
+        return [
+            'burial_type'              => null,
+            'remarks'                  => null,
+            'date_interment'           => null,
+            'expiration_date'          => null,
+            'exhumation_permit_number' => null,
+            'transfer_permit_number'   => null,
+        ];
+    }
+    $decoded = json_decode($raw, true);
+    if (is_array($decoded)) {
+        return [
+            'burial_type'              => isset($decoded['burial_type'])              ? (string) $decoded['burial_type']              : null,
+            'remarks'                  => isset($decoded['remarks'])                  ? (string) $decoded['remarks']                  : null,
+            'date_interment'           => isset($decoded['date_interment'])           ? (string) $decoded['date_interment']           : null,
+            'expiration_date'          => isset($decoded['expiration_date'])          ? (string) $decoded['expiration_date']          : null,
+            'exhumation_permit_number' => isset($decoded['exhumation_permit_number']) ? (string) $decoded['exhumation_permit_number'] : null,
+            'transfer_permit_number'   => isset($decoded['transfer_permit_number'])   ? (string) $decoded['transfer_permit_number']   : null,
+        ];
+    }
+    return [
+        'burial_type'              => null,
+        'remarks'                  => (string) $raw,
+        'date_interment'           => null,
+        'expiration_date'          => null,
+        'exhumation_permit_number' => null,
+        'transfer_permit_number'   => null,
+    ];
+};
+
+$formatItem = function ($row) use ($parsePlanRemarks) {
+    $planParts = $parsePlanRemarks($row['plan_remarks'] ?? null);
+
+    $planBurialType = $planParts['burial_type'];
+    if (($planBurialType === null || $planBurialType === '') && !empty($row['plan_block_type'])) {
+        $planBurialType = (string) $row['plan_block_type'];
+    }
+
+    // Dedicated reservation_details columns take priority; fall back to the
+    // value staged inside the old_new_remarks JSON blob for older rows.
+    $planExhumationPermit = $row['plan_exhumation_permit_number'] ?? null;
+    if ($planExhumationPermit === null || $planExhumationPermit === '') {
+        $planExhumationPermit = $planParts['exhumation_permit_number'];
+    }
+    $planTransferPermit = $row['plan_transfer_permit_number'] ?? null;
+    if ($planTransferPermit === null || $planTransferPermit === '') {
+        $planTransferPermit = $planParts['transfer_permit_number'];
+    }
+
     return [
         'type'                     => $row['type'],
         'grave_id'                 => (int) $row['grave_id'],
@@ -54,7 +108,6 @@ $formatItem = function ($row) {
         'block_name'               => $row['block_name'],
         'block_type'               => $row['block_type'],
 
-        // Interment details (Will be null if type is 'vacant')
         'interment_id'             => $row['interment_id'] ? (int) $row['interment_id'] : null,
         'control_number'           => $row['control_number'],
         'deceased_name'            => $row['deceased_name'],
@@ -63,7 +116,6 @@ $formatItem = function ($row) {
         'deceased_date_of_birth'   => $row['deceased_date_of_birth'],
         'deceased_date_of_death'   => $row['deceased_date_of_death'],
         'current_grave_id'         => $row['current_grave_id'] ? (int) $row['current_grave_id'] : null,
-        // NOTE: transfer_to_grave removed – column no longer exists.
         'contact_person_name'      => $row['contact_person_name'],
         'contact_person_phone_number' => $row['contact_person_phone_number'],
         'contact_person_email'     => $row['contact_person_email'],
@@ -83,18 +135,28 @@ $formatItem = function ($row) {
         'interment_remarks'        => $row['interment_remarks'],
         'deceased_sex'             => $row['deceased_sex'],
         'contact_person_address'   => $row['contact_person_address'],
-        'contact_person_address_barangay' => $row['contact_person_address_barangay']
+        'contact_person_address_barangay' => $row['contact_person_address_barangay'],
+
+        // ---- Saved reservation plan ----
+        'plan_reservation_id'  => isset($row['plan_reservation_id']) && $row['plan_reservation_id'] !== null
+            ? (int) $row['plan_reservation_id'] : null,
+        'plan_assistance_type' => $row['plan_assistance_type'] ?? null,
+        'plan_burial_type'     => $planBurialType,
+        'plan_remarks'         => $planParts['remarks'],
+        'plan_grave_code'      => $row['plan_grave_code'] ?? null,
+        'plan_block_name'      => $row['plan_block_name'] ?? null,
+        'plan_date_interment'  => $planParts['date_interment'],
+        'plan_expiration_date' => $planParts['expiration_date'],
+        'plan_exhumation_permit_number' => $planExhumationPermit,
+        'plan_transfer_permit_number'   => $planTransferPermit,
     ];
 };
 
 // -----------------------------------------------------------------------------
-// 1. GET – List available graves OR fetch a specific grave's availability
+// 1. GET
 // -----------------------------------------------------------------------------
 if ($method === 'GET') {
 
-    // ---- Base SELECT: expiring/expired interments (aliases: i, g, b) ----
-    // Excludes any interment whose current grave is already targeted by an
-    // active reservation (reservation_details.target_grave_id).
     $expiringSelect = "
         SELECT
                CASE
@@ -110,24 +172,35 @@ if ($method === 'GET') {
                i.lease_expiration_date, i.status AS interment_status, i.remarks AS interment_remarks,
                i.deceased_sex, i.contact_person_address, i.contact_person_address_barangay,
                g.grave_id, g.grave_code, g.row_num, g.col_num, g.status AS grave_status, g.remarks AS grave_remarks,
-               b.block_name, b.block_id, b.block_type
+               b.block_name, b.block_id, b.block_type,
+               rd.reservation_id           AS plan_reservation_id,
+               rd.old_new_assistance_type  AS plan_assistance_type,
+               rd.old_new_remarks          AS plan_remarks,
+               rd.exhumation_permit_number AS plan_exhumation_permit_number,
+               rd.transfer_permit_number   AS plan_transfer_permit_number,
+               png.grave_code              AS plan_grave_code,
+               pnb.block_name              AS plan_block_name,
+               pnb.block_type              AS plan_block_type
         FROM interments i
         LEFT JOIN graves g ON i.current_grave_id = g.grave_id AND g.deleted_at IS NULL
         LEFT JOIN blocks b ON g.block_id = b.block_id AND b.deleted_at IS NULL
+        LEFT JOIN reservation_details rd
+               ON rd.old_interment_id = i.interment_id
+              AND rd.deleted_at IS NULL
+        LEFT JOIN graves png ON png.grave_id = rd.old_new_grave_id AND png.deleted_at IS NULL
+        LEFT JOIN blocks pnb ON pnb.block_id = png.block_id AND pnb.deleted_at IS NULL
         WHERE i.status = 'Active'
           AND i.deleted_at IS NULL
           AND i.lease_expiration_date IS NOT NULL
           AND i.lease_expiration_date <= DATE_ADD(CURDATE(), INTERVAL 1 MONTH)
           AND NOT EXISTS (
-              SELECT 1 FROM reservation_details rd
-              WHERE rd.target_grave_id = i.current_grave_id
-                AND rd.deleted_at IS NULL
+              SELECT 1 FROM reservation_details rd2
+              WHERE rd2.target_grave_id = i.current_grave_id
+                AND rd2.deleted_at IS NULL
+                AND rd2.pending_interment_id IS NOT NULL
           )
     ";
 
-    // ---- Base SELECT: vacant graves (aliases: g, b; interment fields are NULL) ----
-    // IMPORTANT: column order must match $expiringSelect exactly (MySQL UNION ALL is positional).
-    // Excludes any grave already targeted by an active reservation.
     $vacantSelect = "
         SELECT 'vacant' AS type, NULL AS interment_id, NULL AS control_number, NULL AS deceased_name,
                NULL AS last_known_address, NULL AS death_certificate, NULL AS deceased_date_of_birth,
@@ -141,7 +214,15 @@ if ($method === 'GET') {
                NULL AS deceased_sex, NULL AS contact_person_address, NULL AS contact_person_address_barangay,
                g.grave_id, g.grave_code, g.row_num, g.col_num,
                g.status AS grave_status, g.remarks AS grave_remarks,
-               b.block_name, b.block_id, b.block_type
+               b.block_name, b.block_id, b.block_type,
+               NULL AS plan_reservation_id,
+               NULL AS plan_assistance_type,
+               NULL AS plan_remarks,
+               NULL AS plan_exhumation_permit_number,
+               NULL AS plan_transfer_permit_number,
+               NULL AS plan_grave_code,
+               NULL AS plan_block_name,
+               NULL AS plan_block_type
         FROM graves g
         LEFT JOIN blocks b ON g.block_id = b.block_id AND b.deleted_at IS NULL
         WHERE g.status = 'Vacant'
@@ -156,10 +237,10 @@ if ($method === 'GET') {
               SELECT 1 FROM reservation_details rd
               WHERE rd.target_grave_id = g.grave_id
                 AND rd.deleted_at IS NULL
+                AND rd.pending_interment_id IS NOT NULL
           )
     ";
 
-    // --- Scenario A: Requesting a SPECIFIC resource /reserve.php/{id} ---
     if ($resourceId) {
         $expiringById = $expiringSelect . " AND g.grave_id = :id1";
         $vacantById   = $vacantSelect   . " AND g.grave_id = :id2";
@@ -175,11 +256,7 @@ if ($method === 'GET') {
         } else {
             Response::error('Grave not found or not available for reservation', 404);
         }
-    }
-
-    // --- Scenario B: Requesting the COLLECTION /reserve.php ---
-    else {
-        // ---- Inputs ----
+    } else {
         $searchTerm = trim((string) ($_GET['search_term'] ?? ''));
         if ($searchTerm !== '' && mb_strlen($searchTerm) < 3) {
             Response::error("Search term must be at least 3 characters long", 400);
@@ -188,7 +265,6 @@ if ($method === 'GET') {
         $limit = max(1, min((int) ($_GET['limit'] ?? 100), 500));
         $page  = max(1, (int) ($_GET['page'] ?? 1));
 
-        // ---- Status filter (vacant / expired / expiring, comma-separated) ----
         $statusRaw = $_GET['status'] ?? '';
         if (is_array($statusRaw)) {
             $statusRaw = implode(',', $statusRaw);
@@ -209,13 +285,11 @@ if ($method === 'GET') {
             }
         }
 
-        // Which branches to run?
         $runVacant   = empty($wantedStatuses) || in_array('vacant',   $wantedStatuses);
         $runExpiring = empty($wantedStatuses)
             || in_array('expired',  $wantedStatuses)
             || in_array('expiring', $wantedStatuses);
 
-        // Date split for the expiring branch (only when narrowed)
         $expiringDateClause = '';
         if (!empty($wantedStatuses)) {
             $hasExpired  = in_array('expired',  $wantedStatuses);
@@ -225,10 +299,8 @@ if ($method === 'GET') {
             } elseif ($hasExpiring && !$hasExpired) {
                 $expiringDateClause = " AND i.lease_expiration_date >= CURDATE()";
             }
-            // both → no extra clause (both sides already covered by <= CURDATE()+1M)
         }
 
-        // ---- Build subqueries + search params in matching order ----
         $subqueries   = [];
         $searchParams = [];
 
@@ -237,28 +309,13 @@ if ($method === 'GET') {
             if ($searchTerm !== '') {
                 $like = '%' . $searchTerm . '%';
                 $expiringSearchCols = [
-                    'i.control_number',
-                    'i.deceased_name',
-                    'i.deceased_sex',
-                    'i.last_known_address',
-                    'i.death_certificate',
-                    'i.contact_person_name',
-                    'i.contact_person_phone_number',
-                    'i.contact_person_email',
-                    'i.contact_person_address',
-                    'i.contact_person_address_barangay',
-                    'i.assistance_type',
-                    'i.burial_permit_number',
-                    'i.transfer_permit_number',
-                    'i.transfer_permit_issued_by',
-                    'i.exhumation_permit_number',
-                    'i.status',
-                    'i.remarks',
-                    'g.grave_code',
-                    'g.status',
-                    'g.remarks',
-                    'b.block_name',
-                    'b.block_type',
+                    'i.control_number', 'i.deceased_name', 'i.deceased_sex', 'i.last_known_address',
+                    'i.death_certificate', 'i.contact_person_name', 'i.contact_person_phone_number',
+                    'i.contact_person_email', 'i.contact_person_address', 'i.contact_person_address_barangay',
+                    'i.assistance_type', 'i.burial_permit_number', 'i.transfer_permit_number',
+                    'i.transfer_permit_issued_by', 'i.exhumation_permit_number', 'i.status', 'i.remarks',
+                    'g.grave_code', 'g.status', 'g.remarks', 'b.block_name', 'b.block_type',
+                    'png.grave_code', 'pnb.block_name', 'pnb.block_type',
                 ];
                 $parts = [];
                 foreach ($expiringSearchCols as $c) {
@@ -274,13 +331,7 @@ if ($method === 'GET') {
             $vacantSearchSQL = '';
             if ($searchTerm !== '') {
                 $like = '%' . $searchTerm . '%';
-                $vacantSearchCols = [
-                    'g.grave_code',
-                    'g.status',
-                    'g.remarks',
-                    'b.block_name',
-                    'b.block_type',
-                ];
+                $vacantSearchCols = ['g.grave_code', 'g.status', 'g.remarks', 'b.block_name', 'b.block_type'];
                 $parts = [];
                 foreach ($vacantSearchCols as $c) {
                     $parts[] = "$c LIKE ?";
@@ -291,7 +342,6 @@ if ($method === 'GET') {
             $subqueries[] = "($vacantSelect $vacantSearchSQL)";
         }
 
-        // No runnable branch (shouldn't happen given the defaults, but be safe)
         if (empty($subqueries)) {
             $payload = [
                 'pagination' => [
@@ -308,10 +358,8 @@ if ($method === 'GET') {
             exit;
         }
 
-        // Outer parens around the WHOLE union so COUNT's alias attaches correctly
         $unionSQL = implode(' UNION ALL ', $subqueries);
 
-        // ---- COUNT (filtered) ----
         $countStmt = $pdo->prepare("SELECT COUNT(*) FROM ($unionSQL) AS combined");
         $countStmt->execute($searchParams);
         $totalRecords = (int) $countStmt->fetchColumn();
@@ -320,8 +368,6 @@ if ($method === 'GET') {
         $page       = min($page, max(1, $totalPages));
         $offset     = ($page - 1) * $limit;
 
-        // ---- Fetch page (filtered + ordered + limited in SQL) ----
-        // $limit / $offset are strict ints at this point → safe to interpolate.
         $pageSQL = "
             SELECT *
             FROM ($unionSQL) AS combined
@@ -343,7 +389,6 @@ if ($method === 'GET') {
 
         $items = array_map($formatItem, $rows);
 
-        // ---- Response ----
         $payload = [
             'pagination' => [
                 'current_page'  => $page,
@@ -353,28 +398,213 @@ if ($method === 'GET') {
             ],
             'items' => $items,
         ];
-        if ($searchTerm !== '') {
-            $payload['search_term'] = $searchTerm;
-        }
-        if (!empty($wantedStatuses)) {
-            $payload['status'] = implode(',', $wantedStatuses);
-        }
+        if ($searchTerm !== '')      $payload['search_term'] = $searchTerm;
+        if (!empty($wantedStatuses)) $payload['status']      = implode(',', $wantedStatuses);
 
         Response::success('Available graves retrieved', $payload);
     }
 }
 
 // -----------------------------------------------------------------------------
-// 2. POST – Create a new pending reservation
+// 2. POST
 // -----------------------------------------------------------------------------
 if ($method === 'POST') {
 
-    // REST functionality: allow POST /reserve.php/{id} to set the target grave_id
+    // =========================================================================
+    // 2A. Save a reservation plan (edits from View Detail Burial Clearance)
+    //     Persists the Old Occupant's Date of Interment, Expiration Date,
+    //     Exhumation Permit No. and Transfer Permit No. inside the JSON blob
+    //     AND into the dedicated reservation_details columns.
+    // =========================================================================
+    if (isset($_GET['action']) && $_GET['action'] === 'update_reservation_plan') {
+
+        $oldIntermentId = (isset($rawData['old_interment_id']) && is_numeric($rawData['old_interment_id']))
+            ? (int) $rawData['old_interment_id'] : 0;
+        if (!$oldIntermentId) {
+            Response::error("old_interment_id is required.", 400);
+        }
+
+        $oldStmt = $pdo->prepare("
+            SELECT current_grave_id
+            FROM interments
+            WHERE interment_id = ?
+              AND status = 'Active'
+              AND deleted_at IS NULL
+        ");
+        $oldStmt->execute([$oldIntermentId]);
+        $oldRow = $oldStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$oldRow) {
+            Response::error("Old occupant not found or not active.", 404);
+        }
+        $targetGraveId = $oldRow['current_grave_id'] ? (int) $oldRow['current_grave_id'] : null;
+
+        $newGraveId   = null;
+        $newGraveCode = trim((string) ($rawData['grave_code'] ?? ''));
+        if ($newGraveCode !== '') {
+            $gs = $pdo->prepare("SELECT grave_id FROM graves WHERE grave_code = ? AND deleted_at IS NULL");
+            $gs->execute([$newGraveCode]);
+            $gid = $gs->fetchColumn();
+            if ($gid === false) {
+                Response::error("Grave code '$newGraveCode' not found.", 400);
+            }
+            $newGraveId = (int) $gid;
+        }
+
+        $assistanceType = null;
+        if (!empty($rawData['assistance_type'])) {
+            $candidate = $rawData['assistance_type'];
+            if (!in_array($candidate, ['Burial', 'Transfer the remains of the late', 'Other'], true)) {
+                Response::error("Invalid assistance_type.", 400);
+            }
+            $assistanceType = $candidate;
+        }
+
+        // Bundle plan fields (burial_type / remarks / date_interment /
+        // expiration_date / exhumation_permit_number / transfer_permit_number)
+        // into a single JSON blob.
+        $remarksText    = trim((string) ($rawData['remarks']         ?? ''));
+        $burialType     = trim((string) ($rawData['burial_type']     ?? ''));
+        $dateInterment  = trim((string) ($rawData['date_interment']  ?? ''));
+        $expirationDate = trim((string) ($rawData['expiration_date'] ?? ''));
+        $exhumationPermit = trim((string) ($rawData['exhumation_permit_number'] ?? ''));
+        $transferPermit   = trim((string) ($rawData['transfer_permit_number']   ?? ''));
+
+        // Validate date formats when provided.
+        foreach (['date_interment' => $dateInterment, 'expiration_date' => $expirationDate] as $k => $v) {
+            if ($v !== '' && !strtotime($v)) {
+                Response::error("Invalid date format for '$k'.", 400);
+            }
+        }
+
+        $oldNewRemarks = null;
+        if (
+            $remarksText !== '' || $burialType !== '' || $dateInterment !== '' || $expirationDate !== ''
+            || $exhumationPermit !== '' || $transferPermit !== ''
+        ) {
+            $oldNewRemarks = json_encode([
+                'burial_type'              => $burialType,
+                'remarks'                  => $remarksText,
+                'date_interment'           => $dateInterment,
+                'expiration_date'          => $expirationDate,
+                'exhumation_permit_number' => $exhumationPermit,
+                'transfer_permit_number'   => $transferPermit,
+            ], JSON_UNESCAPED_UNICODE);
+        }
+
+        $oldNewStatus = $newGraveId ? 'Active' : 'Inactive';
+
+        // Dedicated columns use NULL rather than '' when the field is blank,
+        // so the "blank stays blank" contract holds on read.
+        $exhumationPermitCol = $exhumationPermit !== '' ? $exhumationPermit : null;
+        $transferPermitCol   = $transferPermit   !== '' ? $transferPermit   : null;
+
+        $now    = date('Y-m-d H:i:s');
+        $userId = $userData['user_id'];
+
+        $existStmt = $pdo->prepare("
+            SELECT reservation_id
+            FROM reservation_details
+            WHERE old_interment_id = ?
+              AND deleted_at IS NULL
+            LIMIT 1
+        ");
+        $existStmt->execute([$oldIntermentId]);
+        $existingId = $existStmt->fetchColumn();
+
+        try {
+            if ($existingId !== false) {
+                $stmt = $pdo->prepare("
+                    UPDATE reservation_details SET
+                        target_grave_id          = ?,
+                        old_new_grave_id         = ?,
+                        old_new_status           = ?,
+                        old_new_assistance_type  = ?,
+                        old_new_remarks          = ?,
+                        exhumation_permit_number = ?,
+                        transfer_permit_number   = ?,
+                        updated_at               = ?,
+                        updated_by               = ?
+                    WHERE reservation_id = ?
+                ");
+                $stmt->execute([
+                    $targetGraveId,
+                    $newGraveId,
+                    $oldNewStatus,
+                    $assistanceType,
+                    $oldNewRemarks,
+                    $exhumationPermitCol,
+                    $transferPermitCol,
+                    $now,
+                    $userId,
+                    $existingId,
+                ]);
+                $reservationId = (int) $existingId;
+            } else {
+                $stmt = $pdo->prepare("
+                    INSERT INTO reservation_details (
+                        pending_interment_id,
+                        target_grave_id,
+                        old_interment_id,
+                        old_new_grave_id,
+                        old_new_status,
+                        old_new_assistance_type,
+                        old_new_remarks,
+                        exhumation_permit_number,
+                        transfer_permit_number,
+                        created_at,
+                        updated_at,
+                        created_by,
+                        updated_by
+                    ) VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                $stmt->execute([
+                    $targetGraveId,
+                    $oldIntermentId,
+                    $newGraveId,
+                    $oldNewStatus,
+                    $assistanceType,
+                    $oldNewRemarks,
+                    $exhumationPermitCol,
+                    $transferPermitCol,
+                    $now,
+                    $now,
+                    $userId,
+                    $userId,
+                ]);
+                $reservationId = (int) $pdo->lastInsertId();
+            }
+        } catch (PDOException $e) {
+            systemLog("Reservation plan save error: " . $e->getMessage(), 'System');
+            Response::error("Database error while saving the reservation plan.", 500);
+        }
+
+        systemLog(
+            "Reservation plan saved (reservation $reservationId, old interment $oldIntermentId, new grave " .
+                ($newGraveId ?? 'NULL') . ")",
+            $userId
+        );
+
+        Response::success("Reservation plan saved.", [
+            'reservation_id'          => $reservationId,
+            'old_interment_id'        => $oldIntermentId,
+            'target_grave_id'         => $targetGraveId,
+            'old_new_grave_id'        => $newGraveId,
+            'old_new_status'          => $oldNewStatus,
+            'old_new_assistance_type' => $assistanceType,
+        ]);
+        exit;
+    }
+
+    // =========================================================================
+    // 2B. Create a new pending reservation (Add action) — UNCHANGED.
+    //     The Date of Interment / Expiration Date behavior for the Add action
+    //     is untouched.
+    // =========================================================================
+
     if ($resourceId && is_numeric($resourceId)) {
         $rawData['grave_id'] = $resourceId;
     }
 
-    // Required fields for the new occupant
     $required = [
         'control_number',
         'deceased_name',
@@ -389,9 +619,6 @@ if ($method === 'POST') {
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Helper to resolve grave_code to grave_id
-    // -------------------------------------------------------------------------
     $resolveGraveCode = function ($code) use ($pdo) {
         $stmt = $pdo->prepare("SELECT grave_id FROM graves WHERE grave_code = ? AND deleted_at IS NULL");
         $stmt->execute([$code]);
@@ -402,26 +629,21 @@ if ($method === 'POST') {
         return (int) $id;
     };
 
-    // If 'grave_code' is provided and 'grave_id' is not, convert it
     if (!empty($rawData['grave_code']) && empty($rawData['grave_id'])) {
         $rawData['grave_id'] = $resolveGraveCode($rawData['grave_code']);
     }
-
-    // If 'old_transfer_to_grave_code' is provided and 'old_transfer_to_grave' is not, convert it
     if (!empty($rawData['old_transfer_to_grave_code']) && empty($rawData['old_transfer_to_grave'])) {
         $rawData['old_transfer_to_grave'] = $resolveGraveCode($rawData['old_transfer_to_grave_code']);
     }
-    // -------------------------------------------------------------------------
 
-    $graveId            = null;   // The grave being reserved (incoming occupant's target)
-    $oldIntermentId     = null;   // The displaced occupant (null if the target grave is vacant)
-    $oldNewGraveId      = null;   // Where the displaced occupant goes (null = bone chamber / removed)
-    $oldNewStatus       = null;   // 'Active' | 'Inactive' | null (only set when oldIntermentId is set)
-    $oldNewAssistance   = null;   // Optional override of the old occupant's assistance_type
-    $oldNewRemarks      = null;   // Free-text remark for the old occupant
+    $graveId            = null;
+    $oldIntermentId     = null;
+    $oldNewGraveId      = null;
+    $oldNewStatus       = null;
+    $oldNewAssistance   = null;
+    $oldNewRemarks      = null;
 
     if (!empty($rawData['grave_id']) && is_numeric($rawData['grave_id'])) {
-        // Case 1: Direct reservation on a vacant grave
         $graveId = (int) $rawData['grave_id'];
 
         $check = $pdo->prepare("
@@ -442,23 +664,20 @@ if ($method === 'POST') {
             Response::error("The specified grave is not vacant or does not exist.", 400);
         }
 
-        // Reject if an active reservation already targets this grave
         $pendingCheck = $pdo->prepare("
             SELECT reservation_id FROM reservation_details
             WHERE target_grave_id = ?
               AND deleted_at IS NULL
+              AND pending_interment_id IS NOT NULL
             LIMIT 1
         ");
         $pendingCheck->execute([$graveId]);
         if ($pendingCheck->fetch()) {
             Response::error("This grave already has a pending reservation. Cancel it first.", 409);
         }
-        // No old-occupant fields for a vacant-grave reservation.
     } elseif (!empty($rawData['old_interment_id']) && is_numeric($rawData['old_interment_id'])) {
-        // Case 2: Replace an existing occupant
         $oldIntermentId = (int) $rawData['old_interment_id'];
 
-        // NOTE: transfer_to_grave removed from SELECT list – column no longer exists.
         $oldStmt = $pdo->prepare("
             SELECT current_grave_id, deceased_name
             FROM interments 
@@ -478,7 +697,6 @@ if ($method === 'POST') {
 
         $graveId = (int) $old['current_grave_id'];
 
-        // Ensure grave is occupied and not deleted
         $checkGrave = $pdo->prepare("
             SELECT status FROM graves 
             WHERE grave_id = ? AND deleted_at IS NULL
@@ -488,11 +706,11 @@ if ($method === 'POST') {
             Response::error("The grave is not currently occupied. Cannot replace.", 400);
         }
 
-        // Reject if an active reservation already targets this grave
         $pendingCheck = $pdo->prepare("
             SELECT reservation_id FROM reservation_details
             WHERE target_grave_id = ?
               AND deleted_at IS NULL
+              AND pending_interment_id IS NOT NULL
             LIMIT 1
         ");
         $pendingCheck->execute([$graveId]);
@@ -500,14 +718,10 @@ if ($method === 'POST') {
             Response::error("This grave already has a pending reservation. Cancel it first.", 409);
         }
 
-        // Where is the old occupant going? (null = Common Bone Chamber / out of cemetery)
         $oldNewGraveId = !empty($rawData['old_transfer_to_grave'])
             ? (int) $rawData['old_transfer_to_grave']
             : null;
 
-        // Frontend may explicitly state the old occupant's future status.
-        // Default mirrors the historical behaviour: Active if they still have a
-        // physical target grave, otherwise Inactive.
         if (!empty($rawData['old_occupant_status'])) {
             $candidate = $rawData['old_occupant_status'];
             if (!in_array($candidate, ['Active', 'Inactive'], true)) {
@@ -518,7 +732,6 @@ if ($method === 'POST') {
             $oldNewStatus = $oldNewGraveId ? 'Active' : 'Inactive';
         }
 
-        // Optional: assist the old occupant's assistance_type.
         if (!empty($rawData['old_occupant_assistance_type'])) {
             $candidate = $rawData['old_occupant_assistance_type'];
             if (!in_array($candidate, ['Burial', 'Transfer the remains of the late', 'Other'], true)) {
@@ -527,7 +740,6 @@ if ($method === 'POST') {
             $oldNewAssistance = $candidate;
         }
 
-        // Prepare remarks for the old occupant.
         $newDeceased     = trim($rawData['deceased_name']);
         $newControl      = trim($rawData['control_number']);
         $transferRemarks = trim($rawData['remarks_old_occupant'] ?? '');
@@ -537,44 +749,16 @@ if ($method === 'POST') {
         Response::error("You must provide either 'grave_id' (or 'grave_code') for a vacant grave, or 'old_interment_id' for replacement.", 400);
     }
 
-    // Prepare fields for NEW occupant.
-    // They are not in a grave yet, so current_grave_id is NULL.
-    // The target grave is stored in reservation_details.
-    // NOTE: transfer_to_grave removed – column no longer exists.
     $insertFields = [
-        'control_number',
-        'deceased_name',
-        'last_known_address',
-        'death_certificate',
-        'deceased_date_of_birth',
-        'deceased_date_of_death',
-        'current_grave_id',
-        'contact_person_name',
-        'contact_person_phone_number',
-        'contact_person_email',
-        'assistance_type',
-        'burial_permit_number',
-        'burial_permit_date',
-        'transfer_permit_number',
-        'transfer_permit_issued_by',
-        'transfer_permit_date',
-        'exhumation_permit_number',
-        'exhumation_permit_date',
-        'date_buried',
-        'date_exhumed',
-        'burial_clearance_date',
-        'lease_expiration_date',
-        'status',
-        'remarks',
-        'deceased_sex',
-        'contact_person_address',
-        'contact_person_address_barangay',
-
-        // Audit columns
-        'created_at',
-        'updated_at',
-        'created_by',
-        'updated_by'
+        'control_number', 'deceased_name', 'last_known_address', 'death_certificate',
+        'deceased_date_of_birth', 'deceased_date_of_death', 'current_grave_id',
+        'contact_person_name', 'contact_person_phone_number', 'contact_person_email',
+        'assistance_type', 'burial_permit_number', 'burial_permit_date',
+        'transfer_permit_number', 'transfer_permit_issued_by', 'transfer_permit_date',
+        'exhumation_permit_number', 'exhumation_permit_date', 'date_buried', 'date_exhumed',
+        'burial_clearance_date', 'lease_expiration_date', 'status', 'remarks',
+        'deceased_sex', 'contact_person_address', 'contact_person_address_barangay',
+        'created_at', 'updated_at', 'created_by', 'updated_by'
     ];
 
     $placeholders = [];
@@ -593,7 +777,6 @@ if ($method === 'POST') {
             $val = $rawData[$field] ?? null;
         }
 
-        // Validate date fields
         if (in_array($field, ['deceased_date_of_birth', 'deceased_date_of_death', 'burial_permit_date', 'transfer_permit_date', 'exhumation_permit_date', 'date_buried', 'date_exhumed', 'burial_clearance_date', 'lease_expiration_date'])) {
             if (!empty($val) && !strtotime($val)) {
                 Response::error("Invalid date format for '$field'.", 400);
@@ -605,45 +788,82 @@ if ($method === 'POST') {
 
     $pdo->beginTransaction();
     try {
-        // 1. Insert new pending interment (with audit columns)
         $sql = "INSERT INTO interments (" . implode(', ', $insertFields) . ") VALUES (" . implode(', ', $placeholders) . ")";
         $stmt = $pdo->prepare($sql);
         $stmt->execute($values);
         $newIntermentId = $pdo->lastInsertId();
 
-        // 2. Record the reservation (the plan) in reservation_details.
-        //    The OLD occupant's row is intentionally left untouched here —
-        //    Monitor applies these changes when the reservation executes.
-        $resvStmt = $pdo->prepare("
-            INSERT INTO reservation_details (
-                pending_interment_id,
-                target_grave_id,
-                old_interment_id,
-                old_new_grave_id,
-                old_new_status,
-                old_new_assistance_type,
-                old_new_remarks,
-                created_by,
-                updated_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ");
-        $resvStmt->execute([
-            $newIntermentId,
-            $graveId,
-            $oldIntermentId,
-            $oldNewGraveId,
-            $oldNewStatus,
-            $oldNewAssistance,
-            $oldNewRemarks,
-            $userData['user_id'],
-            $userData['user_id'],
-        ]);
+        $existingPlanId = null;
+        if ($oldIntermentId) {
+            $planStmt = $pdo->prepare("
+                SELECT reservation_id FROM reservation_details
+                WHERE old_interment_id = ?
+                  AND deleted_at IS NULL
+                LIMIT 1
+            ");
+            $planStmt->execute([$oldIntermentId]);
+            $existingPlanId = $planStmt->fetchColumn();
+        }
+
+        $now    = date('Y-m-d H:i:s');
+        $userId = $userData['user_id'];
+
+        if ($existingPlanId !== false && $existingPlanId !== null) {
+            $resvStmt = $pdo->prepare("
+                UPDATE reservation_details SET
+                    pending_interment_id     = ?,
+                    target_grave_id          = ?,
+                    old_new_grave_id         = COALESCE(old_new_grave_id, ?),
+                    old_new_status           = COALESCE(old_new_status, ?),
+                    old_new_assistance_type  = COALESCE(old_new_assistance_type, ?),
+                    old_new_remarks          = COALESCE(old_new_remarks, ?),
+                    updated_at               = ?,
+                    updated_by               = ?
+                WHERE reservation_id = ?
+            ");
+            $resvStmt->execute([
+                $newIntermentId,
+                $graveId,
+                $oldNewGraveId,
+                $oldNewStatus,
+                $oldNewAssistance,
+                $oldNewRemarks,
+                $now,
+                $userId,
+                $existingPlanId,
+            ]);
+        } else {
+            $resvStmt = $pdo->prepare("
+                INSERT INTO reservation_details (
+                    pending_interment_id,
+                    target_grave_id,
+                    old_interment_id,
+                    old_new_grave_id,
+                    old_new_status,
+                    old_new_assistance_type,
+                    old_new_remarks,
+                    created_by,
+                    updated_by
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ");
+            $resvStmt->execute([
+                $newIntermentId,
+                $graveId,
+                $oldIntermentId,
+                $oldNewGraveId,
+                $oldNewStatus,
+                $oldNewAssistance,
+                $oldNewRemarks,
+                $userId,
+                $userId,
+            ]);
+        }
 
         $pdo->commit();
         systemLog(
             "Reservation created: pending interment $newIntermentId targets grave $graveId" .
                 ($oldIntermentId ? ", replacing old occupant $oldIntermentId" : ""),
-            $userData['user_id']
+            $userId
         );
 
         Response::success("Reservation created successfully.", [
@@ -663,5 +883,4 @@ if ($method === 'POST') {
     }
 }
 
-// If method not allowed
 Response::error("Method Not Allowed", 405);

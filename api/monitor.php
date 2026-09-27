@@ -2,18 +2,20 @@
 
 /**
  * Monitor.php – View pending interments and execute them (activate)
- * 
- * GET    /monitor.php      : List all pending interments (paginated).
- * GET    /monitor.php/{id} : Get details of a specific pending interment.
- * POST   /monitor.php/{id} : Execute a pending interment (activate it).
- * DELETE /monitor.php/{id} : Cancel a pending interment.
  *
- * NOTE (schema v2):
- *   - interments.transfer_to_grave no longer exists.
- *   - The plan lives in reservation_details (one row per active reservation).
- *   - Executing a reservation APPLIES the plan to the old occupant's row,
- *     then CONSUMES the reservation row.
- *   - Cancelling simply CONSUMES the reservation row; nothing needs reverting.
+ * POST ?action=save_old_edits : Stage OLD occupant edits (incl. date of interment
+ *                               and the auto-calculated expiration date).
+ * POST /monitor.php/{id}      : Execute a pending interment (confirm).
+ * DELETE /monitor.php/{id}    : Cancel a pending interment (soft delete).
+ *
+ * IMPORTANT: the OLD occupant's "date_buried" and "lease_expiration_date"
+ * edits are staged inside reservation_details.old_new_remarks.old_edits and
+ * are applied to the interments row ONLY when Confirm runs.
+ *
+ * The Old Occupant's Exhumation Permit No. and Transfer Permit No. are also
+ * staged — both in the JSON blob AND in the dedicated
+ * reservation_details.exhumation_permit_number / transfer_permit_number
+ * columns, which are the canonical source on read.
  */
 
 define('ITS_ME_JUSTTOVERIFY', true);
@@ -24,7 +26,6 @@ require_once 'logger.php';
 $userData = checkuser();
 $method   = $_SERVER['REQUEST_METHOD'] ?? null;
 
-// Only Admin and Office
 $role = $userData['role'] ?? null;
 if (!in_array($role, [ROLE_ADMIN, ROLE_OFFICE])) {
     Response::error("Forbidden.", 403);
@@ -35,15 +36,11 @@ $rawData = array_merge(
     $_POST ?? []
 );
 
-// Parse path: /monitor.php/{id}
 $pathInfo   = $_GET['path_info'] ?? $_SERVER['PATH_INFO'] ?? '';
 $pathParts  = array_filter(explode('/', trim($pathInfo, '/')));
-$resourceId = array_shift($pathParts); // numeric ID or empty
+$resourceId = array_shift($pathParts);
 
-// Helper closure to format the transfer item
 $formatTransfer = function ($row) {
-    // New occupant (Pending) – identity data from interments p.
-    // NOTE: transfer_to_grave removed; the target comes from reservation_details.
     $newOccupant = [
         'interment_id'           => (int) $row['interment_id'],
         'control_number'         => $row['control_number'],
@@ -75,9 +72,6 @@ $formatTransfer = function ($row) {
         'contact_person_address_barangay' => $row['contact_person_address_barangay']
     ];
 
-    // Old occupant (if any) – identity from interments o, planned changes from
-    // reservation_details. The planned_* fields are what Monitor will APPLY on
-    // execution (unless the frontend overrides them).
     $oldOccupant = null;
     if ($row['old_interment_id']) {
         $oldOccupant = [
@@ -110,11 +104,19 @@ $formatTransfer = function ($row) {
             'contact_person_address'   => $row['old_contact_person_address'],
             'contact_person_address_barangay' => $row['old_contact_person_address_barangay'],
 
-            // Planned changes (from reservation_details):
             'planned_new_grave_id'        => $row['old_new_grave_id'] ? (int) $row['old_new_grave_id'] : null,
             'planned_new_status'          => $row['old_new_status'],
             'planned_new_assistance_type' => $row['old_new_assistance_type'],
             'planned_new_remarks'         => $row['old_new_remarks'],
+
+            // Staged Old-Occupant permit values. Dedicated columns are the
+            // canonical source; the JSON blob is a compatibility fallback.
+            'planned_exhumation_permit_number' => $row['old_new_exhumation_permit_number'] ?? null,
+            'planned_transfer_permit_number'   => $row['old_new_transfer_permit_number']   ?? null,
+
+            'planned_grave_code'          => $row['old_new_grave_code']  ?? null,
+            'planned_block_name'          => $row['old_new_block_name']  ?? null,
+            'planned_block_type'          => $row['old_new_block_type']  ?? null,
         ];
     }
 
@@ -132,7 +134,7 @@ $formatTransfer = function ($row) {
 
     return [
         'reservation_id' => $row['reservation_id'] ? (int) $row['reservation_id'] : null,
-        'type'           => $oldOccupant ? 'replacement' : 'vacant',  // indicate case
+        'type'           => $oldOccupant ? 'replacement' : 'vacant',
         'new_occupant'   => $newOccupant,
         'old_occupant'   => $oldOccupant,
         'target_grave'   => $grave,
@@ -140,23 +142,17 @@ $formatTransfer = function ($row) {
 };
 
 // -----------------------------------------------------------------------------
-// GET – List all pending interments (or fetch a specific one)
+// GET
 // -----------------------------------------------------------------------------
 if ($method === 'GET') {
-    // Base SQL:
-    //   - The plan comes from reservation_details (INNER JOIN: no reservation → not shown).
-    //   - The old occupant (if any) is joined via reservation_details.old_interment_id.
-    //   - The target grave is joined via reservation_details.target_grave_id.
     $baseSql = "
         SELECT
             p.*,
-            rd.reservation_id,
-            rd.target_grave_id,
-            rd.old_interment_id,
-            rd.old_new_grave_id,
-            rd.old_new_status,
-            rd.old_new_assistance_type,
-            rd.old_new_remarks,
+            rd.reservation_id, rd.target_grave_id, rd.old_interment_id,
+            rd.old_new_grave_id, rd.old_new_status, rd.old_new_assistance_type, rd.old_new_remarks,
+            rd.exhumation_permit_number AS old_new_exhumation_permit_number,
+            rd.transfer_permit_number   AS old_new_transfer_permit_number,
+
             o.control_number AS old_control_number, o.deceased_name AS old_deceased_name,
             o.last_known_address AS old_last_known_address, o.death_certificate AS old_death_certificate,
             o.deceased_date_of_birth AS old_deceased_date_of_birth, o.deceased_date_of_death AS old_deceased_date_of_death,
@@ -171,26 +167,26 @@ if ($method === 'GET') {
             o.lease_expiration_date AS old_lease_expiration_date, o.status AS old_status, o.remarks AS old_remarks,
             o.contact_person_address AS old_contact_person_address, o.deceased_sex AS old_deceased_sex,
             o.contact_person_address_barangay AS old_contact_person_address_barangay,
+
+            ong.grave_code  AS old_new_grave_code,
+            onb.block_name  AS old_new_block_name,
+            onb.block_type  AS old_new_block_type,
+
             g.grave_code, g.row_num, g.col_num, g.status AS grave_status, g.remarks AS grave_remarks,
             b.block_name, b.block_id, b.block_type
         FROM interments p
         INNER JOIN reservation_details rd
             ON rd.pending_interment_id = p.interment_id
             AND rd.deleted_at IS NULL
-        LEFT JOIN interments o
-            ON o.interment_id = rd.old_interment_id
-            AND o.deleted_at IS NULL
-        LEFT JOIN graves g
-            ON g.grave_id = rd.target_grave_id
-            AND g.deleted_at IS NULL
-        LEFT JOIN blocks b
-            ON b.block_id = g.block_id
-            AND b.deleted_at IS NULL
+        LEFT JOIN interments o ON o.interment_id = rd.old_interment_id AND o.deleted_at IS NULL
+        LEFT JOIN graves g     ON g.grave_id      = rd.target_grave_id  AND g.deleted_at IS NULL
+        LEFT JOIN blocks b     ON b.block_id      = g.block_id          AND b.deleted_at IS NULL
+        LEFT JOIN graves ong   ON ong.grave_id    = rd.old_new_grave_id AND ong.deleted_at IS NULL
+        LEFT JOIN blocks onb   ON onb.block_id    = ong.block_id        AND onb.deleted_at IS NULL
         WHERE p.status = 'Pending'
           AND p.deleted_at IS NULL
     ";
 
-    // --- Scenario A: Requesting a SPECIFIC resource /monitor.php/{id} ---
     if ($resourceId) {
         $stmt = $pdo->prepare($baseSql . " AND p.interment_id = :id");
         $stmt->execute(['id' => $resourceId]);
@@ -201,11 +197,7 @@ if ($method === 'GET') {
         } else {
             Response::error('Pending transfer not found.', 404);
         }
-    }
-
-    // --- Scenario B: COLLECTION with search + pagination (oldest first) ---
-    else {
-        // ---- Inputs ----
+    } else {
         $searchTerm = isset($_GET['search_term']) ? trim((string) $_GET['search_term']) : '';
         if ($searchTerm !== '' && mb_strlen($searchTerm) < 3) {
             Response::error("Search term must be at least 3 characters long", 400);
@@ -214,7 +206,6 @@ if ($method === 'GET') {
         $limit = max(1, min((int) ($_GET['limit'] ?? 100), 500));
         $page  = max(1, (int) ($_GET['page'] ?? 1));
 
-        // ---- Build search clause (aliases: p = pending, rd = reservation, o = old, g = grave, b = block) ----
         $searchSQL    = '';
         $searchParams = [];
 
@@ -222,55 +213,23 @@ if ($method === 'GET') {
             $like = '%' . $searchTerm . '%';
 
             $searchCols = [
-                // Pending occupant (p)
-                'p.control_number',
-                'p.deceased_name',
-                'p.deceased_sex',
-                'p.last_known_address',
-                'p.death_certificate',
-                'p.contact_person_name',
-                'p.contact_person_phone_number',
-                'p.contact_person_email',
-                'p.contact_person_address',
-                'p.contact_person_address_barangay',
-                'p.assistance_type',
-                'p.burial_permit_number',
-                'p.transfer_permit_number',
-                'p.transfer_permit_issued_by',
-                'p.exhumation_permit_number',
-                'p.status',
-                'p.remarks',
+                'p.control_number', 'p.deceased_name', 'p.deceased_sex', 'p.last_known_address',
+                'p.death_certificate', 'p.contact_person_name', 'p.contact_person_phone_number',
+                'p.contact_person_email', 'p.contact_person_address', 'p.contact_person_address_barangay',
+                'p.assistance_type', 'p.burial_permit_number', 'p.transfer_permit_number',
+                'p.transfer_permit_issued_by', 'p.exhumation_permit_number', 'p.status', 'p.remarks',
 
-                // Old occupant (o)
-                'o.control_number',
-                'o.deceased_name',
-                'o.deceased_sex',
-                'o.last_known_address',
-                'o.death_certificate',
-                'o.contact_person_name',
-                'o.contact_person_phone_number',
-                'o.contact_person_email',
-                'o.contact_person_address',
-                'o.contact_person_address_barangay',
-                'o.assistance_type',
-                'o.burial_permit_number',
-                'o.transfer_permit_number',
-                'o.transfer_permit_issued_by',
-                'o.exhumation_permit_number',
-                'o.status',
-                'o.remarks',
+                'o.control_number', 'o.deceased_name', 'o.deceased_sex', 'o.last_known_address',
+                'o.death_certificate', 'o.contact_person_name', 'o.contact_person_phone_number',
+                'o.contact_person_email', 'o.contact_person_address', 'o.contact_person_address_barangay',
+                'o.assistance_type', 'o.burial_permit_number', 'o.transfer_permit_number',
+                'o.transfer_permit_issued_by', 'o.exhumation_permit_number', 'o.status', 'o.remarks',
 
-                // Planned changes (rd)
-                'rd.old_new_remarks',
-                'rd.old_new_status',
-                'rd.old_new_assistance_type',
+                'rd.old_new_remarks', 'rd.old_new_status', 'rd.old_new_assistance_type',
+                'rd.exhumation_permit_number', 'rd.transfer_permit_number',
 
-                // Grave + Block
-                'g.grave_code',
-                'g.status',
-                'g.remarks',
-                'b.block_name',
-                'b.block_type',
+                'g.grave_code', 'g.status', 'g.remarks', 'b.block_name', 'b.block_type',
+                'ong.grave_code', 'onb.block_name', 'onb.block_type',
             ];
 
             $parts = [];
@@ -281,10 +240,8 @@ if ($method === 'GET') {
             $searchSQL = ' AND (' . implode(' OR ', $parts) . ')';
         }
 
-        // Filtered query used by both COUNT and page fetch → guarantees consistent totals.
         $filteredSql = $baseSql . $searchSQL;
 
-        // ---- COUNT ----
         $countStmt = $pdo->prepare("SELECT COUNT(*) FROM ($filteredSql) AS combined");
         $countStmt->execute($searchParams);
         $totalRecords = (int) $countStmt->fetchColumn();
@@ -293,8 +250,6 @@ if ($method === 'GET') {
         $page       = min($page, max(1, $totalPages));
         $offset     = ($page - 1) * $limit;
 
-        // ---- Fetch page: oldest reserved first ----
-        // $limit / $offset are strict ints → safe to interpolate.
         $pageSql = $filteredSql . " ORDER BY p.interment_id ASC LIMIT $limit OFFSET $offset";
         $pageStmt = $pdo->prepare($pageSql);
         $pageStmt->execute($searchParams);
@@ -302,16 +257,13 @@ if ($method === 'GET') {
 
         $pendingTransfers = array_map($formatTransfer, $rows);
 
-        $pagination = [
-            'current_page'  => $page,
-            'per_page'      => $limit,
-            'total_records' => $totalRecords,
-            'total_pages'   => $totalPages,
-        ];
-
-        // ---- Response ----
         $payload = [
-            'pagination' => $pagination,
+            'pagination' => [
+                'current_page'  => $page,
+                'per_page'      => $limit,
+                'total_records' => $totalRecords,
+                'total_pages'   => $totalPages,
+            ],
             'transfers'  => $pendingTransfers,
         ];
         if ($searchTerm !== '') {
@@ -323,10 +275,217 @@ if ($method === 'GET') {
 }
 
 // -----------------------------------------------------------------------------
-// POST – Execute a pending interment (activate)
+// POST
 // -----------------------------------------------------------------------------
 if ($method === 'POST') {
-    // REST functionality: allow POST /monitor.php/{id}
+
+    // =========================================================================
+    // POST ?action=save_old_edits
+    //     Stages Old Occupant edits — including Date of Interment and the
+    //     auto-calculated Expiration Date — inside reservation_details.
+    //     The Old Occupant's Exhumation Permit No. and Transfer Permit No.
+    //     are also written to their dedicated columns.
+    // =========================================================================
+    if (isset($_GET['action']) && $_GET['action'] === 'save_old_edits') {
+
+        $reservationId = isset($rawData['reservation_id']) && is_numeric($rawData['reservation_id'])
+            ? (int) $rawData['reservation_id'] : 0;
+        if (!$reservationId) {
+            Response::error("reservation_id is required.", 400);
+        }
+
+        $rdStmt = $pdo->prepare("
+            SELECT * FROM reservation_details
+            WHERE reservation_id = ? AND deleted_at IS NULL
+        ");
+        $rdStmt->execute([$reservationId]);
+        $rd = $rdStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$rd) {
+            Response::error("Reservation not found.", 404);
+        }
+
+        $existing = [];
+        if (!empty($rd['old_new_remarks'])) {
+            $decoded = json_decode($rd['old_new_remarks'], true);
+            if (is_array($decoded)) {
+                $existing = $decoded;
+            } else {
+                $existing = ['burial_type' => '', 'remarks' => (string) $rd['old_new_remarks']];
+            }
+        }
+        if (!isset($existing['burial_type'])) $existing['burial_type'] = '';
+        if (!isset($existing['remarks']))     $existing['remarks']     = '';
+
+        // Editable fields — includes date_buried and lease_expiration_date
+        // so Confirm can apply them to the interments row.
+        $oldEdits = [
+            'deceased_name'                  => $rawData['deceased_name']                  ?? null,
+            'deceased_sex'                   => $rawData['deceased_sex']                   ?? null,
+            'deceased_date_of_birth'         => $rawData['deceased_date_of_birth']         ?? null,
+            'deceased_date_of_death'         => $rawData['deceased_date_of_death']         ?? null,
+            'last_known_address'             => $rawData['last_known_address']             ?? null,
+            'death_certificate'              => $rawData['death_certificate']              ?? null,
+            'contact_person_name'            => $rawData['contact_person_name']            ?? null,
+            'contact_person_phone_number'    => $rawData['contact_person_phone_number']    ?? null,
+            'contact_person_address'         => $rawData['contact_person_address']         ?? null,
+            'contact_person_address_barangay'=> $rawData['contact_person_address_barangay']?? null,
+            'assistance_type'                => $rawData['assistance_type']                ?? null,
+            'burial_permit_number'           => $rawData['burial_permit_number']           ?? null,
+            'exhumation_permit_number'       => $rawData['exhumation_permit_number']       ?? null,
+            'transfer_permit_number'         => $rawData['transfer_permit_number']         ?? null,
+            'date_buried'                    => $rawData['date_buried']                    ?? null,
+            'lease_expiration_date'          => $rawData['lease_expiration_date']          ?? null,
+            'burial_clearance_date'          => $rawData['burial_clearance_date']          ?? null,
+            'remarks'                        => $rawData['remarks']                        ?? null,
+        ];
+
+        if (!empty($rawData['block_type'])) {
+            $existing['burial_type'] = (string) $rawData['block_type'];
+        }
+        if (!empty($rawData['remarks'])) {
+            $existing['remarks'] = (string) $rawData['remarks'];
+        }
+        // Also mirror the date fields at the top level so Reserve's parser
+        // can read them without having to look inside old_edits.
+        if (!empty($rawData['date_buried'])) {
+            $existing['date_interment'] = (string) $rawData['date_buried'];
+        }
+        if (!empty($rawData['lease_expiration_date'])) {
+            $existing['expiration_date'] = (string) $rawData['lease_expiration_date'];
+        }
+        // Mirror the permit fields at the top level too, matching the shape
+        // Reserve's update_reservation_plan writes.
+        if (isset($rawData['exhumation_permit_number'])) {
+            $existing['exhumation_permit_number'] = (string) $rawData['exhumation_permit_number'];
+        }
+        if (isset($rawData['transfer_permit_number'])) {
+            $existing['transfer_permit_number'] = (string) $rawData['transfer_permit_number'];
+        }
+
+        $existing['old_edits'] = $oldEdits;
+
+        $newJson = json_encode($existing, JSON_UNESCAPED_UNICODE);
+
+        // Dedicated columns — NULL when blank, so the "blank stays blank"
+        // contract holds on read.
+        $exhumationPermitCol = isset($rawData['exhumation_permit_number']) && $rawData['exhumation_permit_number'] !== ''
+            ? (string) $rawData['exhumation_permit_number'] : null;
+        $transferPermitCol   = isset($rawData['transfer_permit_number']) && $rawData['transfer_permit_number'] !== ''
+            ? (string) $rawData['transfer_permit_number'] : null;
+
+        try {
+            $pdo->beginTransaction();
+
+            $upd = $pdo->prepare("
+                UPDATE reservation_details
+                SET old_new_remarks = ?,
+                    exhumation_permit_number = ?,
+                    transfer_permit_number = ?,
+                    updated_at = NOW(),
+                    updated_by = ?
+                WHERE reservation_id = ?
+            ");
+            $upd->execute([$newJson, $exhumationPermitCol, $transferPermitCol, $userData['user_id'], $reservationId]);
+
+            if (!empty($rawData['grave_code'])) {
+                $code = trim((string) $rawData['grave_code']);
+                $gs = $pdo->prepare("
+                    SELECT grave_id FROM graves
+                    WHERE grave_code = ? AND deleted_at IS NULL
+                ");
+                $gs->execute([$code]);
+                $gid = $gs->fetchColumn();
+                if ($gid !== false) {
+                    $upd2 = $pdo->prepare("
+                        UPDATE reservation_details
+                        SET old_new_grave_id = ?, old_new_status = 'Active', updated_at = NOW()
+                        WHERE reservation_id = ?
+                    ");
+                    $upd2->execute([(int) $gid, $reservationId]);
+                }
+            }
+
+            $pdo->commit();
+        } catch (PDOException $e) {
+            $pdo->rollBack();
+            systemLog("Old-occupant edit save error: " . $e->getMessage(), 'System');
+            Response::error("Database error while saving old occupant edits.", 500);
+        }
+
+        Response::success("Old occupant edits saved.", ['reservation_id' => $reservationId]);
+        exit;
+    }
+
+    // =========================================================================
+    // POST ?action=save_new_edits
+    // =========================================================================
+    if (isset($_GET['action']) && $_GET['action'] === 'save_new_edits') {
+
+        $pendingId = isset($rawData['pending_interment_id']) && is_numeric($rawData['pending_interment_id'])
+            ? (int) $rawData['pending_interment_id'] : 0;
+        if (!$pendingId) {
+            Response::error("pending_interment_id is required.", 400);
+        }
+
+        $chk = $pdo->prepare("
+            SELECT status FROM interments
+            WHERE interment_id = ? AND deleted_at IS NULL
+        ");
+        $chk->execute([$pendingId]);
+        $row = $chk->fetch(PDO::FETCH_ASSOC);
+        if (!$row) {
+            Response::error("Pending interment not found.", 404);
+        }
+        if ($row['status'] !== 'Pending') {
+            Response::error("Only Pending interments can be edited here.", 400);
+        }
+
+        $fields = [
+            'control_number', 'deceased_name', 'deceased_sex',
+            'deceased_date_of_birth', 'deceased_date_of_death',
+            'last_known_address', 'death_certificate',
+            'contact_person_name', 'contact_person_phone_number',
+            'contact_person_address', 'contact_person_address_barangay',
+            'assistance_type', 'burial_permit_number', 'exhumation_permit_number',
+            'transfer_permit_number', 'date_buried', 'lease_expiration_date',
+            'burial_clearance_date', 'remarks'
+        ];
+
+        $updates = [];
+        $params  = [];
+        foreach ($fields as $f) {
+            if (array_key_exists($f, $rawData)) {
+                $updates[] = "$f = ?";
+                $params[]  = $rawData[$f] !== '' ? $rawData[$f] : null;
+            }
+        }
+
+        if (empty($updates)) {
+            Response::success("Nothing to update.", ['pending_interment_id' => $pendingId]);
+            exit;
+        }
+
+        $updates[] = "updated_by = ?";
+        $params[]  = $userData['user_id'];
+        $params[]  = $pendingId;
+
+        try {
+            $stmt = $pdo->prepare(
+                "UPDATE interments SET " . implode(', ', $updates) . " WHERE interment_id = ?"
+            );
+            $stmt->execute($params);
+        } catch (PDOException $e) {
+            systemLog("New-occupant edit save error: " . $e->getMessage(), 'System');
+            Response::error("Database error while saving new occupant edits.", 500);
+        }
+
+        Response::success("New occupant edits saved.", ['pending_interment_id' => $pendingId]);
+        exit;
+    }
+
+    // =========================================================================
+    // POST /monitor.php/{id}  →  Execute (Confirm)
+    // =========================================================================
     if ($resourceId && is_numeric($resourceId)) {
         $rawData['pending_interment_id'] = $resourceId;
     }
@@ -336,9 +495,8 @@ if ($method === 'POST') {
     }
     $pendingId = (int) $rawData['pending_interment_id'];
 
-    // Fetch pending interment (only if not soft‑deleted)
     $pendingStmt = $pdo->prepare("
-        SELECT * FROM interments 
+        SELECT * FROM interments
         WHERE interment_id = ? AND status = 'Pending' AND deleted_at IS NULL
     ");
     $pendingStmt->execute([$pendingId]);
@@ -347,7 +505,6 @@ if ($method === 'POST') {
         Response::error("Pending interment not found or not in Pending status.", 404);
     }
 
-    // Fetch the reservation (the plan)
     $rdStmt = $pdo->prepare("
         SELECT * FROM reservation_details
         WHERE pending_interment_id = ? AND deleted_at IS NULL
@@ -362,12 +519,37 @@ if ($method === 'POST') {
     $targetGraveId  = (int) $rd['target_grave_id'];
     $oldIntermentId = $rd['old_interment_id'] ? (int) $rd['old_interment_id'] : null;
 
-    // Load the old occupant (if any). If they're no longer Active, we'll simply
-    // skip them — the reservation may be stale. A warning goes to the log.
+    $oldEdits = [];
+    if (!empty($rd['old_new_remarks'])) {
+        $decoded = json_decode($rd['old_new_remarks'], true);
+        if (is_array($decoded)) {
+            if (isset($decoded['old_edits']) && is_array($decoded['old_edits'])) {
+                $oldEdits = $decoded['old_edits'];
+            }
+            // Pick up permit values staged by Reserve's update_reservation_plan
+            // action, which stores them at the top level of the JSON blob.
+            if (empty($oldEdits['exhumation_permit_number']) && !empty($decoded['exhumation_permit_number'])) {
+                $oldEdits['exhumation_permit_number'] = $decoded['exhumation_permit_number'];
+            }
+            if (empty($oldEdits['transfer_permit_number']) && !empty($decoded['transfer_permit_number'])) {
+                $oldEdits['transfer_permit_number'] = $decoded['transfer_permit_number'];
+            }
+        }
+    }
+
+    // The dedicated columns are the canonical storage for the staged
+    // old-occupant permit values, so they take the highest priority.
+    if (!empty($rd['exhumation_permit_number'])) {
+        $oldEdits['exhumation_permit_number'] = $rd['exhumation_permit_number'];
+    }
+    if (!empty($rd['transfer_permit_number'])) {
+        $oldEdits['transfer_permit_number'] = $rd['transfer_permit_number'];
+    }
+
     $old = null;
     if ($oldIntermentId) {
         $oldStmt = $pdo->prepare("
-            SELECT * FROM interments 
+            SELECT * FROM interments
             WHERE interment_id = ? AND status = 'Active' AND deleted_at IS NULL
         ");
         $oldStmt->execute([$oldIntermentId]);
@@ -382,13 +564,9 @@ if ($method === 'POST') {
 
     $pdo->beginTransaction();
     try {
-        // --- CASE: Handle Old Occupant first if they exist ---
         if ($old) {
-            // Frontend can optionally override the old occupant's fate during execution.
             $oldUpdate = $rawData['old_occupant_update'] ?? [];
 
-            // Defaults now come from reservation_details (the plan), not from a column
-            // on the old occupant's own row.
             $oldNewStatus = $oldUpdate['status']
                 ?? $rd['old_new_status']
                 ?? ($rd['old_new_grave_id'] ? 'Active' : 'Inactive');
@@ -403,12 +581,22 @@ if ($method === 'POST') {
                 ? $oldUpdate['assistance_type']
                 : ($rd['old_new_assistance_type'] ?? null);
 
+            // Human-readable remarks only — never the raw JSON blob.
+            $planRemarksText = '';
+            if (!empty($rd['old_new_remarks'])) {
+                $decodedPlan = json_decode($rd['old_new_remarks'], true);
+                if (is_array($decodedPlan)) {
+                    $planRemarksText = (string) ($decodedPlan['remarks'] ?? '');
+                } else {
+                    $planRemarksText = (string) $rd['old_new_remarks'];
+                }
+            }
+
             $oldRemarks = trim(
                 $oldUpdate['remarks']
-                    ?? ($rd['old_new_remarks'] ?? '')
+                    ?? $planRemarksText
             );
 
-            // Validate status override
             if (!in_array($oldNewStatus, ['Active', 'Inactive'], true)) {
                 throw new Exception("Invalid old occupant status. Must be Active or Inactive.");
             }
@@ -418,9 +606,8 @@ if ($method === 'POST') {
                     if ((int) $oldNewGraveId === $targetGraveId) {
                         throw new Exception("Old occupant cannot stay in the same grave being reserved.");
                     }
-                    // Validate new grave is vacant and not deleted
                     $checkNew = $pdo->prepare("
-                        SELECT status FROM graves 
+                        SELECT status FROM graves
                         WHERE grave_id = ? AND status = 'Vacant' AND deleted_at IS NULL
                           AND NOT EXISTS (SELECT 1 FROM interments WHERE current_grave_id = ? AND status = 'Active' AND deleted_at IS NULL)
                     ");
@@ -429,10 +616,17 @@ if ($method === 'POST') {
                         throw new Exception("The destination grave for the old occupant is not vacant or does not exist.");
                     }
 
-                    // Move old occupant to their new physical grave
-                    $setClauses = ['current_grave_id = ?', "status = 'Active'"];
-                    $setParams  = [$oldNewGraveId];
+                    // Move first (fires the trigger with original remarks),
+                    // then apply assistance_type / remarks separately.
+                    $moveStmt = $pdo->prepare("
+                        UPDATE interments
+                        SET current_grave_id = ?, status = 'Active', updated_by = ?
+                        WHERE interment_id = ?
+                    ");
+                    $moveStmt->execute([$oldNewGraveId, $userData['user_id'], $old['interment_id']]);
 
+                    $setClauses = [];
+                    $setParams  = [];
                     if ($oldNewAssistanceType !== null) {
                         $setClauses[] = 'assistance_type = ?';
                         $setParams[]  = $oldNewAssistanceType;
@@ -441,20 +635,20 @@ if ($method === 'POST') {
                         $setClauses[] = "remarks = CONCAT(COALESCE(remarks, ''), ' ', ?)";
                         $setParams[]  = $oldRemarks;
                     }
-                    $setClauses[] = 'updated_by = ?';
-                    $setParams[]  = $userData['user_id'];
-                    $setParams[]  = $old['interment_id'];
+                    if (!empty($setClauses)) {
+                        $setClauses[] = 'updated_by = ?';
+                        $setParams[]  = $userData['user_id'];
+                        $setParams[]  = $old['interment_id'];
 
-                    $updateOld = $pdo->prepare(
-                        "UPDATE interments SET " . implode(', ', $setClauses) . " WHERE interment_id = ?"
-                    );
-                    $updateOld->execute($setParams);
+                        $tail = $pdo->prepare(
+                            "UPDATE interments SET " . implode(', ', $setClauses) . " WHERE interment_id = ?"
+                        );
+                        $tail->execute($setParams);
+                    }
 
-                    // Mark their new grave as Occupied
                     $markNew = $pdo->prepare("UPDATE graves SET status = 'Occupied' WHERE grave_id = ?");
                     $markNew->execute([$oldNewGraveId]);
                 } else {
-                    // COMMON BONE CHAMBER CASE: Active status, but no physical grave_id (NULL).
                     $setClauses = ['current_grave_id = NULL', "status = 'Active'"];
                     $setParams  = [];
 
@@ -476,7 +670,6 @@ if ($method === 'POST') {
                     $updateOld->execute($setParams);
                 }
             } else {
-                // Status is Inactive (Removed from cemetery completely)
                 $setClauses = ['current_grave_id = NULL', "status = 'Inactive'"];
                 $setParams  = [];
 
@@ -497,25 +690,56 @@ if ($method === 'POST') {
                 );
                 $updateOld->execute($setParams);
             }
+
+            // Apply staged edits, including the Date of Interment and the
+            // auto-calculated Expiration Date.
+            if (!empty($oldEdits)) {
+                $editableOldFields = [
+                    'deceased_name', 'deceased_sex', 'deceased_date_of_birth', 'deceased_date_of_death',
+                    'last_known_address', 'death_certificate',
+                    'contact_person_name', 'contact_person_phone_number',
+                    'contact_person_address', 'contact_person_address_barangay',
+                    'assistance_type',
+                    'burial_permit_number', 'exhumation_permit_number', 'transfer_permit_number',
+                    'date_buried', 'lease_expiration_date',
+                    'burial_clearance_date', 'remarks'
+                ];
+
+                $editUpdates = [];
+                $editParams  = [];
+                foreach ($editableOldFields as $f) {
+                    if (array_key_exists($f, $oldEdits) && $oldEdits[$f] !== null && $oldEdits[$f] !== '') {
+                        $editUpdates[] = "$f = ?";
+                        $editParams[]  = $oldEdits[$f];
+                    }
+                }
+
+                if (!empty($editUpdates)) {
+                    $editUpdates[] = "updated_by = ?";
+                    $editParams[]  = $userData['user_id'];
+                    $editParams[]  = $old['interment_id'];
+
+                    $applyEdits = $pdo->prepare(
+                        "UPDATE interments SET " . implode(', ', $editUpdates) . " WHERE interment_id = ?"
+                    );
+                    $applyEdits->execute($editParams);
+                }
+            }
         }
 
-        // --- Execute the Pending Interment (The New Occupant) ---
-        // They take over current_grave_id. Their plan lives in reservation_details,
-        // which we consume below.
+        // Execute the pending interment (new occupant).
         $updatePending = $pdo->prepare("
-            UPDATE interments 
+            UPDATE interments
             SET status = 'Active', current_grave_id = ?, updated_by = ?
             WHERE interment_id = ?
         ");
         $updatePending->execute([$targetGraveId, $userData['user_id'], $pendingId]);
 
-        // Ensure their target grave is marked as Occupied
         if ($targetGraveId) {
             $markTarget = $pdo->prepare("UPDATE graves SET status = 'Occupied' WHERE grave_id = ?");
             $markTarget->execute([$targetGraveId]);
         }
 
-        // --- Consume the reservation row ---
         $delStmt = $pdo->prepare("DELETE FROM reservation_details WHERE reservation_id = ?");
         $delStmt->execute([$reservationId]);
 
@@ -539,15 +763,14 @@ if ($method === 'POST') {
     } catch (Exception $e) {
         $pdo->rollBack();
         systemLog("Monitor execution error: " . $e->getMessage(), 'System');
-        Response::error($e->getMessage(), 400); // Send the specific validation error message back
+        Response::error($e->getMessage(), 400);
     }
 }
 
 // -----------------------------------------------------------------------------
-// DELETE – Cancel a pending interment
+// DELETE
 // -----------------------------------------------------------------------------
 if ($method === 'DELETE') {
-    // Get pending_interment_id from URL path first, then query string, then request body
     $pendingId = null;
     if ($resourceId && is_numeric($resourceId)) {
         $pendingId = (int) $resourceId;
@@ -559,9 +782,8 @@ if ($method === 'DELETE') {
         Response::error("pending_interment_id is required.", 400);
     }
 
-    // Fetch the pending interment (only if not soft‑deleted)
     $pendingStmt = $pdo->prepare("
-        SELECT * FROM interments 
+        SELECT * FROM interments
         WHERE interment_id = ? AND status = 'Pending' AND deleted_at IS NULL
     ");
     $pendingStmt->execute([$pendingId]);
@@ -570,60 +792,48 @@ if ($method === 'DELETE') {
         Response::error("Pending interment not found or already processed.", 404);
     }
 
-    // Fetch the reservation (to know the target grave + to consume the row).
-    // It should exist, but handle the orphan case gracefully.
     $rdStmt = $pdo->prepare("
-        SELECT reservation_id, target_grave_id FROM reservation_details
+        SELECT reservation_id, target_grave_id, old_interment_id
+        FROM reservation_details
         WHERE pending_interment_id = ? AND deleted_at IS NULL
     ");
     $rdStmt->execute([$pendingId]);
     $rd = $rdStmt->fetch(PDO::FETCH_ASSOC);
 
-    $reservationId = $rd ? (int) $rd['reservation_id'] : null;
-    $targetGraveId = ($rd && $rd['target_grave_id']) ? (int) $rd['target_grave_id'] : null;
+    $reservationId  = $rd ? (int) $rd['reservation_id'] : null;
+    $targetGraveId  = ($rd && $rd['target_grave_id'])  ? (int) $rd['target_grave_id']  : null;
+    $oldIntermentId = ($rd && $rd['old_interment_id']) ? (int) $rd['old_interment_id'] : null;
 
-    $hasActive = false; // Flag to check if target grave is still occupied
+    $graveFreed = false;
 
     $pdo->beginTransaction();
     try {
-        // 1. Mark pending interment as Inactive (its plan is being discarded).
         $cancelRemark = "Cancelled on " . date('Y-m-d H:i:s');
-        $update = $pdo->prepare("
-            UPDATE interments 
-            SET status = 'Inactive', 
+        $del = $pdo->prepare("
+            UPDATE interments
+            SET status = 'Inactive',
+                deleted_at = NOW(),
                 remarks = CONCAT(COALESCE(remarks, ''), ' ', ?),
                 updated_by = ?
-            WHERE interment_id = ?
+            WHERE interment_id = ? AND status = 'Pending' AND deleted_at IS NULL
         ");
-        $update->execute([$cancelRemark, $userData['user_id'], $pendingId]);
+        $del->execute([$cancelRemark, $userData['user_id'], $pendingId]);
 
-        // 2. Check the fate of the Target Grave
         if ($targetGraveId) {
             $checkActive = $pdo->prepare("
-                SELECT interment_id FROM interments 
+                SELECT interment_id FROM interments
                 WHERE current_grave_id = ? AND status = 'Active' AND deleted_at IS NULL
                 LIMIT 1
             ");
             $checkActive->execute([$targetGraveId]);
-            $activeOccupant = $checkActive->fetch(PDO::FETCH_ASSOC);
 
-            if (!$activeOccupant) {
-                // If nobody is actively occupying it, we safely set it back to Vacant
+            if (!$checkActive->fetch()) {
                 $freeGrave = $pdo->prepare("UPDATE graves SET status = 'Vacant' WHERE grave_id = ?");
                 $freeGrave->execute([$targetGraveId]);
-            } else {
-                $hasActive = true;
-
-                // NOTE: We intentionally do NOT touch the active occupant's row.
-                // Because Memoria allows co-interments, automatically altering the
-                // first active occupant the query finds can corrupt innocent records.
-                // Since reservation_details now stored the plan and it was never
-                // applied to the old occupant, there is nothing to revert here.
+                $graveFreed = true;
             }
         }
 
-        // 3. Consume the reservation row. Nothing to revert — the old occupant's
-        //    row was never touched at reserve time.
         if ($reservationId) {
             $softDel = $pdo->prepare("
                 UPDATE reservation_details
@@ -636,11 +846,18 @@ if ($method === 'DELETE') {
         }
 
         $pdo->commit();
-        systemLog("Cancelled pending interment $pendingId", $userData['user_id']);
+
+        systemLog(
+            "Cancelled pending interment $pendingId (soft-deleted). " .
+            ($oldIntermentId ? "Old occupant $oldIntermentId returned to Reserve." : ""),
+            $userData['user_id']
+        );
+
         Response::success("Pending interment cancelled.", [
             'pending_interment_id' => $pendingId,
             'target_grave_id'      => $targetGraveId,
-            'grave_freed'          => ($targetGraveId && !$hasActive),
+            'old_interment_id'     => $oldIntermentId,
+            'grave_freed'          => $graveFreed,
         ]);
     } catch (PDOException $e) {
         $pdo->rollBack();
@@ -649,5 +866,4 @@ if ($method === 'DELETE') {
     }
 }
 
-// If method not allowed
 Response::error("Method Not Allowed", 405);

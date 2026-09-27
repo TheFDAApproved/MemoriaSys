@@ -1,903 +1,883 @@
-document.addEventListener('DOMContentLoaded', function () {
-    const MAX_PAGE_BUTTONS = 5;
-    const PER_PAGE = 100;
-    const API_URL = 'api/records.php';
+(function (global) {
+    'use strict';
 
-    const ALLOWED_STATUSES = ['Occupied', 'Expired', 'Expiring'];
+    const CONFIG = {
+        ENDPOINT: 'api/records.php',
+        DEFAULT_LIMIT: 100,
+        MIN_SEARCH_LENGTH: 3,
+        SEARCH_DEBOUNCE_MS: 350,
+        PAGINATION_WINDOW: 5,
+        REQUEST_TIMEOUT_MS: 30000,
+    };
 
     const state = {
-        rawRecords: [],
-        allRecords: [],
-        data: [],
         page: 1,
+        limit: CONFIG.DEFAULT_LIMIT,
+        search: '',
         totalPages: 1,
-        appliedSearch: '',
-        appliedStatus: 'all',
-        requestId: 0,
-        lastRenderKey: '',
-        columnsResized: false
+        totalRecords: 0,
+        items: [],
+        loading: false,
+        controller: null,
+        lastError: null,
     };
 
     const els = {
-        searchBox: document.querySelector('.searchBox'),
-        searchInput: document.getElementById('user_search'),
-        statusFilter: document.getElementById('status_filter'),
-        tableBody: document.getElementById('burial_table_body'),
-        noData: document.getElementById('burial_no_data'),
-        currentPageNum: document.getElementById('current_page_num'),
-        totalPagesNum: document.getElementById('total_pages_num'),
-        prevBtn: document.getElementById('prev_page_btn'),
-        nextBtn: document.getElementById('next_page_btn'),
-        carouselTrack: document.getElementById('carousel_track'),
-        carouselViewport: document.getElementById('carousel_viewport'),
-        tableScrollWrapper: document.querySelector('.tableScrollWrapper'),
-        table: document.querySelector('.tableScrollWrapper table'),
-        addModalBtn: document.getElementById('open_add_modal_btn')
+        tbody: null,
+        noData: null,
+        searchInput: null,
+        prevBtn: null,
+        nextBtn: null,
+        currentPageLabel: null,
+        totalPagesLabel: null,
+        carouselTrack: null,
+        carouselViewport: null,
+        addBtn: null,
+        tableWrapper: null,
     };
 
-    const closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.className = 'searchClearBtn';
-    closeBtn.setAttribute('aria-label', 'Clear search');
-    closeBtn.innerHTML = '<i class="fas fa-times"></i>';
-    if (els.searchBox) els.searchBox.appendChild(closeBtn);
+    let searchTimer = null;
+    let booted = false;
 
-    function escapeHtml(str) {
-        return String(str).replace(/[&<>"']/g, function (c) {
-            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    const escapeHtml = (value) => {
+        if (value === null || value === undefined) return '';
+        return String(value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    };
+
+    const dash = (value) => {
+        if (value === null || value === undefined) return '—';
+        const s = String(value).trim();
+        return s === '' ? '—' : escapeHtml(s);
+    };
+
+    const formatDate = (value) => {
+        if (!value) return '—';
+        const d = new Date(value);
+        if (Number.isNaN(d.getTime())) return escapeHtml(value);
+        return d.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
         });
-    }
+    };
 
-    function sanitizeVal(val, defaultVal = '') {
-        if (val === null || val === undefined ||
-            String(val).trim() === '' || String(val).trim() === '-' ||
-            String(val).trim() === 'N/A') {
-            return defaultVal;
+    const pick = (...values) => {
+        for (const v of values) {
+            if (v === null || v === undefined) continue;
+            const s = String(v).trim();
+            if (s !== '' && s !== 'N/A') return s;
         }
-        return String(val).trim();
+        return '';
+    };
+
+    function notify(kind, message) {
+        if (!message) return;
+        const text = String(message);
+
+        if (typeof window.showAlertTOP === 'function') {
+            const type =
+                kind === 'success' ? 'success'
+                    : kind === 'error' ? 'error'
+                        : kind === 'warning' ? 'warning'
+                            : 'info';
+            window.showAlertTOP(text, type);
+            return;
+        }
+
+        const toast =
+            document.getElementById('records_toast') ||
+            document.getElementById('app_toast');
+
+        if (toast) {
+            toast.textContent = text;
+            toast.dataset.kind = kind;
+            toast.classList.add('visible');
+            clearTimeout(toast.__hideTimer);
+            toast.__hideTimer = setTimeout(() => toast.classList.remove('visible'), 4000);
+            return;
+        }
+
+        document.dispatchEvent(
+            new CustomEvent('records:notify', { detail: { kind, message: text } })
+        );
+
+        if (kind === 'error') console.error('[records.js]', text);
+        else console.log('[records.js]', text);
     }
 
-    function displayVal(v) {
-        const s = (v === null || v === undefined) ? '' : String(v).trim();
-        return s === '' ? '-' : s;
-    }
+    async function call(method, path = '', { body = null, query = null, signal = null } = {}) {
+        const controller = new AbortController();
+        const onAbort = () => controller.abort();
+        if (signal) {
+            if (signal.aborted) controller.abort();
+            else signal.addEventListener('abort', onAbort, { once: true });
+        }
 
-    function normalizeStatus(raw) {
-        const s = String(raw || '').trim().toLowerCase();
-        if (!s) return 'Occupied';
+        const timer = setTimeout(() => controller.abort(), CONFIG.REQUEST_TIMEOUT_MS);
 
-        if (s === 'occupied') return 'Occupied';
-        if (s === 'expired') return 'Expired';
-        if (s === 'expiring') return 'Expiring';
-
-        return null;
-    }
-
-    function groupHistoryByInterment(interments) {
-        const historyMap = {};
-        const parents = [];
-
-        interments.forEach(function (item) {
-            if (item.is_history) {
-                const pid = item.interment_id;
-                if (!historyMap[pid]) historyMap[pid] = [];
-                historyMap[pid].push(item);
-            } else {
-                parents.push(item);
+        let url = CONFIG.ENDPOINT + (path || '');
+        if (query && typeof query === 'object') {
+            const usp = new URLSearchParams();
+            for (const [k, v] of Object.entries(query)) {
+                if (v === undefined || v === null || v === '') continue;
+                usp.append(k, v);
             }
-        });
+            const qs = usp.toString();
+            if (qs) url += '?' + qs;
+        }
 
-        Object.keys(historyMap).forEach(function (pid) {
-            historyMap[pid].sort(function (a, b) {
-                return String(b.transfer_date || '').localeCompare(String(a.transfer_date || ''));
-            });
-        });
-
-        return { historyMap, parents };
-    }
-
-        function mapHistoryEntry(h) {
-        const rawName = sanitizeVal(h.deceased_name);
-        const cleanName = rawName.replace(/^\[History[^\]]*\]\s*/i, '').trim();
-        const street = sanitizeVal(h.contact_person_address || h.purok_zone_street);
-        const barangay = sanitizeVal(h.contact_person_address_barangay || h.barangay_address);
-
-        return {
-            transferDate: sanitizeVal(h.transfer_date),
-            controlNo: sanitizeVal(h.control_number || h.control_no),
-            name: cleanName,
-            sex: sanitizeVal(h.deceased_sex),
-            dob: sanitizeVal(h.deceased_date_of_birth),
-            address: sanitizeVal(h.last_known_address),
-            dateInterment: sanitizeVal(h.date_buried),
-            block: sanitizeVal(h.block_name),
-            graveCode: sanitizeVal(h.grave_code),
-            expiration: sanitizeVal(h.lease_expiration_date),
-            contactName: sanitizeVal(h.contact_person_name),
-            contactPhone: sanitizeVal(h.contact_person_phone_number),
-            contactAddress: street && barangay ? `${street}, ${barangay}` : (street || barangay),
-            remarks: sanitizeVal(h.remarks),
-
-            control_no:          sanitizeVal(h.control_number || h.control_no),
-            clearance_date:      sanitizeVal(h.burial_clearance_date),
-            req_name:            sanitizeVal(h.contact_person_name),
-            req_phone:           sanitizeVal(h.contact_person_phone_number),
-            req_street:          street,
-            requesting_barangay: barangay,
-            req_assistance:      sanitizeVal(h.assistance_type),
-
-            deceased_name:       cleanName,
-            deceased_sex:        sanitizeVal(h.deceased_sex),
-            deceased_dob:        sanitizeVal(h.deceased_date_of_birth),
-            deceased_address:    sanitizeVal(h.last_known_address),
-            deceased_bod:        sanitizeVal(h.deceased_date_of_death),
-            deceased_cert:       sanitizeVal(h.death_certificate),
-            deceased_remarks:    sanitizeVal(h.remarks),
-
-            permit_burial:       sanitizeVal(h.burial_permit_number),
-            permit_exhumation:   sanitizeVal(h.exhumation_permit_number),
-            permit_transfer:     sanitizeVal(h.transfer_permit_number),
-
-            burial_block:        sanitizeVal(h.block_type),
-            block_name:          sanitizeVal(h.block_name),
-            grave_code:          sanitizeVal(h.grave_code),
-            date_interment:      sanitizeVal(h.date_buried),
-            expiration_date:     sanitizeVal(h.lease_expiration_date)
+        const opts = {
+            method,
+            credentials: 'same-origin',
+            headers: { Accept: 'application/json' },
+            signal: controller.signal,
         };
-    }
 
-    function autoBlock(item, index) {
-        const raw = sanitizeVal(item.block || item.block_name);
-        if (raw) return raw;
-        return 'Block ' + (Math.floor(index / 100) + 1);
-    }
+        if (body !== null && method !== 'GET' && method !== 'HEAD') {
+            opts.headers['Content-Type'] = 'application/json';
+            opts.body = JSON.stringify(body);
+        }
 
-    function autoGraveCode(item, block, index) {
-        const raw = sanitizeVal(item.grave_code);
-        if (raw) return raw;
-        const lot = (index % 100) + 1;
-        return block + '-' + String(lot).padStart(3, '0');
-    }
-
-        function mapRecord(item, index) {
-        const idVal = item.id || item.interment_id || (index + 101);
-
-        const street = sanitizeVal(item.contact_person_address || item.purok_zone_street);
-        const barangay = sanitizeVal(item.contact_person_address_barangay || item.barangay_address);
-        const fullContactAddress = street && barangay
-            ? `${street}, ${barangay}`
-            : (street || barangay);
-
-        const block = autoBlock(item, index);
-        const graveCode = autoGraveCode(item, block, index);
-        const status = normalizeStatus(item.grave_status || item.status);
-
-        const rawName = sanitizeVal(item.deceased_name);
-        const cleanName = rawName.replace(/^\[History[^\]]*\]\s*/i, '').trim();
-
-        return {
-            id: idVal,
-
-            controlNo: sanitizeVal(item.control_number || item.control_no),
-            name: cleanName || 'Vacant / Unregistered',
-            sex: sanitizeVal(item.deceased_sex),
-            dob: sanitizeVal(item.deceased_date_of_birth),
-            address: sanitizeVal(item.last_known_address),
-            dateInterment: sanitizeVal(item.date_of_interment || item.date_buried),
-            block: block,
-            graveCode: graveCode,
-            expiration: sanitizeVal(item.expiration_date || item.lease_expiration_date),
-            contactName: sanitizeVal(item.applicant_full_name || item.contact_person_name),
-            contactPhone: sanitizeVal(item.phone_number || item.contact_person_phone_number),
-            contactAddress: fullContactAddress,
-            remarks: sanitizeVal(item.remarks),
-            graveStatus: status,
-            isHistory: false,
-            history: [],
-
-            control_no:          sanitizeVal(item.control_number || item.control_no),
-            clearance_date:      sanitizeVal(item.burial_clearance_date),
-            req_name:            sanitizeVal(item.contact_person_name || item.applicant_full_name),
-            req_phone:           sanitizeVal(item.contact_person_phone_number || item.phone_number),
-            req_street:          street,
-            requesting_barangay: barangay,
-            req_assistance:      sanitizeVal(item.assistance_type),
-
-            deceased_name:       cleanName,
-            deceased_sex:        sanitizeVal(item.deceased_sex),
-            deceased_dob:        sanitizeVal(item.deceased_date_of_birth),
-            deceased_address:    sanitizeVal(item.last_known_address),
-            deceased_bod:        sanitizeVal(item.deceased_date_of_death),
-            deceased_cert:       sanitizeVal(item.death_certificate),
-            deceased_remarks:    sanitizeVal(item.remarks),
-
-            permit_burial:       sanitizeVal(item.burial_permit_number),
-            permit_exhumation:   sanitizeVal(item.exhumation_permit_number),
-            permit_transfer:     sanitizeVal(item.transfer_permit_number),
-
-            burial_block:        sanitizeVal(item.block_type),
-            block_name:          sanitizeVal(item.block_name),
-            grave_code:          sanitizeVal(item.grave_code),
-            date_interment:      sanitizeVal(item.date_buried),
-            expiration_date:     sanitizeVal(item.lease_expiration_date)
-        };
-    }
-
-    function filterByStatus(records) {
-        return records.filter(function (r) {
-            return r.graveStatus && ALLOWED_STATUSES.indexOf(r.graveStatus) !== -1;
-        });
-    }
-
-    async function fetchAllRecords() {
-        const res = await fetch(API_URL);
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-
-        const text = await res.text();
-        let payload;
-        try { payload = JSON.parse(text); }
-        catch (e) { throw new Error('Non-JSON response: ' + text.slice(0, 200)); }
-
-        const interments = payload?.data?.interments || [];
-        const { historyMap, parents } = groupHistoryByInterment(interments);
-
-        const mapped = parents.map(function (item, idx) {
-            const rec = mapRecord(item, idx);
-            const hists = historyMap[item.interment_id] || [];
-            rec.history = hists.map(mapHistoryEntry);
-            return rec;
-        });
-
-        return filterByStatus(mapped);
-    }
-
-    async function loadRecords(opts) {
-        const silent = !!(opts && opts.silent);
-        const reqId = ++state.requestId;
-
+        let response;
         try {
-            const fetched = await fetchAllRecords();
-            if (reqId !== state.requestId) return;
-
-            const queued = (typeof CemeteryPipeline !== 'undefined')
-                ? CemeteryPipeline.getRecordsQueue()
-                    .filter(function (r) { return !r.is_history; })
-                    .filter(function (r) {
-                        const s = normalizeStatus(r.graveStatus || r.grave_status || r.status);
-                        return s !== null;
-                    })
-                    .map(function (r, i) {
-                        const rec = mapRecord(r, i);
-                        rec.history = [];
-                        return rec;
-                    })
-                    .filter(function (r) { return r.graveStatus !== null; })
-                : [];
-
-            state.rawRecords = filterByStatus(queued.concat(fetched));
-
-            applySearchFilter();
-            applyPage();
-            renderTable(silent);
-            renderPagination(silent);
-
-            if (typeof CemeteryPipeline !== 'undefined') {
-                CemeteryPipeline.setCache('records', state.rawRecords);
+            response = await fetch(url, opts);
+        } catch (err) {
+            clearTimeout(timer);
+            if (signal) signal.removeEventListener('abort', onAbort);
+            if (err.name === 'AbortError') {
+                const cancelled = new Error('Request cancelled.');
+                cancelled.cancelled = true;
+                throw cancelled;
             }
-        } catch (e) {
-            if (reqId !== state.requestId) return;
-            console.warn('[records] fetch failed, using fallback:', e);
+            throw new Error('Network error — could not reach the server.');
+        } finally {
+            clearTimeout(timer);
+            if (signal) signal.removeEventListener('abort', onAbort);
+        }
 
-            let fallback = [];
-            if (typeof getRecordsView === 'function') {
-                fallback = filterByStatus(
-                    getRecordsView()
-                        .filter(function (r) { return !r.is_history; })
-                        .map(function (item, idx) {
-                            const rec = mapRecord(item, idx);
-                            rec.history = [];
-                            return rec;
-                        })
-                );
-            } else if (typeof CEMETERY_MASTER_DATA !== 'undefined' &&
-                Array.isArray(CEMETERY_MASTER_DATA.data)) {
-                fallback = CEMETERY_MASTER_DATA.data
-                    .filter(function (i) {
-                        return !i.is_history
-                            && ALLOWED_STATUSES.indexOf(String(i.grave_status || '').trim()) !== -1
-                            && i.flags?.is_record;
-                    })
-                    .map(function (item, idx) {
-                        const rec = mapRecord(item, idx);
-                        rec.history = [];
-                        return rec;
-                    });
-                fallback = filterByStatus(fallback);
+        let payload = null;
+        const ct = response.headers.get('content-type') || '';
+        try {
+            if (ct.includes('application/json')) payload = await response.json();
+            else {
+                const text = await response.text();
+                if (text && /^[\s]*[{[]/.test(text)) {
+                    try { payload = JSON.parse(text); } catch (_) { }
+                } else {
+                    payload = text || null;
+                }
             }
+        } catch (_) {
+            payload = null;
+        }
 
-            state.rawRecords = fallback;
-            applySearchFilter();
-            applyPage();
-            renderTable(silent);
-            renderPagination(silent);
+        if (response.status === 401 || response.status === 403) {
+            document.dispatchEvent(new CustomEvent('records:unauthorized', {
+                detail: { status: response.status, payload },
+            }));
+        }
+
+        const envelope =
+            payload && typeof payload === 'object' && 'status' in payload
+                ? payload
+                : null;
+
+        const httpOk = response.ok;
+        const logicalOk = !envelope || envelope.status < 400;
+
+        if (!httpOk || !logicalOk) {
+            const message =
+                (envelope && envelope.message) ||
+                (payload && payload.message) ||
+                (typeof payload === 'string' ? payload : '') ||
+                `Request failed (${response.status})`;
+
+            const error = new Error(message);
+            error.status = response.status;
+            error.payload = envelope || payload;
+            throw error;
+        }
+
+        return envelope ? envelope.data : payload;
+    }
+
+    const RecordsAPI = {
+        list(opts = {}) {
+            const query = {};
+            if (opts.page != null) query.page = opts.page;
+            if (opts.limit != null) query.limit = opts.limit;
+            if (opts.search_term) query.search_term = opts.search_term;
+            return call('GET', '', { query });
+        },
+        get(id) {
+            if (id == null) return Promise.reject(new Error('interment_id is required.'));
+            return call('GET', `/${encodeURIComponent(id)}`);
+        },
+        create(data) {
+            return call('POST', '', { body: data });
+        },
+        update(id, data) {
+            if (id == null) return Promise.reject(new Error('interment_id is required.'));
+            return call('PUT', `/${encodeURIComponent(id)}`, { body: data });
+        },
+        remove(id) {
+            if (id == null) return Promise.reject(new Error('interment_id is required.'));
+            return call('DELETE', `/${encodeURIComponent(id)}`);
+        },
+        refresh: () => fetchRecords(),
+        goToPage,
+        setSearch,
+        getState: () => ({ ...state }),
+        getItem: (id) =>
+            state.items.find((row) => Number(row.interment_id) === Number(id)) || null,
+        init,
+    };
+
+    function autoDetect() {
+        if (!els.tbody) {
+            els.tbody =
+                document.getElementById('burial_table_body') ||
+                document.getElementById('records_body') ||
+                document.querySelector('#burial_records tbody');
+        }
+        if (!els.noData) {
+            els.noData = document.getElementById('burial_no_data');
+        }
+        if (!els.searchInput) {
+            els.searchInput = document.getElementById('user_search');
+        }
+        if (!els.prevBtn) els.prevBtn = document.getElementById('prev_page_btn');
+        if (!els.nextBtn) els.nextBtn = document.getElementById('next_page_btn');
+        if (!els.currentPageLabel) els.currentPageLabel = document.getElementById('current_page_num');
+        if (!els.totalPagesLabel) els.totalPagesLabel = document.getElementById('total_pages_num');
+        if (!els.carouselTrack) els.carouselTrack = document.getElementById('carousel_track');
+        if (!els.carouselViewport) els.carouselViewport = document.getElementById('carousel_viewport');
+        if (!els.addBtn) els.addBtn = document.getElementById('open_add_modal_btn');
+
+        if (!els.tableWrapper && els.tbody) {
+            els.tableWrapper =
+                els.tbody.closest('.tableScrollWrapper') ||
+                els.tbody.closest('.tableWrapper') ||
+                els.tbody.closest('table');
         }
     }
 
-    function recordMatchesQuery(item, query) {
-        const { history, ...rest } = item;
-        if (Object.values(rest).some(function (v) {
-            return String(v).toLowerCase().includes(query);
-        })) return true;
+    function init(overrides = {}) {
+        Object.assign(els, overrides || {});
+        autoDetect();
+        bindEvents();
+        return fetchRecords();
+    }
 
-        if (Array.isArray(history) && history.length > 0) {
-            return history.some(function (h) {
-                return Object.values(h).some(function (v) {
-                    return String(v).toLowerCase().includes(query);
-                });
+    async function fetchRecords() {
+        if (!els.tbody) {
+            return RecordsAPI.list({
+                page: state.page,
+                limit: state.limit,
+                search_term: state.search,
             });
         }
-        return false;
-    }
 
-    function applySearchFilter() {
-        const query = state.appliedSearch.toLowerCase().trim();
-        const status = state.appliedStatus;
+        if (state.controller) state.controller.abort();
+        state.controller = new AbortController();
 
-        state.allRecords = state.rawRecords.filter(function (item) {
-            if (status && status !== 'all' && item.graveStatus !== status) return false;
-            if (!query) return true;
-            return recordMatchesQuery(item, query);
-        });
-    }
+        setLoading(true);
+        state.lastError = null;
 
-    function applyPage() {
-        state.totalPages = Math.max(1, Math.ceil(state.allRecords.length / PER_PAGE));
-        if (state.page > state.totalPages) state.page = state.totalPages;
-        if (state.page < 1) state.page = 1;
-        const start = (state.page - 1) * PER_PAGE;
-        state.data = state.allRecords.slice(start, start + PER_PAGE);
-    }
+        let result;
+        try {
+            result = await call('GET', '', {
+                query: {
+                    page: state.page,
+                    limit: state.limit,
+                    search_term: state.search || undefined,
+                },
+                signal: state.controller.signal,
+            });
+        } catch (err) {
+            if (err.cancelled) return;
+            setLoading(false);
 
-    function buildRenderKey() {
-        if (state.data.length === 0) return 'empty:' + state.page + ':' + state.appliedStatus;
+            state.items = [];
+            state.totalPages = 1;
+            state.totalRecords = 0;
 
-        return state.data.map(function (r) {
-            const base = [r.id, r.controlNo, r.name, r.sex, r.dob, r.address, r.dateInterment,
-            r.block, r.graveCode, r.expiration, r.contactName, r.contactPhone,
-            r.contactAddress, r.remarks, r.graveStatus].join('|');
+            state.lastError = err;
+            renderRows();
+            renderPagination();
 
-            const hist = (r.history || []).map(function (h) {
-                return [h.transferDate, h.block, h.graveCode, h.remarks].join('~');
-            }).join('^');
-
-            return base + '#' + hist;
-        }).join(',') + ':' + state.page + ':' + state.appliedStatus;
-    }
-
-    function buildRowHtml(r) {
-        const hasHistory = Array.isArray(r.history) && r.history.length > 0;
-
-        const controlCell =
-            '<td>' +
-            '<div class="controlNoCell">' +
-            (hasHistory
-                ? '<button type="button" class="historyToggle" data-action="toggle-history" ' +
-                'aria-expanded="false" aria-label="Toggle history" title="Show history">' +
-                '<i class="fas fa-chevron-right"></i></button>'
-                : '') +
-            '<span class="controlNoText">' + escapeHtml(displayVal(r.controlNo)) + '</span>' +
-            '</div>' +
-            '</td>';
-
-        const mainRow =
-            '<tr data-id="' + escapeHtml(r.id) + '"' + (hasHistory ? ' class="hasHistory"' : '') + '>' +
-            controlCell +
-            '<td>' + escapeHtml(displayVal(r.name)) + '</td>' +
-            '<td>' + escapeHtml(displayVal(r.sex)) + '</td>' +
-            '<td>' + escapeHtml(displayVal(r.dob)) + '</td>' +
-            '<td>' + escapeHtml(displayVal(r.address)) + '</td>' +
-            '<td>' + escapeHtml(displayVal(r.dateInterment)) + '</td>' +
-            '<td>' + escapeHtml(displayVal(r.block)) + '</td>' +
-            '<td>' + escapeHtml(displayVal(r.graveCode)) + '</td>' +
-            '<td>' + escapeHtml(displayVal(r.expiration)) + '</td>' +
-            '<td>' + escapeHtml(displayVal(r.contactName)) + '</td>' +
-            '<td>' + escapeHtml(displayVal(r.contactPhone)) + '</td>' +
-            '<td>' + escapeHtml(displayVal(r.contactAddress)) + '</td>' +
-            '<td>' + escapeHtml(displayVal(r.remarks)) + '</td>' +
-            '<td>' +
-            '<div class="actions">' +
-            '<button type="button" class="viewBtn"   data-action="view"   title="View"><i class="fas fa-eye"></i></button>' +
-            '<button type="button" class="editBtn"   data-action="edit"   title="Edit"><i class="fas fa-edit"></i></button>' +
-            '<button type="button" class="deleteBtn" data-action="delete" title="Delete"><i class="fas fa-trash-alt"></i></button>' +
-            '</div>' +
-            '</td>' +
-            '</tr>';
-
-        let historyRows = '';
-        if (hasHistory) {
-            historyRows = r.history.map(function (h) {
-                return (
-                    '<tr class="historyRow" data-parent-id="' + escapeHtml(r.id) + '" style="display:none">' +
-                    '<td>' +
-                    '<div class="controlNoCell">' +
-                    '<span class="historyBadge" title="Transferred on ' +
-                    escapeHtml(displayVal(h.transferDate)) + '">' +
-                    '<i class="fas fa-history"></i>' +
-                    '<span>' + escapeHtml(displayVal(h.transferDate)) + '</span>' +
-                    '</span>' +
-                    '</div>' +
-                    '</td>' +
-                    '<td>' + escapeHtml(displayVal(h.name)) + '</td>' +
-                    '<td>' + escapeHtml(displayVal(h.sex)) + '</td>' +
-                    '<td>' + escapeHtml(displayVal(h.dob)) + '</td>' +
-                    '<td>' + escapeHtml(displayVal(h.address)) + '</td>' +
-                    '<td>' + escapeHtml(displayVal(h.dateInterment)) + '</td>' +
-                    '<td>' + escapeHtml(displayVal(h.block)) + '</td>' +
-                    '<td>' + escapeHtml(displayVal(h.graveCode)) + '</td>' +
-                    '<td>' + escapeHtml(displayVal(h.expiration)) + '</td>' +
-                    '<td>' + escapeHtml(displayVal(h.contactName)) + '</td>' +
-                    '<td>' + escapeHtml(displayVal(h.contactPhone)) + '</td>' +
-                    '<td>' + escapeHtml(displayVal(h.contactAddress)) + '</td>' +
-                    '<td title="' + escapeHtml(displayVal(h.remarks)) + '">' +
-                    escapeHtml(displayVal(h.remarks)) +
-                    '</td>' +
-                    '<td></td>' +
-                    '</tr>'
-                );
-            }).join('');
-        }
-
-        return mainRow + historyRows;
-    }
-
-    function renderTable(silent) {
-        const rows = state.data;
-
-        if (rows.length === 0) {
-            const emptyKey = 'empty:' + state.page + ':' + state.appliedStatus;
-            if (state.lastRenderKey !== emptyKey) {
-                els.tableBody.innerHTML = '';
-                state.lastRenderKey = emptyKey;
-            }
-            els.noData.style.display = 'flex';
+            notify('error', err.message || 'Failed to load records.');
+            document.dispatchEvent(new CustomEvent('records:error', { detail: { error: err } }));
             return;
         }
 
-        els.noData.style.display = 'none';
+        const data = result || {};
+        const pagination = data.pagination || {};
 
-        const key = buildRenderKey();
-        if (key === state.lastRenderKey) return;
-        state.lastRenderKey = key;
+        state.items = Array.isArray(data.interments) ? data.interments : [];
+        state.page = Number(pagination.current_page) || state.page;
+        state.totalPages = Math.max(1, Number(pagination.total_pages) || 1);
+        state.totalRecords = Number(pagination.total_records) || state.items.length;
 
-        const prevScrollTop = els.tableScrollWrapper ? els.tableScrollWrapper.scrollTop : 0;
-        const prevScrollLeft = els.tableScrollWrapper ? els.tableScrollWrapper.scrollLeft : 0;
+        setLoading(false);
+        renderRows();
+        renderPagination();
 
-        els.tableBody.innerHTML = rows.map(buildRowHtml).join('');
+        document.dispatchEvent(new CustomEvent('records:loaded', {
+            detail: {
+                items: state.items,
+                pagination: {
+                    current_page: state.page,
+                    per_page: state.limit,
+                    total_records: state.totalRecords,
+                    total_pages: state.totalPages,
+                },
+            },
+        }));
 
-        if (!silent) {
-            els.tableBody.classList.remove('animate');
-            void els.tableBody.offsetWidth;
-            els.tableBody.classList.add('animate');
-        }
-
-        if (els.tableScrollWrapper) {
-            if (prevScrollTop > 0) els.tableScrollWrapper.scrollTop = prevScrollTop;
-            if (prevScrollLeft > 0) els.tableScrollWrapper.scrollLeft = prevScrollLeft;
-        }
-
-        ensureResizableColumns();
+        return result;
     }
 
-    function toggleHistory(row) {
-        if (!row) return;
-        const id = row.dataset.id;
-        if (!id) return;
+    function setLoading(isLoading) {
+        state.loading = isLoading;
+        if (els.tableWrapper) {
+            els.tableWrapper.classList.toggle('isLoading', !!isLoading);
+        } else if (els.tbody) {
+            els.tbody.classList.toggle('isLoading', !!isLoading);
+        }
+    }
 
-        const historyRows = els.tableBody.querySelectorAll('tr.historyRow[data-parent-id="' + id + '"]');
-        if (!historyRows.length) return;
+    function buildContactAddress(item) {
+        const parts = [
+            item.contact_person_address,
+            item.contact_person_address_barangay,
+        ].filter((p) => p && String(p).trim() !== '');
+        return parts.length ? parts.join(', ') : '—';
+    }
 
-        const toggle = row.querySelector('.historyToggle');
-        const isOpen = historyRows[0].style.display !== 'none';
-        const willOpen = !isOpen;
+    function splitHistoryName(item) {
+        const raw = String(item.deceased_name || '').trim();
+        const m = raw.match(/^\[History\s+([^\]]+)\]\s*(.*)$/i);
+        if (m) return { badge: `History ${m[1]}`, name: m[2] };
+        if (item.transfer_date) return { badge: `History ${item.transfer_date}`, name: raw };
+        return { badge: '', name: raw };
+    }
 
-        historyRows.forEach(function (hr) {
-            hr.style.display = willOpen ? 'table-row' : 'none';
-            if (willOpen) {
-                hr.classList.remove('visible');
-                void hr.offsetWidth;
-                hr.classList.add('visible');
+    function renderMainRow(item, hasHistory) {
+        const id = item.interment_id;
+
+        const controlCell = hasHistory
+            ? `<div class="controlNoCell">
+           <button type="button"
+                   class="historyToggle"
+                   aria-expanded="false"
+                   aria-label="Toggle transfer history"
+                   title="Toggle transfer history">
+             <i class="fas fa-chevron-right"></i>
+           </button>
+           <span class="controlNoText">${dash(item.control_number)}</span>
+         </div>`
+            : dash(item.control_number);
+
+        const actionButtons = `
+        <button type="button" class="viewBtn" data-action="view" data-id="${id}" title="View" aria-label="View">
+          <i class="fas fa-file-lines"></i>
+        </button>
+        <button type="button" class="editBtn" data-action="edit" data-id="${id}" title="Edit" aria-label="Edit">
+          <i class="fas fa-pen"></i>
+        </button>
+        <button type="button" class="deleteBtn" data-action="delete" data-id="${id}" title="Delete" aria-label="Delete">
+          <i class="fas fa-trash"></i>
+        </button>`;
+
+        const rowClass = `recordRow${hasHistory ? ' hasHistory' : ''}`;
+
+        return `
+      <tr class="${rowClass}" data-id="${id}">
+        <td>${controlCell}</td>
+        <td>${dash(item.deceased_name)}</td>
+        <td>${dash(item.deceased_sex)}</td>
+        <td>${formatDate(item.deceased_date_of_birth)}</td>
+        <td>${dash(item.last_known_address)}</td>
+        <td>${formatDate(item.date_buried)}</td>
+        <td>${dash(item.block_name)}</td>
+        <td>${dash(item.grave_code)}</td>
+        <td>${formatDate(item.lease_expiration_date)}</td>
+        <td>${dash(item.contact_person_name)}</td>
+        <td>${dash(item.contact_person_phone_number)}</td>
+        <td>${escapeHtml(buildContactAddress(item))}</td>
+        <td class="remarksCell">${dash(item.remarks)}</td>
+        <td class="actionCell"><div class="actions">${actionButtons}</div></td>
+      </tr>`;
+    }
+
+    function renderHistoryRow(item, parentId, visible = false) {
+        const { badge, name } = splitHistoryName(item);
+
+        const badgeCell = badge
+            ? `<span class="historyBadge">
+           <i class="fas fa-clock-rotate-left"></i>${escapeHtml(badge)}
+         </span>`
+            : '';
+
+        const classes = visible ? 'historyRow visible' : 'historyRow';
+        const styleAttr = visible ? '' : ' style="display:none"';
+
+        return `
+      <tr class="${classes}" data-parent-id="${parentId}"${styleAttr}>
+        <td>${badgeCell}</td>
+        <td>${dash(name)}</td>
+        <td>${dash(item.deceased_sex)}</td>
+        <td>${formatDate(item.deceased_date_of_birth)}</td>
+        <td>${dash(item.last_known_address)}</td>
+        <td>${formatDate(item.date_buried)}</td>
+        <td>${dash(item.block_name)}</td>
+        <td>${dash(item.grave_code)}</td>
+        <td>${formatDate(item.lease_expiration_date)}</td>
+        <td>${dash(item.contact_person_name)}</td>
+        <td>${dash(item.contact_person_phone_number)}</td>
+        <td>${escapeHtml(buildContactAddress(item))}</td>
+        <td class="remarksCell">${dash(item.remarks)}</td>
+        <td class="actionCell"></td>
+      </tr>`;
+    }
+
+    function defaultRenderRow(item, history = []) {
+        if (item && item.is_history && history.length === 0) {
+            return renderHistoryRow(item, item.interment_id, true);
+        }
+        return renderMainRow(item, Array.isArray(history) && history.length > 0);
+    }
+
+    function renderRows() {
+        if (!els.tbody) return;
+
+        els.tbody.classList.remove('animate');
+        els.tbody.innerHTML = '';
+
+        if (!state.items.length) {
+            if (els.noData) els.noData.style.display = '';
+            return;
+        }
+        if (els.noData) els.noData.style.display = 'none';
+
+        const groups = [];
+        const byId = new Map();
+
+        for (const item of state.items) {
+            const id = Number(item.interment_id);
+            if (!Number.isFinite(id)) continue;
+
+            if (item.is_history) {
+                const g = byId.get(id);
+                if (g) {
+                    g.history.push(item);
+                } else {
+                    groups.push({ id, main: null, history: [item] });
+                }
             } else {
-                hr.classList.remove('visible');
-            }
-        });
-
-        row.classList.toggle('expanded', willOpen);
-        if (toggle) toggle.setAttribute('aria-expanded', String(willOpen));
-    }
-
-    function renderPagination(silent) {
-        const total = state.totalPages;
-
-        els.currentPageNum.textContent = state.page;
-        els.totalPagesNum.textContent = total;
-
-        els.prevBtn.disabled = state.page <= 1;
-        els.nextBtn.disabled = state.page >= total;
-
-        let startPage, endPage;
-
-        if (total <= MAX_PAGE_BUTTONS) {
-            startPage = 1;
-            endPage = total;
-        } else {
-            const half = Math.floor(MAX_PAGE_BUTTONS / 2);
-            startPage = state.page - half;
-            endPage = startPage + MAX_PAGE_BUTTONS - 1;
-
-            if (startPage < 1) {
-                startPage = 1;
-                endPage = MAX_PAGE_BUTTONS;
-            }
-            if (endPage > total) {
-                endPage = total;
-                startPage = total - MAX_PAGE_BUTTONS + 1;
+                const g = { id, main: item, history: [] };
+                byId.set(id, g);
+                groups.push(g);
             }
         }
 
-        const existingButtons = els.carouselTrack.querySelectorAll('button');
-        const existingValues = Array.prototype.map.call(existingButtons, b => b.textContent);
-        const newValues = [];
-        for (let i = startPage; i <= endPage; i++) newValues.push(String(i));
-
-        const sameSet = existingValues.length === newValues.length &&
-            existingValues.every((v, i) => v === newValues[i]);
-
-        if (sameSet) {
-            Array.prototype.forEach.call(existingButtons, function (btn, i) {
-                const pageNum = startPage + i;
-                btn.classList.toggle('active', pageNum === state.page);
+        for (const g of groups) {
+            g.history.sort((a, b) => {
+                const ta = new Date(a.transfer_date || 0).getTime();
+                const tb = new Date(b.transfer_date || 0).getTime();
+                return tb - ta;
             });
-            centerActivePage();
-            return;
         }
 
-        els.carouselTrack.innerHTML = '';
-        for (let i = startPage; i <= endPage; i++) {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.textContent = i;
-            if (i === state.page) btn.classList.add('active');
-            btn.addEventListener('click', (function (pageNum) {
-                return function () { goToPage(pageNum); };
-            })(i));
-            els.carouselTrack.appendChild(btn);
+        const html = [];
+
+        for (const g of groups) {
+            if (g.main) {
+                html.push(renderMainRow(g.main, g.history.length > 0));
+                for (const h of g.history) html.push(renderHistoryRow(h, g.id, false));
+            } else {
+                for (const h of g.history) html.push(renderHistoryRow(h, g.id, true));
+            }
         }
 
-        centerActivePage();
+        els.tbody.innerHTML = html.join('');
+
+        els.tbody.offsetWidth;
+        els.tbody.classList.add('animate');
     }
 
-    function centerActivePage() {
-        const active = els.carouselTrack.querySelector('button.active');
-        if (!active) {
-            els.carouselTrack.style.transform = 'translateX(0)';
-            return;
-        }
+    function renderPagination() {
+        if (els.currentPageLabel) els.currentPageLabel.textContent = state.page;
+        if (els.totalPagesLabel) els.totalPagesLabel.textContent = state.totalPages;
 
-        const vw = els.carouselViewport.clientWidth;
-        const tw = els.carouselTrack.scrollWidth;
-        if (tw <= vw) {
-            els.carouselTrack.style.transform = 'translateX(0)';
-            return;
-        }
+        if (els.prevBtn) els.prevBtn.disabled = state.loading || state.page <= 1;
+        if (els.nextBtn) els.nextBtn.disabled = state.loading || state.page >= state.totalPages;
 
-        const center = active.offsetLeft + active.offsetWidth / 2;
-        let t = center - vw / 2;
-        const max = tw - vw;
-        if (t < 0) t = 0;
-        if (t > max) t = max;
-        els.carouselTrack.style.transform = 'translateX(' + (-t) + 'px)';
+        if (!els.carouselTrack) return;
+        els.carouselTrack.innerHTML = '';
+
+        const total = state.totalPages;
+        if (total < 1) return;
+
+        const windowSize = CONFIG.PAGINATION_WINDOW;
+        let start = Math.max(1, state.page - Math.floor(windowSize / 2));
+        let end = Math.min(total, start + windowSize - 1);
+        start = Math.max(1, end - windowSize + 1);
+
+        if (start > 1) {
+            els.carouselTrack.appendChild(makePageBtn(1));
+            if (start > 2) els.carouselTrack.appendChild(makeEllipsis());
+        }
+        for (let p = start; p <= end; p++) {
+            els.carouselTrack.appendChild(makePageBtn(p));
+        }
+        if (end < total) {
+            if (end < total - 1) els.carouselTrack.appendChild(makeEllipsis());
+            els.carouselTrack.appendChild(makePageBtn(total));
+        }
+    }
+
+    function makePageBtn(pageNum) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'pageNumBtn' + (pageNum === state.page ? ' active' : '');
+        btn.textContent = String(pageNum);
+        btn.dataset.page = String(pageNum);
+        if (pageNum === state.page) btn.setAttribute('aria-current', 'page');
+        btn.addEventListener('click', () => goToPage(pageNum));
+        return btn;
+    }
+
+    function makeEllipsis() {
+        const span = document.createElement('span');
+        span.className = 'pageEllipsis';
+        span.textContent = '…';
+        span.setAttribute('aria-hidden', 'true');
+        return span;
     }
 
     function goToPage(page) {
-        if (page < 1 || page > state.totalPages) return;
-        if (page === state.page) return;
-
-        state.page = page;
-        state.lastRenderKey = '';
-
-        applyPage();
-        renderTable(false);
-        renderPagination(false);
-
-        if (els.tableScrollWrapper) els.tableScrollWrapper.scrollTop = 0;
+        const target = Math.min(Math.max(1, Number(page) || 1), state.totalPages);
+        if (target === state.page || state.loading) return;
+        state.page = target;
+        fetchRecords();
     }
 
-    function updateCloseButton() {
-        const hasText = els.searchInput.value.length > 0;
-        closeBtn.classList.toggle('is-visible', hasText);
-        els.searchInput.style.paddingRight = hasText ? '36px' : '';
-    }
-
-    els.searchInput.addEventListener('input', function () {
-        updateCloseButton();
-        state.appliedSearch = els.searchInput.value;
+    function setSearch(term) {
+        const value = String(term || '').trim();
+        if (value === state.search) return;
+        state.search = value;
         state.page = 1;
-        state.lastRenderKey = '';
-        applySearchFilter();
-        applyPage();
-        renderTable(true);
-        renderPagination(true);
-    });
-
-    els.searchInput.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') e.preventDefault();
-    });
-
-    els.searchBox.addEventListener('click', function (e) {
-        if (e.target === closeBtn || closeBtn.contains(e.target)) return;
-        els.searchInput.focus();
-    });
-
-    closeBtn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        els.searchInput.value = '';
-        state.appliedSearch = '';
-        updateCloseButton();
-        state.page = 1;
-        state.lastRenderKey = '';
-        applySearchFilter();
-        applyPage();
-        renderTable(false);
-        renderPagination(false);
-        els.searchInput.focus();
-    });
-
-    if (els.statusFilter) {
-        Array.from(els.statusFilter.options).forEach(function (opt) {
-            const v = String(opt.value || '').trim();
-            if (v === '' || v === 'all') return;
-            if (ALLOWED_STATUSES.indexOf(v) === -1) opt.remove();
-        });
-
-        els.statusFilter.addEventListener('change', function () {
-            state.appliedStatus = els.statusFilter.value || 'all';
-            state.page = 1;
-            state.lastRenderKey = '';
-            applySearchFilter();
-            applyPage();
-            renderTable(false);
-            renderPagination(false);
-        });
+        if (els.searchInput) els.searchInput.value = value;
+        fetchRecords();
     }
 
-    els.tableBody.addEventListener('click', function (e) {
+    function bindEvents() {
+        if (els.searchInput && !els.searchInput.__recordsBound) {
+            els.searchInput.__recordsBound = true;
+            els.searchInput.addEventListener('input', () => {
+                clearTimeout(searchTimer);
+                const value = els.searchInput.value.trim();
+                searchTimer = setTimeout(() => {
+                    if (value.length === 0) { setSearch(''); return; }
+                    if (value.length < CONFIG.MIN_SEARCH_LENGTH) return;
+                    setSearch(value);
+                }, CONFIG.SEARCH_DEBOUNCE_MS);
+            });
+            els.searchInput.addEventListener('keydown', (e) => {
+                if (e.key !== 'Enter') return;
+                e.preventDefault();
+                clearTimeout(searchTimer);
+                const value = els.searchInput.value.trim();
+                if (value.length > 0 && value.length < CONFIG.MIN_SEARCH_LENGTH) return;
+                setSearch(value);
+            });
+        }
+
+        if (els.prevBtn && !els.prevBtn.__recordsBound) {
+            els.prevBtn.__recordsBound = true;
+            els.prevBtn.addEventListener('click', () => goToPage(state.page - 1));
+        }
+        if (els.nextBtn && !els.nextBtn.__recordsBound) {
+            els.nextBtn.__recordsBound = true;
+            els.nextBtn.addEventListener('click', () => goToPage(state.page + 1));
+        }
+
+        if (els.tbody && !els.tbody.__recordsDelegated) {
+            els.tbody.__recordsDelegated = true;
+            els.tbody.addEventListener('click', onRowActionClick);
+        }
+
+        if (els.addBtn && !els.addBtn.__recordsBound) {
+            els.addBtn.__recordsBound = true;
+            els.addBtn.addEventListener('click', onAddClick);
+        }
+    }
+
+    function onAddClick(e) {
+        e.preventDefault();
+
+        const takenControlNos = state.items
+            .map((r) => r.control_number)
+            .filter(Boolean);
+
+        if (global.BurialModal && typeof global.BurialModal.open === 'function') {
+            global.BurialModal.open('add', {}, { takenControlNos });
+        } else {
+            document.dispatchEvent(new CustomEvent('records:add'));
+        }
+    }
+
+    function onRowActionClick(e) {
         const btn = e.target.closest('button[data-action]');
+        if (btn && els.tbody.contains(btn)) {
+            e.preventDefault();
 
-        if (btn && btn.dataset.action === 'toggle-history') {
-            e.stopPropagation();
-            toggleHistory(btn.closest('tr'));
+            const action = btn.dataset.action;
+            const id = btn.dataset.id ? Number(btn.dataset.id) : null;
+            if (!id) return;
+
+            const item = RecordsAPI.getItem(id);
+
+            if (action === 'view') {
+                if (item && global.BurialModal && typeof global.BurialModal.open === 'function') {
+                    global.BurialModal.open('view', mapItemToModal(item));
+                } else {
+                    document.dispatchEvent(new CustomEvent('records:view', { detail: { item, id } }));
+                }
+                return;
+            }
+
+            if (action === 'edit') {
+                if (item && global.BurialModal && typeof global.BurialModal.open === 'function') {
+                    global.BurialModal.open('edit', mapItemToModal(item), {
+                        takenControlNos: state.items
+                            .filter((r) => Number(r.interment_id) !== Number(id))
+                            .map((r) => r.control_number),
+                    });
+                } else {
+                    document.dispatchEvent(new CustomEvent('records:edit', { detail: { item, id } }));
+                }
+                return;
+            }
+
+            if (action === 'delete') handleDelete(id, item);
             return;
         }
 
-        if (btn) {
-            const row = btn.closest('tr');
-            if (!row) return;
+        const toggle = e.target.closest('.historyToggle');
+        if (toggle && els.tbody.contains(toggle)) {
+            e.preventDefault();
+            toggleHistory(toggle);
+            return;
+        }
 
-            const id = Number(row.dataset.id);
-            if (!id) return;
+        const row = e.target.closest('tr.recordRow.hasHistory');
+        if (row && els.tbody.contains(row) && !e.target.closest('.actionCell')) {
+            const rowToggle = row.querySelector('.historyToggle');
+            if (rowToggle) toggleHistory(rowToggle);
+        }
+    }
 
-            const record = state.rawRecords.find(r => Number(r.id) === id);
-            if (!record) return;
+    function toggleHistory(toggleBtn) {
+        const mainRow = toggleBtn.closest('tr.recordRow');
+        if (!mainRow) return;
 
-            const action = btn.dataset.action;
+        const id = mainRow.dataset.id;
+        const expanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+        const next = !expanded;
 
-            if (action === 'view') {
-                if (window.BurialModal) window.BurialModal.open('view', record);
+        toggleBtn.setAttribute('aria-expanded', next ? 'true' : 'false');
+        mainRow.classList.toggle('expanded', next);
 
-            } else if (action === 'edit') {
-                if (!window.BurialModal) return;
-                const takenControlNos = state.rawRecords
-                    .filter(r => Number(r.id) !== id)
-                    .map(r => r.controlNo)
-                    .filter(Boolean);
-                window.BurialModal.open('edit', record, { takenControlNos });
+        let sibling = mainRow.nextElementSibling;
+        while (
+            sibling &&
+            sibling.classList.contains('historyRow') &&
+            sibling.dataset.parentId === id
+        ) {
+            if (next) {
+                sibling.style.display = '';
+                sibling.classList.remove('visible');
+                sibling.offsetWidth;
+                sibling.classList.add('visible');
+            } else {
+                sibling.style.display = 'none';
+                sibling.classList.remove('visible');
+            }
+            sibling = sibling.nextElementSibling;
+        }
+    }
 
-            } else if (action === 'delete') {
-                deleteRecord(id);
+    function mapItemToModal(item) {
+        return {
+            id: item.interment_id,
+            interment_id: item.interment_id,
+            control_no: item.control_number,
+            deceased_name: item.deceased_name,
+            deceased_sex: item.deceased_sex,
+            deceased_dob: item.deceased_date_of_birth,
+            deceased_bod: item.deceased_date_of_death,
+            deceased_address: item.last_known_address,
+            deceased_cert: item.death_certificate,
+
+            req_name: item.contact_person_name,
+            req_phone: item.contact_person_phone_number,
+            req_street: item.contact_person_address,
+            barangay: item.contact_person_address_barangay,
+
+            assistance: item.assistance_type,
+            permit_burial: item.burial_permit_number,
+            permit_exhumation: item.exhumation_permit_number,
+            permit_transfer: item.transfer_permit_number,
+
+            clearance_date: item.burial_clearance_date,
+            date_interment: item.date_buried,
+            expiration_date: item.lease_expiration_date,
+
+            burial_block: item.block_type,
+            block: item.block_name,
+            grave_code: item.grave_code,
+            current_grave_id: item.current_grave_id,
+            row_num: item.row_num,
+            col_num: item.col_num,
+
+            remarks: item.remarks,
+        };
+    }
+
+    async function handleDelete(id, item) {
+        if (!global.DeleteModal || typeof global.DeleteModal.open !== 'function') {
+            const name = item ? item.deceased_name : `#${id}`;
+            const ok = global.confirm
+                ? global.confirm(`Delete record for "${name}"?`)
+                : true;
+            if (!ok) return;
+
+            try {
+                await performDelete(id, item);
+            } catch (_) {
             }
             return;
         }
 
-        const row = e.target.closest('tr[data-id]');
-        if (row && row.classList.contains('hasHistory')) {
-            toggleHistory(row);
-        }
-    });
-
-    function handleModalSave(e) {
-        const { mode, data } = e.detail;
-        const method = mode === 'add' ? 'POST' : 'PUT';
-        const url = mode === 'add' ? API_URL : API_URL + '/' + data.interment_id;
-
-        fetch(url, {
-            method,
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(data)
-        })
-            .then(async (res) => {
-                let json = null;
-                try { json = await res.json(); } catch (_) { }
-                if (!res.ok || !json || json.status !== 'success') {
-                    const msg = (json && (json.message || json.error)) || ('HTTP ' + res.status);
-                    throw new Error(msg);
-                }
-                return json;
-            })
-            .then(() => {
-                loadRecords();
-            })
-            .catch(err => {
-                console.error('[records] save failed:', err);
-                alert('Could not save record: ' + err.message);
-            });
+        global.DeleteModal.open({
+            controlNo: item ? item.control_number : '',
+            deceasedName: item ? item.deceased_name : '',
+            blockName: item ? item.block_name : '',
+            graveCode: item ? item.grave_code : '',
+            onConfirm: async () => {
+                const result = await performDelete(id, item);
+                return result;
+            },
+        });
     }
 
-    function deleteRecord(id) {
-        if (!confirm('Delete this record?')) return;
+    async function performDelete(id, item) {
+        let result;
+        try {
+            result = await RecordsAPI.remove(id);
+        } catch (err) {
+            notify('error', err.message || 'Failed to delete record.');
+            throw err;
+        }
 
-        fetch(API_URL + '?interment_id=' + id, { method: 'DELETE' })
-            .then(async (res) => {
-                let json = null;
-                try { json = await res.json(); } catch (_) { }
-                if (!res.ok || !json || json.status !== 'success') {
-                    const msg = (json && (json.message || json.error)) || ('HTTP ' + res.status);
-                    throw new Error(msg);
-                }
-                return json;
+        let message = 'Record deleted successfully.';
+        if (result && result.grave_freed) {
+            message = `Record deleted successfully. Grave ${result.grave_id} is now vacant.`;
+        }
+        if (result && result.pending_on_grave) {
+            message += ' Note: a pending reservation targets the same grave.';
+        }
+        notify('success', message);
+
+        await fetchRecords();
+
+        document.dispatchEvent(
+            new CustomEvent('records:deleted', { detail: { id, result } })
+        );
+
+        return result;
+    }
+
+    async function handleModalSave(event) {
+        const detail = event.detail || {};
+        const mode = detail.mode;
+        const payload = detail.data || {};
+
+        if (mode === 'view') return;
+
+        if (!payload.control_number || !payload.deceased_name || !payload.assistance_type) {
+            notify('error', 'Control Number, Deceased Name and Assistance Type are required.');
+            return;
+        }
+
+        const status = payload.status || 'Pending';
+        if (status !== 'Active') payload.current_grave_id = null;
+
+        const isEdit = mode === 'edit' && payload.interment_id != null;
+
+        let result;
+        try {
+            if (isEdit) {
+                result = await RecordsAPI.update(payload.interment_id, payload);
+                notify('success', 'Changes saved successfully.');
+            } else {
+                result = await RecordsAPI.create(payload);
+                notify('success', 'Record added successfully.');
+            }
+        } catch (err) {
+            notify('error', err.message || 'Failed to save changes.');
+            document.dispatchEvent(
+                new CustomEvent('records:error', {
+                    detail: { error: err, action: isEdit ? 'update' : 'create', payload },
+                })
+            );
+            return;
+        }
+
+        await fetchRecords();
+
+        document.dispatchEvent(
+            new CustomEvent('records:saved', {
+                detail: { mode: isEdit ? 'edit' : 'add', result, payload },
             })
-            .then(() => loadRecords())
-            .catch(err => {
-                console.error('[records] delete failed:', err);
-                alert('Could not delete record: ' + err.message);
-            });
+        );
     }
 
     document.addEventListener('burial_modal:save', handleModalSave);
 
-    if (els.addModalBtn) {
-        els.addModalBtn.addEventListener('click', function () {
-            if (!window.BurialModal) {
-                console.error('BurialModal is not loaded. Check burial_modal.js.');
-                return;
-            }
-            const takenControlNos = state.rawRecords
-                .map(r => r.controlNo)
-                .filter(Boolean);
-            window.BurialModal.open('add', {}, { takenControlNos });
-        });
-    }
+    function boot() {
+        if (booted) return;
+        booted = true;
 
-    els.prevBtn.addEventListener('click', () => goToPage(state.page - 1));
-    els.nextBtn.addEventListener('click', () => goToPage(state.page + 1));
-
-    window.addEventListener('resize', centerActivePage);
-
-        function updateTableMinWidth(table) {
-        const cols = table.querySelectorAll('colgroup col');
-        let sum = 0;
-        Array.prototype.forEach.call(cols, function (c) {
-            sum += parseFloat(c.style.width) || 0;
-        });
-        table.style.minWidth = sum + 'px';
-    }
-
-    function measureColumnWidths(table) {
-        const prevLayout = table.style.tableLayout;
-        const prevWidth = table.style.width;
-        const prevMinWidth = table.style.minWidth;
-
-        const colgroup = table.querySelector('colgroup');
-        const prevCols = colgroup ? colgroup.innerHTML : null;
-        if (colgroup) colgroup.innerHTML = '';
-
-        const hiddenRows = [];
-        Array.prototype.forEach.call(
-            table.querySelectorAll('tr.historyRow'),
-            function (tr) {
-                if (tr.style.display === 'none') {
-                    hiddenRows.push(tr);
-                    tr.style.display = 'table-row';
-                }
-            }
-        );
-
-        let widths = [];
-        try {
-            table.style.tableLayout = 'auto';
-            table.style.width = 'max-content';
-            table.style.minWidth = '0';
-
-            widths = Array.prototype.map.call(
-                table.querySelectorAll('thead th'),
-                function (th) { return Math.ceil(th.getBoundingClientRect().width); }
-            );
-        } finally {
-            hiddenRows.forEach(function (tr) { tr.style.display = 'none'; });
-            table.style.tableLayout = prevLayout;
-            table.style.width = prevWidth;
-            table.style.minWidth = prevMinWidth;
-            if (colgroup && prevCols !== null) colgroup.innerHTML = prevCols;
+        autoDetect();
+        if (!els.tbody) {
+            console.warn('[records.js] No table body found — call RecordsAPI.init({ tbody: "…" }).');
+            return;
         }
 
-        return widths;
-    }
-
-    function ensureResizableColumns() {
-        const table = els.table;
-        if (!table) return;
-
-        const ths = Array.from(table.querySelectorAll('thead th'));
-        if (!ths.length) return;
-
-        const widths = measureColumnWidths(table);
-        if (!widths.length || widths.some(function (w) { return !w; })) return;
-
-        let colgroup = table.querySelector('colgroup');
-        if (!colgroup) {
-            colgroup = document.createElement('colgroup');
-            table.insertBefore(colgroup, table.firstChild);
+        if (!global.BurialModal && els.addBtn) {
+            console.warn('[records.js] BurialModal not found — load burial_modal.js before records.js.');
         }
-        colgroup.innerHTML = '';
-        widths.forEach(function (w) {
-            const col = document.createElement('col');
-            col.style.width = w + 'px';
-            colgroup.appendChild(col);
-        });
 
-        table.style.tableLayout = 'fixed';
-        updateTableMinWidth(table);
-
-        if (state.columnsResized) return;
-
-        ths.forEach(function (th, i) {
-            if (th.querySelector('.col-resizer')) return;
-
-            const resizer = document.createElement('span');
-            resizer.className = 'col-resizer';
-            resizer.setAttribute('aria-hidden', 'true');
-            th.appendChild(resizer);
-
-            let startX = 0;
-            let startW = 0;
-
-            const onMove = function (e) {
-                const cols = table.querySelectorAll('colgroup col');
-                if (!cols[i]) return;
-                const w = Math.max(60, startW + (e.clientX - startX));
-                cols[i].style.width = w + 'px';
-                updateTableMinWidth(table);
-            };
-
-            const onUp = function () {
-                document.removeEventListener('mousemove', onMove);
-                document.removeEventListener('mouseup', onUp);
-                document.body.classList.remove('resizing');
-            };
-
-            resizer.addEventListener('mousedown', function (e) {
-                e.preventDefault();
-                e.stopPropagation();
-                startX = e.clientX;
-                startW = th.getBoundingClientRect().width;
-                document.addEventListener('mousemove', onMove);
-                document.addEventListener('mouseup', onUp);
-                document.body.classList.add('resizing');
-            });
-        });
-
-        state.columnsResized = true;
+        bindEvents();
+        fetchRecords();
     }
 
-    updateCloseButton();
-    loadRecords();
-});
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', boot, { once: true });
+    } else {
+        boot();
+    }
+
+    global.RecordsAPI = RecordsAPI;
+    global.RecordsTable = RecordsAPI;
+
+})(window);

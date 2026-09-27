@@ -15,6 +15,13 @@
  * POST   /records.php      : Create a new interment manually
  * PUT    /records.php/{id} : Update an interment manually (any field)
  * DELETE /records.php/{id} : Soft‑delete an interment (Active allowed; frees grave if empty)
+ *
+ * DISPLAY RULE:
+ *   Records only ever displays interments whose status is 'Active' or 'Inactive'.
+ *   'Pending' rows (staged via Reserve → Add Burial Modal) are intentionally
+ *   excluded from every read path here, because they belong to the Monitor flow
+ *   until they are confirmed. The row itself is never deleted or hidden in the
+ *   database — only the SELECT queries below filter it out.
  */
 
 define('ITS_ME_JUSTTOVERIFY', true);
@@ -124,9 +131,13 @@ if ($method === 'GET') {
     /**
      * Helper: Build a flat list of interments (current + history) for ONE ID.
      * Used by Scenario A only. Efficient because it scopes to a single interment.
+     *
+     * NOTE: Only Active/Inactive interments are eligible. A Pending row is a
+     * reservation awaiting confirmation and must not be exposed here.
      */
     $buildFlatList = function ($filterId) use ($pdo) {
         $sql = getIntermentSelectSQL() . " WHERE i.deleted_at IS NULL AND i.interment_id = :id
+                                          AND i.status IN ('Active', 'Inactive')
                                           ORDER BY i.interment_id DESC";
         $stmt = $pdo->prepare($sql);
         $stmt->execute(['id' => $filterId]);
@@ -319,6 +330,10 @@ if ($method === 'GET') {
 
         // ---- Current branch (is_history = 0) ----
         // NOTE: transfer_to_grave no longer exists. Removed from SELECT list.
+        //
+        // Status whitelist: Records only displays Active / Inactive rows.
+        // Pending reservations must never surface here — they live in Monitor
+        // until confirmed. This is the ONLY thing keeping Pending rows out.
         $currentSQL = "
             SELECT
                 i.interment_id, 0 AS is_history,
@@ -341,11 +356,13 @@ if ($method === 'GET') {
             LEFT JOIN graves g ON i.current_grave_id = g.grave_id AND g.deleted_at IS NULL
             LEFT JOIN blocks b ON g.block_id          = b.block_id AND b.deleted_at IS NULL
             WHERE i.deleted_at IS NULL
+              AND i.status IN ('Active', 'Inactive')
             $searchSQLCurrent
         ";
 
         // ---- History branch (is_history = 1) ----
         // NOTE: transfer_to_grave no longer exists. Removed from SELECT list.
+        // Same status whitelist as above.
         $historySQL = "
             SELECT
                 i.interment_id, 1 AS is_history,
@@ -371,6 +388,7 @@ if ($method === 'GET') {
             LEFT  JOIN graves tg    ON tl.from_grave_id = tg.grave_id
             LEFT  JOIN blocks b     ON tg.block_id      = b.block_id
             WHERE tl.from_grave_id IS NOT NULL
+              AND i.status IN ('Active', 'Inactive')
             $searchSQLHistory
         ";
 
@@ -561,11 +579,57 @@ if ($method === 'POST') {
         Response::success("Interment created.", ['interment_id' => $newId], 201);
     } catch (PDOException $e) {
         $pdo->rollBack();
-        if ($e->getCode() == 23000) {
-            Response::error("Conflict: Control number already exists.", 409);
+        $sqlState = $e->getCode();
+        $msg      = $e->getMessage();
+
+        // -----------------------------------------------------------------
+        // CHECK constraint violations
+        // MySQL reports these as SQLSTATE HY000 (error 3819), NOT 23000.
+        // -----------------------------------------------------------------
+        if ($sqlState === 'HY000') {
+            if (strpos($msg, 'chk_status_grave') !== false) {
+                Response::error(
+                    "Conflict: Invalid status/grave combination. Only Active interments may have a current_grave_id.",
+                    409
+                );
+            }
+
+            // Unknown CHECK violation — log and return a generic 409.
+            systemLog("Record creation CHECK violation: " . $msg, 'System');
+            Response::error("Conflict: Record could not be created.", 409);
         }
-        systemLog("Record creation error: " . $e->getMessage(), 'System');
+
+        // -----------------------------------------------------------------
+        // Unique / FK violations
+        // -----------------------------------------------------------------
+        if ($sqlState == 23000) {
+            //  uk_active_control_number -> duplicate control number (the
+            //                              realistic case for this endpoint)
+            //  fk_interments_grave      -> current_grave_id points at a
+            //                              nonexistent grave; the pre-check
+            //                              catches this, but keep a message
+            //                              in case of a race or future change
+            if (strpos($msg, 'uk_active_control_number') !== false) {
+                Response::error("Conflict: Control number already exists.", 409);
+            }
+            if (
+                strpos($msg, 'fk_interments_grave') !== false
+                || strpos($msg, 'current_grave_id') !== false
+            ) {
+                Response::error("Conflict: Current grave does not exist or has been deleted.", 409);
+            }
+
+            // Unknown integrity violation — log it, then give a generic 409.
+            systemLog("Record creation integrity violation: " . $msg, 'System');
+            Response::error("Conflict: Record could not be created.", 409);
+        }
+
+        systemLog("Record creation error: " . $msg, 'System');
         Response::error("Database error while creating record.", 500);
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        systemLog("Record creation error: " . $e->getMessage(), 'System');
+        Response::error($e->getMessage(), 409);
     }
 }
 
@@ -673,6 +737,21 @@ if ($method === 'PUT') {
         $graveIdChanged    = true;
         $updates[]         = "current_grave_id = ?";
         $params[]          = null;
+    }
+
+    // Mirror the DB CHECK constraint chk_status_grave: only Active interments
+    // may have a current_grave_id. Without this guard, explicitly pairing a
+    // non-Active status with a grave slips past the auto-clear block above
+    // and produces a raw SQLSTATE HY000 (which our catch blocks don't map),
+    // surfacing as a misleading 500.
+    if (($newStatus === 'Pending' || $newStatus === 'Inactive')
+        && $newCurrentGraveId !== null
+    ) {
+        Response::error(
+            "Cannot assign a grave to a '$newStatus' interment. "
+                . "Only Active interments may have a current_grave_id.",
+            400
+        );
     }
 
     if (empty($updates)) {
@@ -787,6 +866,10 @@ if ($method === 'PUT') {
         }
         systemLog("Record update error: " . $e->getMessage(), 'System');
         Response::error("Database error while updating record.", 500);
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        systemLog("Error: " . $e->getMessage(), 'System');
+        Response::error($e->getMessage(), 409);
     }
 }
 
@@ -820,6 +903,29 @@ if ($method === 'DELETE') {
     // reservation_details row is properly consumed.
     if ($row['status'] === 'Pending') {
         Response::error("Cannot delete a Pending interment. Cancel the reservation first via Monitor.", 400);
+    }
+
+    // Block if this specific interment is the old occupant being displaced by
+    // an active reservation. Deleting them would strip the reservation of its
+    // "old occupant" and silently change a replacement plan into a vacant-grave
+    // plan — a different business decision the user hasn't actually made.
+    //
+    // Note we check `old_interment_id`, not `target_grave_id`: a co-interment
+    // scenario can have a reservation targeting the grave without targeting
+    // THIS specific interment, and deleting a bystander is fine.
+    $beingReplaced = $pdo->prepare("
+        SELECT reservation_id FROM reservation_details
+        WHERE old_interment_id = ?
+          AND deleted_at IS NULL
+        LIMIT 1
+    ");
+    $beingReplaced->execute([$id]);
+    if ($beingReplaced->fetch()) {
+        Response::error(
+            "Cannot delete this interment: it is the old occupant of an active reservation. "
+                . "Cancel the reservation via Monitor first.",
+            409
+        );
     }
 
     $graveId       = $row['current_grave_id'] ? (int) $row['current_grave_id'] : null;
@@ -891,6 +997,10 @@ if ($method === 'DELETE') {
         $pdo->rollBack();
         systemLog("Record deletion error: " . $e->getMessage(), 'System');
         Response::error("Database error while deleting record.", 500);
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        systemLog("Error: " . $e->getMessage(), 'System');
+        Response::error($e->getMessage(), 409);
     }
 }
 

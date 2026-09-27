@@ -530,7 +530,7 @@ tr.hasHistory {
     cursor: pointer;
 }
 
-tr.hasHistory.expanded > td {
+tr.hasHistory.expanded>td {
     background: #f8fafc;
     box-shadow: inset 0 -1px 0 #e5e7eb;
 }
@@ -561,8 +561,13 @@ tr.historyRow.visible td {
 }
 
 @keyframes historyRowIn {
-    from { opacity: 0; }
-    to   { opacity: 1; }
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
 }
 
 .historyBadge {

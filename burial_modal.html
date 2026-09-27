@@ -115,12 +115,12 @@
                     <input type="text" id="permit_burial" required>
                 </div>
                 <div class="col">
-                    <label class="required">Exhumation Permit No.</label>
-                    <input type="text" id="permit_exhumation" required>
+                    <label>Exhumation Permit No.</label>
+                    <input type="text" id="permit_exhumation">
                 </div>
                 <div class="col">
-                    <label class="required">Transfer Permit No.</label>
-                    <input type="text" id="permit_transfer" required>
+                    <label>Transfer Permit No.</label>
+                    <input type="text" id="permit_transfer">
                 </div>
             </div>
 
@@ -138,11 +138,14 @@
                 </div>
                 <div class="col">
                     <label class="required">Block:</label>
-                    <input type="text" id="block" required>
+                    <select id="block" required>
+                        <option value="" disabled selected>Select Block...</option>
+                    </select>
                 </div>
                 <div class="col">
                     <label class="required">Grave Code:</label>
-                    <input type="text" id="grave_code" required>
+                    <input type="text" id="grave_code" readonly required autocomplete="off">
+                    <small class="fieldHint" id="grave_code_hint" role="status" aria-live="polite"></small>
                 </div>
             </div>
             <div class="row">
