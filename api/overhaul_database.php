@@ -191,19 +191,36 @@ SQL,
         // NOTE: the reservation is a first-class row now — one per active plan.
         // The pending interment carries the *incoming* person's data; this table
         // carries the *plan* for the grave and (optionally) the displaced occupant.
+        //
+        // Supports TWO kinds of rows:
+        //   1. Plan-only rows (pending_interment_id IS NULL) — the old
+        //      occupant's future has been planned but no incoming occupant
+        //      has been chosen yet.
+        //   2. Real reservations (pending_interment_id IS NOT NULL) — an
+        //      incoming occupant exists and will be activated on execute.
         <<<'SQL'
 CREATE TABLE reservation_details (
     reservation_id INT AUTO_INCREMENT PRIMARY KEY,
 
-    pending_interment_id INT NOT NULL,
+    -- NULL when this row is a *plan-only* record.
+    pending_interment_id INT NULL,
+
+    -- The grave being reserved for the incoming occupant.
+    -- For plan-only rows this is the old occupant's current grave.
     target_grave_id INT NOT NULL,
 
+    -- The Active interment being displaced.
     old_interment_id INT NULL,
 
+    -- Where the displaced occupant goes when the reservation executes.
     old_new_grave_id        INT NULL,
     old_new_status          ENUM('Active','Inactive') NULL,
     old_new_assistance_type ENUM('Burial','Transfer the remains of the late','Other') NULL,
     old_new_remarks         TEXT NULL,
+
+    -- Permit numbers for the old occupant's move.
+    exhumation_permit_number VARCHAR(100) NULL,
+    transfer_permit_number   VARCHAR(100) NULL,
 
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -211,11 +228,25 @@ CREATE TABLE reservation_details (
     created_by INT NULL,
     updated_by INT NULL,
 
+    -- One active reservation per pending interment.
+    -- MySQL allows multiple NULLs, so plan-only rows coexist freely.
     UNIQUE KEY uk_pending_interment (pending_interment_id),
 
+    -- One active reservation per target grave. The generated column is NULL
+    -- for plan-only rows, so a plan can coexist with a real reservation on
+    -- the same grave. Soft-deleted rows don't block the slot.
     active_target_grave_id INT
-        GENERATED ALWAYS AS (CASE WHEN deleted_at IS NULL THEN target_grave_id ELSE NULL END) STORED,
+        GENERATED ALWAYS AS (
+            CASE WHEN deleted_at IS NULL AND pending_interment_id IS NOT NULL
+            THEN target_grave_id ELSE NULL END
+        ) STORED,
     CONSTRAINT uk_active_target_grave UNIQUE (active_target_grave_id),
+
+    -- One active plan/reservation per old occupant. Prevents duplicate
+    -- Save Plan requests for the same interment from creating two rows.
+    active_old_interment_id INT
+        GENERATED ALWAYS AS (CASE WHEN deleted_at IS NULL THEN old_interment_id ELSE NULL END) STORED,
+    CONSTRAINT uk_active_old_interment UNIQUE (active_old_interment_id),
 
     FOREIGN KEY (pending_interment_id) REFERENCES interments(interment_id) ON DELETE RESTRICT,
     FOREIGN KEY (target_grave_id)      REFERENCES graves(grave_id)          ON DELETE RESTRICT,
@@ -248,7 +279,7 @@ CREATE TABLE transfer_log (
     created_by INT NULL,
     updated_by INT NULL,
 
-    FOREIGN KEY (interment_id) REFERENCES interments(interment_id) ON DELETE CASCADE,
+    FOREIGN KEY (interment_id) REFERENCES interments(interment_id) ON DELETE RESTRICT,
     FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE SET NULL,
     FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
@@ -372,7 +403,6 @@ SQL,
         "CREATE INDEX idx_users_deleted_at ON users(deleted_at)",
         "CREATE INDEX idx_users_session_token ON users(session_token(100))",
         "CREATE INDEX idx_payments_deleted_at ON payments(deleted_at)",
-        "CREATE INDEX idx_payments_confirmation ON payments(confirmed_office_staff, confirmed_ground_staff)",
     ];
 
     foreach ($ddl as $sql) {
