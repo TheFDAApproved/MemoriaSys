@@ -770,6 +770,10 @@ if ($method === 'PUT') {
         }
     }
 
+    if ($current['status'] !== 'Pending' && $newStatus === 'Pending') {
+        Response::error("Cannot move an interment back to Pending. Pending rows are created only via Reserve.", 400);
+    }
+
     // 2. Cannot move an interment whose current grave is targeted by an active reservation.
     //    Previously looked at interments.transfer_to_grave; now reads reservation_details.
     if ($graveIdChanged && $current['current_grave_id']) {
@@ -916,7 +920,7 @@ if ($method === 'DELETE') {
     $beingReplaced = $pdo->prepare("
         SELECT reservation_id FROM reservation_details
         WHERE old_interment_id = ?
-          AND deleted_at IS NULL
+          AND deleted_at IS NULL AND pending_interment_id IS NOT NULL
         LIMIT 1
     ");
     $beingReplaced->execute([$id]);
