@@ -325,15 +325,15 @@ function importInterments($pdo, $filePath, $userId)
                     }
                 };
 
-                $deceasedDob       = $parseCol($data['deceased_date_of_birth'] ?? '', 'deceased_date_of_birth');
-                $deceasedDod       = $parseCol($data['deceased_date_of_death'] ?? '', 'deceased_date_of_death');
-                $burialPermitDate  = $parseCol($data['burial_permit_date'] ?? '', 'burial_permit_date');
-                $transferPermitDate = $parseCol($data['transfer_permit_date'] ?? '', 'transfer_permit_date');
+                $deceasedDob          = $parseCol($data['deceased_date_of_birth'] ?? '', 'deceased_date_of_birth');
+                $deceasedDod          = $parseCol($data['deceased_date_of_death'] ?? '', 'deceased_date_of_death');
+                $burialPermitDate     = $parseCol($data['burial_permit_date'] ?? '', 'burial_permit_date');
+                $transferPermitDate   = $parseCol($data['transfer_permit_date'] ?? '', 'transfer_permit_date');
                 $exhumationPermitDate = $parseCol($data['exhumation_permit_date'] ?? '', 'exhumation_permit_date');
-                $dateBuried        = $parseCol($data['date_buried'] ?? '', 'date_buried');
-                $dateExhumed       = $parseCol($data['date_exhumed'] ?? '', 'date_exhumed');
-                $burialClearance   = $parseCol($data['burial_clearance_date'] ?? '', 'burial_clearance_date');
-                $leaseExpiration   = $parseCol($data['lease_expiration_date'] ?? '', 'lease_expiration_date');
+                $dateBuried           = $parseCol($data['date_buried'] ?? '', 'date_buried');
+                $dateExhumed          = $parseCol($data['date_exhumed'] ?? '', 'date_exhumed');
+                $burialClearance      = $parseCol($data['burial_clearance_date'] ?? '', 'burial_clearance_date');
+                $leaseExpiration      = $parseCol($data['lease_expiration_date'] ?? '', 'lease_expiration_date');
 
                 // ---- Enums (empty string falls back to default) -----------
                 $status         = trim((string)($data['status'] ?? '')) ?: 'Pending';
@@ -357,6 +357,28 @@ function importInterments($pdo, $filePath, $userId)
                         "invalid deceased_sex '$sex'. Allowed: " .
                             implode(', ', $validSex) . "."
                     );
+                }
+
+                // ---- Pending is not allowed through CSV -------------------
+                // Pending rows are created exclusively by Reserve (they
+                // require a matching reservation_details row). Importing
+                // one here would produce a row invisible to every screen.
+                if ($status === 'Pending') {
+                    throw new Exception(
+                        "status 'Pending' cannot be imported via CSV. " .
+                            "Pending rows are created via Reserve."
+                    );
+                }
+
+                // ---- Grave can only be attached to Active rows -----------
+                // The DB CHECK chk_status_grave requires Pending/Inactive
+                // rows to have current_grave_id IS NULL. Silently drop the
+                // grave and tell the operator instead of letting the INSERT
+                // fail with a raw CHECK violation.
+                if ($status !== 'Active' && $graveId !== null) {
+                    $warnings[] = "Line $lineNum: status '$status' cannot have a grave; " .
+                        "ignored block '$blockName' / code '$graveCode'.";
+                    $graveId = null;
                 }
 
                 // ---- Grave conflict warning -------------------------------
