@@ -39,7 +39,7 @@ $hasImage = file_exists($bgRelativePath);
 :root {
 
 <?php if ($hasImage): ?>
-    --backgroundImage: url('<?= $bgCssPath ?>');
+    --backgroundImage: url('<?= "../" . $bgRelativePath ?>'); //$bgCssPath (for live i guess)
 <?php endif; ?>
 
 <?php if ($hasColor): ?>
