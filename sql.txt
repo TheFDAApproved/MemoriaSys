@@ -196,19 +196,29 @@ CREATE TABLE interments (
 --        - which Active interment is being displaced (if any),
 --        - where the displaced occupant goes when the reservation executes.
 --
---      This row is CONSUMED (deleted) when the reservation is either
---      executed or cancelled. No [REVERT:...] marker is needed anymore
---      because the old occupant's row is never touched at reserve time.
+--      This table now supports TWO kinds of rows:
+--        1. Plan-only rows (pending_interment_id IS NULL) — the old
+--           occupant's future has been planned (new grave, permits, dates)
+--           but no incoming occupant has been chosen yet. Written by the
+--           View Detail Burial Clearance modal.
+--        2. Real reservations (pending_interment_id IS NOT NULL) — an
+--           incoming occupant exists and will be activated when the
+--           reservation executes.
+--
+--      Consumed (soft-deleted) when the reservation is either executed
+--      or cancelled.
 --  ----------------------------------------------------------------------
 CREATE TABLE reservation_details (
     reservation_id INT AUTO_INCREMENT PRIMARY KEY,
 
-    -- The incoming occupant. The Pending interment row itself carries
-    -- the new person's name, permits, contact info, etc. This table only
-    -- carries the *change* being planned.
-    pending_interment_id INT NOT NULL,
+    -- The incoming occupant. NULL when this row is a *plan-only* record.
+    -- The Pending interment row, once it exists, carries the new person's
+    -- name, permits, contact info, etc.
+    pending_interment_id INT NULL,
 
     -- The grave being reserved for the incoming occupant.
+    -- For plan-only rows this is the old occupant's current grave — the
+    -- grave the future incoming occupant will eventually occupy.
     target_grave_id INT NOT NULL,
 
     -- The Active interment being displaced.
@@ -222,6 +232,11 @@ CREATE TABLE reservation_details (
     old_new_assistance_type ENUM('Burial','Transfer the remains of the late','Other') NULL,
     old_new_remarks         TEXT NULL,
 
+    -- Permit numbers for the old occupant's move. Written by the View
+    -- Detail Burial Clearance modal and consumed when Monitor executes.
+    exhumation_permit_number VARCHAR(100) NULL,
+    transfer_permit_number   VARCHAR(100) NULL,
+
     -- Audit
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -229,14 +244,26 @@ CREATE TABLE reservation_details (
     created_by INT NULL,
     updated_by INT NULL,
 
-    -- One active reservation per pending interment
+    -- One active reservation per pending interment.
+    -- MySQL allows multiple NULLs in a UNIQUE index, so plan-only rows
+    -- (pending_interment_id IS NULL) coexist freely.
     UNIQUE KEY uk_pending_interment (pending_interment_id),
 
     -- One active reservation per target grave (prevents double-booking).
-    -- Uses a shadow column so soft-deleted rows don't block the slot.
+    -- The generated column is NULL for plan-only rows, so a plan can
+    -- exist without blocking the grave from also having a real
+    -- reservation. Uses a shadow column so soft-deleted rows don't block
+    -- the slot.
     active_target_grave_id INT
-        GENERATED ALWAYS AS (CASE WHEN deleted_at IS NULL THEN target_grave_id ELSE NULL END) STORED,
+        GENERATED ALWAYS AS (
+            CASE WHEN deleted_at IS NULL AND pending_interment_id IS NOT NULL
+            THEN target_grave_id ELSE NULL END
+        ) STORED,
     CONSTRAINT uk_active_target_grave UNIQUE (active_target_grave_id),
+
+    active_old_interment_id INT
+    GENERATED ALWAYS AS (CASE WHEN deleted_at IS NULL THEN old_interment_id ELSE NULL END) STORED,
+    CONSTRAINT uk_active_old_interment UNIQUE (active_old_interment_id),
 
     FOREIGN KEY (pending_interment_id) REFERENCES interments(interment_id) ON DELETE RESTRICT,
     FOREIGN KEY (target_grave_id)      REFERENCES graves(grave_id)          ON DELETE RESTRICT,
@@ -273,7 +300,7 @@ CREATE TABLE transfer_log (
     created_by INT NULL,
     updated_by INT NULL,
 
-    FOREIGN KEY (interment_id) REFERENCES interments(interment_id) ON DELETE CASCADE,
+    FOREIGN KEY (interment_id) REFERENCES interments(interment_id) ON DELETE RESTRICT,    
     FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE SET NULL,
     FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
