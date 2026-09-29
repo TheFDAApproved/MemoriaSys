@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Memoria</title>
+
+    <meta
+      name="description"
+      content="Management system for the Cemetery. Locate plots, monitor leases, and manage notifications."
+    />
+    <meta name="author" content="Team DND" />
+    <meta name="theme-color" content="#2f3136" />
+    <meta name="robots" content="index, follow" />
+
+    <meta name="geo.region" content="PH-CEB" />
+    <meta name="geo.placename" content="Mandaue City" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="/" />
+    <meta property="og:site_name" content="Memoria" />
+    <meta property="og:title" content="Memoria | Cemetery Management System" />
+    <meta
+      property="og:description"
+      content="Efficiently manage and locate records within the Cemetery."
+    />
+    <meta
+      property="og:image"
+      content="https://cdn1.iconfinder.com/data/icons/government-buildings-5/504/cemetery-graveyard-tombstone-burial-memorial-512.png"
+    />
+
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+    />
+
+    <link rel="stylesheet" href="assets/css/root.css" />
+    <link
+      rel="stylesheet"
+      href="api/rootcolors.php"
+      onerror="
+        console.error('Failed to load custom colors. Using default theme.')
+      "
+    />
+    <link rel="stylesheet" href="assets/css/site_content.css" />
+  </head>
+  <body>
+    <div class="siteContent">
+      <form class="contentForm" id="site_content_form">
+        <section>
+          <header class="sectionHeader">
+            <i class="fas fa-image"></i>
+            <div class="sectionHeaderText">
+              <h2>Memoria Assets &amp; Images</h2>
+              <p>
+                Upload and manage the logos, background image, and payment QR
+                code
+              </p>
+            </div>
+          </header>
+
+          <div class="uploadGrid">
+            <div class="uploadItem">
+              <div class="uploadPreview">
+                <img
+                  id="preview_logo_1"
+                  src="api/images/logo_1.png"
+                  alt="Mandaue City Logo"
+                  onerror="
+                    this.onerror = null;
+                    this.src = 'assets/images/MandaueLogo.png';
+                    console.error(
+                      'Failed to load dynamic logo. Using default logo.',
+                    );
+                  "
+                />
+              </div>
+
+              <div class="uploadMeta">
+                <span class="uploadName">Logo 1</span>
+
+                <div class="uploadActions">
+                  <label class="btn secondaryBtn">
+                    <i class="fas fa-upload"></i> Upload
+                    <input
+                      type="file"
+                      id="logo_1"
+                      name="logo_1"
+                      class="fileInput"
+                      accept="image/png"
+                      onchange="previewImage(this, 'preview_logo_1')"
+                    />
+                  </label>
+
+                  <button
+                    title="Reset to default"
+                    type="button"
+                    class="btn resetBtn"
+                    title="Reset to default"
+                    onclick="
+                      var x = document.getElementById('preview_logo_1');
+                      x.onerror = function () {
+                        this.onerror = null;
+                        this.src = 'assets/images/MandaueLogo.png';
+                        console.error(
+                          'Failed to load dynamic logo. Using default logo.',
+                        );
+                      };
+                      x.src = 'api/images/logo_1.png';
+                    "
+                  >
+                    <i class="fas fa-rotate-left"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="uploadGrid">
+            <div class="uploadItem">
+              <div class="uploadPreview">
+                <img
+                  id="preview_logo_2"
+                  src="api/images/logo_2.png"
+                  alt="Department of General Service Logo"
+                  onerror="
+                    this.onerror = null;
+                    this.src = 'assets/images/DGSLogo.png';
+                    console.error(
+                      'Failed to load dynamic logo. Using default logo.',
+                    );
+                  "
+                />
+              </div>
+              <div class="uploadMeta">
+                <span class="uploadName">Logo 2</span>
+                <div class="uploadActions">
+                  <label class="btn secondaryBtn">
+                    <i class="fas fa-upload"></i> Upload
+                    <input
+                      type="file"
+                      id="logo_2"
+                      name="logo_2"
+                      class="fileInput"
+                      accept="image/png"
+                      onchange="previewImage(this, 'preview_logo_2')"
+                    />
+                  </label>
+                  <button
+                    title="Reset to default"
+                    type="button"
+                    class="btn resetBtn"
+                    title="Reset to default"
+                    onclick="
+                      var x = document.getElementById('preview_logo_2');
+                      x.onerror = function () {
+                        this.onerror = null;
+                        this.src = 'assets/images/DGSLogo.png';
+                        console.error(
+                          'Failed to load dynamic logo. Using default logo.',
+                        );
+                      };
+                      x.src = 'api/images/logo_2.png';
+                    "
+                  >
+                    <i class="fas fa-rotate-left"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="uploadGrid">
+            <div class="uploadItem">
+              <div class="uploadPreview">
+                <img
+                  id="preview_cemetery_logo"
+                  src="api/images/cemetery_logo.png"
+                  alt="Memoria Logo"
+                  onerror="
+                    this.onerror = null;
+                    this.src = 'assets/images/MemoriaLogo.png';
+                    console.error(
+                      'Failed to load dynamic logo. Using default logo.',
+                    );
+                  "
+                />
+              </div>
+              <div class="uploadMeta">
+                <span class="uploadName">Cemetery Logo</span>
+                <div class="uploadActions">
+                  <label class="btn secondaryBtn">
+                    <i class="fas fa-upload"></i> Upload
+                    <input
+                      type="file"
+                      id="cemetery_logo"
+                      name="cemetery_logo"
+                      class="fileInput"
+                      accept="image/png"
+                      onchange="previewImage(this, 'preview_cemetery_logo')"
+                    />
+                  </label>
+                  <button
+                    title="Reset to default"
+                    type="button"
+                    class="btn resetBtn"
+                    onclick="
+                      var x = document.getElementById('preview_cemetery_logo');
+                      x.onerror = function () {
+                        this.onerror = null;
+                        this.src = 'assets/images/MemoriaLogo.png';
+                        console.error(
+                          'Failed to load dynamic logo. Using default logo.',
+                        );
+                      };
+                      x.src = 'api/images/cemetery_logo.png';
+                    "
+                  >
+                    <i class="fas fa-rotate-left"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="uploadGrid">
+            <div class="uploadItem">
+              <div class="uploadPreview">
+                <img
+                  id="preview_cemetery_mark"
+                  src="api/images/cemetery_mark.png"
+                  alt="Memoria Mark"
+                  onerror="
+                    this.onerror = null;
+                    this.src = 'assets/images/Mlogo.png';
+                    console.error(
+                      'Failed to load dynamic logo. Using default logo.',
+                    );
+                  "
+                />
+              </div>
+              <div class="uploadMeta">
+                <span class="uploadName">Cemetery Mark</span>
+                <div class="uploadActions">
+                  <label class="btn secondaryBtn">
+                    <i class="fas fa-upload"></i> Upload
+                    <input
+                      type="file"
+                      id="cemetery_mark"
+                      name="cemetery_mark"
+                      class="fileInput"
+                      accept="image/png"
+                      onchange="previewImage(this, 'preview_cemetery_mark')"
+                    />
+                  </label>
+                  <button
+                    title="Reset to default"
+                    type="button"
+                    class="btn resetBtn"
+                    onclick="
+                      var x = document.getElementById('preview_cemetery_mark');
+                      x.onerror = function () {
+                        this.onerror = null;
+                        this.src = 'assets/images/Mlogo.png';
+                        console.error(
+                          'Failed to load dynamic logo. Using default logo.',
+                        );
+                      };
+                      x.src = 'api/images/cemetery_mark.png';
+                    "
+                  >
+                    <i class="fas fa-rotate-left"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="uploadGrid">
+            <div class="uploadItem">
+              <div class="uploadPreview">
+                <img
+                  id="preview_cemetery_background"
+                  src="api/images/cemetery_background.png"
+                  alt="Mandaue City Background"
+                  onerror="
+                    this.onerror = null;
+                    this.src = 'assets/images/MandaueBackground.png';
+                    console.error(
+                      'Failed to load dynamic logo. Using default logo.',
+                    );
+                  "
+                />
+              </div>
+              <div class="uploadMeta">
+                <span class="uploadName">Cemetery Background</span>
+                <div class="uploadActions">
+                  <label class="btn secondaryBtn">
+                    <i class="fas fa-upload"></i> Upload
+                    <input
+                      type="file"
+                      id="cemetery_background"
+                      name="cemetery_background"
+                      class="fileInput"
+                      accept="image/png"
+                      onchange="
+                        previewImage(this, 'preview_cemetery_background')
+                      "
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    class="btn resetBtn"
+                    title="Reset to default"
+                    onclick="
+                      var x = document.getElementById(
+                        'preview_cemetery_background',
+                      );
+                      x.onerror = function () {
+                        this.onerror = null;
+                        this.src = 'assets/images/MandaueBackground.png';
+                        console.error(
+                          'Failed to load dynamic logo. Using default logo.',
+                        );
+                      };
+                      x.src = 'api/images/cemetery_background.png';
+                    "
+                  >
+                    <i class="fas fa-rotate-left"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="uploadGrid">
+            <div class="uploadItem">
+              <div class="uploadPreview">
+                <i
+                  class="fas fa-image"
+                  id="qr_code_placeholder"
+                  aria-hidden="true"
+                ></i>
+                <img
+                  id="preview_qr_code"
+                  src="api/images/qr_code.png"
+                  alt="Payment QR Code"
+                  onerror="
+                    this.onerror = null;
+                    this.src = 'assets/images/qr_code.png';
+                    console.error(
+                      'Failed to load dynamic logo. Using default logo.',
+                    );
+                  "
+                />
+              </div>
+              <div class="uploadMeta">
+                <span class="uploadName">Payment QR Code</span>
+                <div class="uploadActions">
+                  <label class="btn secondaryBtn">
+                    <i class="fas fa-upload"></i> Upload
+                    <input
+                      type="file"
+                      id="qr_code"
+                      name="qr_code"
+                      class="fileInput"
+                      accept="image/png"
+                      onchange="previewImage(this, 'preview_qr_code')"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    class="btn deleteBtn"
+                    title="Remove QR code"
+                    onclick="
+                      var x = document.getElementById('preview_qr_code');
+                      x.onerror = function () {
+                        this.onerror = null;
+                        this.src = 'assets/images/qr_code.png';
+                        console.error(
+                          'Failed to load dynamic logo. Using default logo.',
+                        );
+                      };
+                      x.src = 'api/images/qr_code.png';
+                    "
+                  >
+                    <i class="fas fa-trash-alt"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <header class="sectionHeader">
+            <i class="fas fa-heading"></i>
+            <div class="sectionHeaderText">
+              <h2>Header Titles</h2>
+              <p>Set the department and cemetery names shown on headers</p>
+            </div>
+          </header>
+          <div class="formGrid">
+            <div class="formRow">
+              <div class="formField">
+                <label class="formLabel" for="dept_name"
+                  >Main Department Name</label
+                >
+                <input type="text" id="dept_name" name="dept_name" />
+              </div>
+              <div class="formField">
+                <label class="formLabel" for="cemetery_name"
+                  >Cemetery Name</label
+                >
+                <input type="text" id="cemetery_name" name="cemetery_name" />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <header class="sectionHeader">
+            <i class="fas fa-location-dot"></i>
+            <div class="sectionHeaderText">
+              <h2>Addresses &amp; Location Integration</h2>
+              <p>Manage physical addresses and the embedded map location</p>
+            </div>
+          </header>
+          <div class="formGrid">
+            <div class="formRow">
+              <div class="formField">
+                <label for="cemetery_address">Cemetery Physical Address</label>
+                <input
+                  type="text"
+                  id="cemetery_address"
+                  name="cemetery_address"
+                />
+              </div>
+              <div class="formField">
+                <label for="office_address"
+                  >Administrative Office Address</label
+                >
+                <input type="text" id="office_address" name="office_address" />
+              </div>
+            </div>
+            <div class="formField">
+              <label for="cemetery_google_maps">Google Maps Embed URL</label>
+              <textarea
+                id="cemetery_google_maps"
+                name="cemetery_google_maps"
+                placeholder="https://www.google.com/maps/embed?pb=..."
+              ></textarea>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <header class="sectionHeader">
+            <i class="fas fa-address-book"></i>
+            <div class="sectionHeaderText">
+              <h2>Contact Information</h2>
+              <p>Official hotline and email address shown to the public</p>
+            </div>
+          </header>
+          <div class="formGrid">
+            <div class="formRow">
+              <div class="formField">
+                <label for="contact_phone">Contact Hotline / Phone</label>
+                <input type="text" id="contact_phone" name="contact_phone" />
+              </div>
+              <div class="formField">
+                <label for="contact_email">Official Email Address</label>
+                <input type="email" id="contact_email" name="contact_email" />
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section>
+          <header class="sectionHeader">
+            <i class="fas fa-sliders"></i>
+            <div class="sectionHeaderText">
+              <h2>Dropdown Form Options</h2>
+              <p>Manage the selectable options used across payment forms</p>
+            </div>
+          </header>
+
+          <div class="formGrid">
+            <div class="formField">
+              <div class="subHeader">
+                <h4>Payment Channels</h4>
+                <button
+                  class="btn secondaryBtn"
+                  type="button"
+                  id="add_payment_channel"
+                >
+                  <i class="fas fa-plus" aria-hidden="true"></i> Add Channel
+                </button>
+              </div>
+              <!-- EMPTY at first, but keeps the exact class and id -->
+              <div class="list" id="payment_channels_list"></div>
+            </div>
+
+            <hr class="formDivider" />
+
+            <div class="formField">
+              <div class="subHeader">
+                <h4>Purposes of Payment</h4>
+                <button
+                  class="btn secondaryBtn"
+                  type="button"
+                  id="add_payment_purpose"
+                >
+                  <i class="fas fa-plus"></i> Add Purpose
+                </button>
+              </div>
+              <!-- EMPTY at first -->
+              <div class="list" id="payment_purposes_list"></div>
+            </div>
+          </div>
+        </section>
+
+        <div class="formActions">
+          <button
+            onclick="saveSiteContent()"
+            class="btn primaryBtn"
+            title="Saved Changes"
+            type="button"
+          >
+            <i class="fas fa-save"></i> Save Changes
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- i think this is on admin or higher i guess the confirm modal and alert hehe-->
+    <script src="assets/js/confirm_modal.js"></script>
+    <script src="assets/js/alert.js"></script>
+    <script src="assets/js/site_content.js"></script>
+    <script src="assets/js/load_site_contents.js"></script>
+    <script>
+      loadSiteContent();
+    </script>
+  </body>
+</html>
