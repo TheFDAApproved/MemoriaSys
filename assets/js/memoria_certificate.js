@@ -33,6 +33,8 @@ async function memoria_certificate(id) {
         sMap[s.setting_key] = s.setting_value;
       });
     }
+    const cemeteryName =
+      (sMap["cemetery_name"] || "").trim() || "Mandaue City Public Cemetery";
 
     // 4. Date Formatters
     const formatDate = (dateStr) => {
@@ -65,7 +67,39 @@ async function memoria_certificate(id) {
     const year = today.getFullYear();
     const issuedDateStr = `${day}${getOrdinal(day)} day of ${month}, ${year}`;
 
-    // 5. Build the signatory list (skip entries with no name)
+    // 5. Derived / Combined fields
+    const contactAddress =
+      [record.contact_person_address, record.contact_person_address_barangay]
+        .filter(Boolean)
+        .join(", ") || "—";
+
+    // Merge record.remarks + record.grave_remarks into one "Remarks" line
+    const remarksText =
+      [record.remarks, record.grave_remarks]
+        .map((r) => (r || "").trim())
+        .filter(Boolean)
+        .join(" • ") || "—";
+
+    // 6. Optional permit rows (only if data exists)
+    const extraPermitRows = [];
+    if (record.transfer_permit_number || record.transfer_permit_date) {
+      extraPermitRows.push(`
+        <span class="dataLabel">Transfer Permit</span>
+        <span class="dataValue">${val(record.transfer_permit_number)}</span>
+        <span class="dataLabel">Transfer Date</span>
+        <span class="dataValue">${formatDate(record.transfer_permit_date)}</span>
+      `);
+    }
+    if (record.exhumation_permit_number || record.exhumation_permit_date) {
+      extraPermitRows.push(`
+        <span class="dataLabel">Exhumation Permit</span>
+        <span class="dataValue">${val(record.exhumation_permit_number)}</span>
+        <span class="dataLabel">Exhumation Date</span>
+        <span class="dataValue">${formatDate(record.exhumation_permit_date)}</span>
+      `);
+    }
+
+    // 7. Build the signatory list (skip entries with no name)
     const signatories = [1, 2, 3, 4]
       .map((i) => ({
         name: (sMap[`people_name_${i}`] || "").trim(),
@@ -85,7 +119,7 @@ async function memoria_certificate(id) {
           .join("")
       : "";
 
-    // 6. Build HTML & CSS String
+    // 8. Build HTML & CSS String
     const htmlContent = `
       <!DOCTYPE html>
       <html lang="en">
@@ -98,7 +132,7 @@ async function memoria_certificate(id) {
              =========================================================
              .print-header-spacer / .print-footer-spacer
                  -> must match the ACTUAL rendered height of the images
-             body font-size   -> drop to 11.5px if still too tall
+             body font-size   -> drop to 11px if still too tall
              .docBody padding -> left/right page margins
              ========================================================= */
 
@@ -109,11 +143,10 @@ async function memoria_certificate(id) {
 
           body {
             font-family: 'Inter', -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
-            font-size: 12px;
-            line-height: 1.45;
+            font-size: 11.5px;
+            line-height: 1.4;
             color: #1f2937;
             background: #fff;
-            -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
           }
 
@@ -138,9 +171,9 @@ async function memoria_certificate(id) {
           /* -------------------- heading ------------------- */
           .certTitle {
             font-family: Georgia, 'Times New Roman', serif;
-            font-size: 28px;
+            font-size: 24px;
             font-weight: 700;
-            letter-spacing: 5px;
+            letter-spacing: 4px;
             text-transform: uppercase;
             text-align: center;
             color: #0f172a;
@@ -149,38 +182,37 @@ async function memoria_certificate(id) {
           .certRule {
             border: 0;
             border-top: 3px double #94a3b8;
-            margin: 8px 0 14px;
+            margin: 6px 0 10px;
           }
 
-          /* --------------- control / issued --------------- */
+          /* --------------- control number --------------- */
           .certMeta {
-            display: flex;
-            justify-content: space-between;
-            align-items: baseline;
-            font-size: 14px;
+            font-size: 12px;
             color: #475569;
             letter-spacing: 0.3px;
-            margin-bottom: 14px;
+            margin-bottom: 10px;
           }
           .certMeta strong { color: #0f172a; font-weight: 600; }
 
           /* ------------------ body text ------------------- */
-          .certText { margin: 0 0 12px; }
+          .certText { margin: 0 0 10px; }
 
           /* ----------------- data blocks ------------------ */
           .dataGrid {
             display: grid;
-            grid-template-columns: 148px 1fr;
-            column-gap: 14px;
+            grid-template-columns: 118px 1fr 118px 1fr;
+            column-gap: 12px;
             row-gap: 2px;
-            padding: 8px 14px;
+            padding: 7px 12px;
             background: #f8fafc;
             border-left: 3px solid #cbd5e1;
-            margin-bottom: 11px;
+            margin-bottom: 9px;
             page-break-inside: avoid;
+            font-size: 11px;
           }
           .dataLabel { color: #64748b; font-weight: 600; }
-          .dataValue { color: #0f172a; font-weight: 600; }
+          .dataValue { color: #0f172a; font-weight: 600; word-break: break-word; }
+          .span-3 { grid-column: span 3; }
 
           .sectionTitle {
             font-size: 10px;
@@ -188,18 +220,18 @@ async function memoria_certificate(id) {
             letter-spacing: 1.6px;
             text-transform: uppercase;
             color: #334155;
-            margin: 0 0 4px;
+            margin: 0 0 3px;
           }
 
           /* ------------------ signatures ------------------ */
-          .sigIntro { margin: 16px 0 0; }
+          .sigIntro { margin: 14px 0 0; }
           .signatorySection {
             display: flex;
             flex-wrap: wrap;
             justify-content: center;
             column-gap: 8%;
-            row-gap: 22px;
-            margin-top: 26px;
+            row-gap: 20px;
+            margin-top: 22px;
             page-break-inside: avoid;
           }
           .sigContainer { flex: 0 0 40%; text-align: center; }
@@ -241,7 +273,7 @@ async function memoria_certificate(id) {
                   <hr class="certRule" />
 
                   <div class="certMeta">
-                    <span><strong>Control Number:</strong> ${val(record.control_number)}</span>
+                    <strong>Control Number:</strong> ${val(record.control_number)}
                   </div>
 
                   <p class="certText">
@@ -249,46 +281,78 @@ async function memoria_certificate(id) {
                     This is to certify that the records of this office contain an entry for the interment of:
                   </p>
 
+                  <!-- ================= DECEASED ================= -->
+                  <div class="sectionTitle">Deceased Information</div>
                   <div class="dataGrid">
                     <span class="dataLabel">Name of Deceased</span>
-                    <span class="dataValue">${val(record.deceased_name)}</span>
+                    <span class="dataValue span-3">${val(record.deceased_name)}</span>
+
                     <span class="dataLabel">Date of Birth</span>
                     <span class="dataValue">${formatDate(record.deceased_date_of_birth)}</span>
-                    <span class="dataLabel">Date of Death</span>
-                    <span class="dataValue">${formatDate(record.deceased_date_of_death)}</span>
                     <span class="dataLabel">Sex</span>
                     <span class="dataValue">${val(record.deceased_sex)}</span>
+
+                    <span class="dataLabel">Date of Death</span>
+                    <span class="dataValue">${formatDate(record.deceased_date_of_death)}</span>
+                    <span class="dataLabel">Death Cert. No.</span>
+                    <span class="dataValue">${val(record.death_certificate)}</span>
+
+                    <span class="dataLabel">Last Known Address</span>
+                    <span class="dataValue span-3">${val(record.last_known_address)}</span>
                   </div>
 
-                  <div class="sectionTitle">Place of Burial</div>
+                  <!-- ============= INTERMENT DETAILS ============= -->
+                  <div class="sectionTitle">Interment Details</div>
                   <div class="dataGrid">
                     <span class="dataLabel">Block / Section</span>
                     <span class="dataValue">${val(record.block_name)}</span>
                     <span class="dataLabel">Grave Code</span>
                     <span class="dataValue">${val(record.grave_code)}</span>
-                  </div>
 
-                  <div class="sectionTitle">Burial Details</div>
-                  <div class="dataGrid">
                     <span class="dataLabel">Date Buried</span>
                     <span class="dataValue">${formatDate(record.date_buried)}</span>
                     <span class="dataLabel">Status</span>
                     <span class="dataValue">${val(record.status)}</span>
+
+                    <span class="dataLabel">Burial Permit No.</span>
+                    <span class="dataValue">${val(record.burial_permit_number)}</span>
+                    <span class="dataLabel">Permit Date</span>
+                    <span class="dataValue">${formatDate(record.burial_permit_date)}</span>
+
+                    <span class="dataLabel">Clearance Date</span>
+                    <span class="dataValue">${formatDate(record.burial_clearance_date)}</span>
+                    <span class="dataLabel">Assistance</span>
+                    <span class="dataValue">${val(record.assistance_type)}</span>
+
+                    <span class="dataLabel">Lease Expiration</span>
+                    <span class="dataValue span-3">${formatDate(record.lease_expiration_date)}</span>
+
+                    <span class="dataLabel">Remarks</span>
+                    <span class="dataValue span-3">${remarksText}</span>
+
+                    ${extraPermitRows.join("")}
                   </div>
 
+                  <!-- ============== NEXT OF KIN ============== -->
                   <div class="sectionTitle">Next of Kin / Contact Person</div>
                   <div class="dataGrid">
                     <span class="dataLabel">Name</span>
                     <span class="dataValue">${val(record.contact_person_name)}</span>
-                    <span class="dataLabel">Contact Number</span>
+                    <span class="dataLabel">Contact No.</span>
                     <span class="dataValue">${val(record.contact_person_phone_number)}</span>
+
+                    <span class="dataLabel">Email</span>
+                    <span class="dataValue span-3">${val(record.contact_person_email)}</span>
+
+                    <span class="dataLabel">Address</span>
+                    <span class="dataValue span-3">${contactAddress}</span>
                   </div>
 
-                  <p class="certText" style="margin-top:14px;">
+                  <p class="certText" style="margin-top:12px;">
                     <em>This certificate is not a legal death certificate. It is simply a confirmation that the above details are recorded in our system.</em>
                   </p>
                   <p class="certText">
-                    Issued this <strong>${issuedDateStr}</strong> at <strong>${sMap["cemetery_name"] ?? "Mandaue City Public Cemetery"}</strong>.
+                    Issued this <strong>${issuedDateStr}</strong> at <strong>${cemeteryName}</strong>.
                   </p>
 
                   ${
@@ -324,7 +388,7 @@ async function memoria_certificate(id) {
       </html>
     `;
 
-    // 7. Create hidden iframe and inject the compiled HTML
+    // 9. Create hidden iframe and inject the compiled HTML
     const iframe = document.createElement("iframe");
     iframe.setAttribute("aria-hidden", "true");
     iframe.style.cssText =
@@ -336,7 +400,7 @@ async function memoria_certificate(id) {
     doc.write(htmlContent);
     doc.close();
 
-    // 8. Cleanup the iframe after printing
+    // 10. Cleanup the iframe after printing
     const cleanup = () => {
       if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
     };
