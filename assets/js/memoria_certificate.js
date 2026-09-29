@@ -1,13 +1,14 @@
 /**
  * Generates and prints a compact, single-page Memoria Certificate.
+ * Cross-browser safe (Chrome, Firefox, Safari, Edge).
  * @param {number|string} id - The Interment ID or Record ID.
  */
 async function memoria_certificate(id) {
   try {
     // 1. Fetch data in parallel
     const [recordRes, settingsRes] = await Promise.all([
-      fetch(`api/records/${id}`),
-      fetch(`api/settings`),
+      fetch(`api/records/${id}`, { cache: "no-store" }),
+      fetch(`api/settings`, { cache: "no-store" }),
     ]);
 
     if (!recordRes.ok || !settingsRes.ok) {
@@ -73,14 +74,13 @@ async function memoria_certificate(id) {
         .filter(Boolean)
         .join(", ") || "—";
 
-    // Merge record.remarks + record.grave_remarks into one "Remarks" line
     const remarksText =
       [record.remarks, record.grave_remarks]
         .map((r) => (r || "").trim())
         .filter(Boolean)
         .join(" • ") || "—";
 
-    // 6. Optional permit rows (only if data exists)
+    // 6. Optional permit rows
     const extraPermitRows = [];
     if (record.transfer_permit_number || record.transfer_permit_date) {
       extraPermitRows.push(`
@@ -99,7 +99,7 @@ async function memoria_certificate(id) {
       `);
     }
 
-    // 7. Build the signatory list (skip entries with no name)
+    // 7. Build signatories
     const signatories = [1, 2, 3, 4]
       .map((i) => ({
         name: (sMap[`people_name_${i}`] || "").trim(),
@@ -119,25 +119,17 @@ async function memoria_certificate(id) {
           .join("")
       : "";
 
-    // 8. Build HTML & CSS String
+    // 8. Build HTML (NO auto-print script inside — parent drives the print)
     const htmlContent = `
       <!DOCTYPE html>
       <html lang="en">
       <head>
         <meta charset="UTF-8">
         <title>Memoria Certificate — ${val(record.control_number)}</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com">
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap">
         <style>
-          /* =========================================================
-             TUNING KNOBS  (adjust these first if it spills to page 2)
-             =========================================================
-             .print-header-spacer / .print-footer-spacer
-                 -> must match the ACTUAL rendered height of the images
-             body font-size   -> drop to 11px if still too tall
-             .docBody padding -> left/right page margins
-             ========================================================= */
-
-          @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
-
           *, *::before, *::after { box-sizing: border-box; }
           html, body { margin: 0; padding: 0; }
 
@@ -147,10 +139,10 @@ async function memoria_certificate(id) {
             line-height: 1.4;
             color: #1f2937;
             background: #fff;
+            -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
           }
 
-          /* ---------- print pagination mechanics ---------- */
           @page { size: letter portrait; margin: 0; }
 
           .print-fixed-header { position: fixed; top: 0; left: 0; width: 100%; z-index: 1000; }
@@ -165,10 +157,8 @@ async function memoria_certificate(id) {
           .print-header-spacer { height: 95px; }
           .print-footer-spacer { height: 110px; }
 
-          /* -------------------- layout -------------------- */
           .docBody { padding: 0 72px; }
 
-          /* -------------------- heading ------------------- */
           .certTitle {
             font-family: Georgia, 'Times New Roman', serif;
             font-size: 24px;
@@ -185,7 +175,6 @@ async function memoria_certificate(id) {
             margin: 6px 0 10px;
           }
 
-          /* --------------- control number --------------- */
           .certMeta {
             font-size: 12px;
             color: #475569;
@@ -194,10 +183,8 @@ async function memoria_certificate(id) {
           }
           .certMeta strong { color: #0f172a; font-weight: 600; }
 
-          /* ------------------ body text ------------------- */
           .certText { margin: 0 0 10px; }
 
-          /* ----------------- data blocks ------------------ */
           .dataGrid {
             display: grid;
             grid-template-columns: 118px 1fr 118px 1fr;
@@ -223,7 +210,6 @@ async function memoria_certificate(id) {
             margin: 0 0 3px;
           }
 
-          /* ------------------ signatures ------------------ */
           .sigIntro { margin: 14px 0 0; }
           .signatorySection {
             display: flex;
@@ -255,12 +241,10 @@ async function memoria_certificate(id) {
       </head>
       <body>
 
-        <!-- FIXED HEADER -->
         <header class="print-fixed-header">
           <img class="reportHeaderImage" src="api/images/header.png" onerror="this.style.display='none'" />
         </header>
 
-        <!-- MAIN TABLE (keeps header/footer on every printed page) -->
         <table class="printPaginationTable">
           <thead><tr><td><div class="print-header-spacer"></div></td></tr></thead>
 
@@ -281,7 +265,6 @@ async function memoria_certificate(id) {
                     This is to certify that the records of this office contain an entry for the interment of:
                   </p>
 
-                  <!-- ================= DECEASED ================= -->
                   <div class="sectionTitle">Deceased Information</div>
                   <div class="dataGrid">
                     <span class="dataLabel">Name of Deceased</span>
@@ -301,7 +284,6 @@ async function memoria_certificate(id) {
                     <span class="dataValue span-3">${val(record.last_known_address)}</span>
                   </div>
 
-                  <!-- ============= INTERMENT DETAILS ============= -->
                   <div class="sectionTitle">Interment Details</div>
                   <div class="dataGrid">
                     <span class="dataLabel">Block / Section</span>
@@ -333,7 +315,6 @@ async function memoria_certificate(id) {
                     ${extraPermitRows.join("")}
                   </div>
 
-                  <!-- ============== NEXT OF KIN ============== -->
                   <div class="sectionTitle">Next of Kin / Contact Person</div>
                   <div class="dataGrid">
                     <span class="dataLabel">Name</span>
@@ -370,42 +351,95 @@ async function memoria_certificate(id) {
           <tfoot><tr><td><div class="print-footer-spacer"></div></td></tr></tfoot>
         </table>
 
-        <!-- FIXED FOOTER -->
         <footer class="print-fixed-footer">
           <img class="reportFooterImage" src="api/images/footer.png" onerror="this.style.display='none'" />
         </footer>
 
-        <!-- AUTO-PRINT -->
-        <script>
-          window.onload = function () {
-            setTimeout(function () {
-              window.focus();
-              window.print();
-            }, 300);
-          };
-        <\/script>
       </body>
       </html>
     `;
 
-    // 9. Create hidden iframe and inject the compiled HTML
+    // 9. Create hidden iframe — REAL dimensions, parked OFF-SCREEN
+    //    (0x0 iframes are ignored by Firefox's print pipeline)
     const iframe = document.createElement("iframe");
     iframe.setAttribute("aria-hidden", "true");
+    iframe.setAttribute("title", "Memoria Certificate Print Frame");
     iframe.style.cssText =
-      "position:fixed;right:0;bottom:0;width:0;height:0;border:0;";
+      "position:fixed;" +
+      "left:-10000px;" +
+      "top:0;" +
+      "width:8.5in;" +
+      "height:11in;" +
+      "border:0;" +
+      "visibility:hidden;";
     document.body.appendChild(iframe);
 
+    let cleanedUp = false;
+    const cleanup = () => {
+      if (cleanedUp) return;
+      cleanedUp = true;
+      if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+    };
+
+    // 10. Write content into the iframe
     const doc = iframe.contentDocument || iframe.contentWindow.document;
+    if (!doc) throw new Error("Unable to access iframe document.");
+
     doc.open();
     doc.write(htmlContent);
     doc.close();
 
-    // 10. Cleanup the iframe after printing
-    const cleanup = () => {
-      if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+    // 11. Wait for images + fonts, then print
+    const waitForImages = () =>
+      new Promise((resolve) => {
+        const imgs = Array.from(doc.images || []);
+        if (imgs.length === 0) return resolve();
+        let pending = imgs.length;
+        const done = () => {
+          if (--pending <= 0) resolve();
+        };
+        imgs.forEach((img) => {
+          if (img.complete) done();
+          else {
+            img.addEventListener("load", done, { once: true });
+            img.addEventListener("error", done, { once: true });
+          }
+        });
+        // Safety timeout in case an image hangs
+        setTimeout(resolve, 3000);
+      });
+
+    const waitForFonts = async () => {
+      try {
+        if (doc.fonts && doc.fonts.ready) await doc.fonts.ready;
+      } catch (_) {
+        /* ignore */
+      }
     };
-    iframe.contentWindow.onafterprint = cleanup;
-    // Safety net for browsers that never fire onafterprint
+
+    await Promise.all([waitForImages(), waitForFonts()]);
+
+    // 12. Small buffer for layout to settle, then focus + print
+    await new Promise((r) => setTimeout(r, 250));
+
+    const win = iframe.contentWindow;
+    try {
+      win.focus();
+      win.print();
+    } catch (err) {
+      console.error("Iframe print failed, falling back to window print:", err);
+      // Last-resort fallback: open in a new tab-like window
+      const w = window.open("", "_blank");
+      if (w) {
+        w.document.write(htmlContent);
+        w.document.close();
+        w.focus();
+        w.print();
+      }
+    }
+
+    // 13. Cleanup — multiple fallbacks because onafterprint is unreliable
+    win.addEventListener("afterprint", cleanup, { once: true });
     setTimeout(cleanup, 120000);
   } catch (error) {
     console.error("Error generating Memoria Certificate:", error);
