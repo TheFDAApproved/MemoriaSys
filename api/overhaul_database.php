@@ -230,7 +230,7 @@ CREATE TABLE reservation_details (
 
     -- One active reservation per pending interment.
     -- MySQL allows multiple NULLs, so plan-only rows coexist freely.
-    UNIQUE KEY uk_pending_interment (pending_interment_id),
+    CONSTRAINT uk_active_pending_interment UNIQUE (pending_interment_id),
 
     -- One active reservation per target grave. The generated column is NULL
     -- for plan-only rows, so a plan can coexist with a real reservation on

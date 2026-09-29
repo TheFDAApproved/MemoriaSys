@@ -205,8 +205,8 @@ CREATE TABLE interments (
 --           incoming occupant exists and will be activated when the
 --           reservation executes.
 --
---      Consumed (soft-deleted) when the reservation is either executed
---      or cancelled.
+--      Consumed when the reservation is either executed or cancelled
+--      (hard-deleted on execute, soft-deleted on cancel).
 --  ----------------------------------------------------------------------
 CREATE TABLE reservation_details (
     reservation_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -247,7 +247,7 @@ CREATE TABLE reservation_details (
     -- One active reservation per pending interment.
     -- MySQL allows multiple NULLs in a UNIQUE index, so plan-only rows
     -- (pending_interment_id IS NULL) coexist freely.
-    UNIQUE KEY uk_pending_interment (pending_interment_id),
+    CONSTRAINT uk_active_pending_interment UNIQUE (pending_interment_id),
 
     -- One active reservation per target grave (prevents double-booking).
     -- The generated column is NULL for plan-only rows, so a plan can
@@ -262,7 +262,7 @@ CREATE TABLE reservation_details (
     CONSTRAINT uk_active_target_grave UNIQUE (active_target_grave_id),
 
     active_old_interment_id INT
-    GENERATED ALWAYS AS (CASE WHEN deleted_at IS NULL THEN old_interment_id ELSE NULL END) STORED,
+        GENERATED ALWAYS AS (CASE WHEN deleted_at IS NULL THEN old_interment_id ELSE NULL END) STORED,
     CONSTRAINT uk_active_old_interment UNIQUE (active_old_interment_id),
 
     FOREIGN KEY (pending_interment_id) REFERENCES interments(interment_id) ON DELETE RESTRICT,
