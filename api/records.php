@@ -468,7 +468,7 @@ if ($method === 'POST') {
     // Validate status if provided
     $status = $rawData['status'] ?? 'Pending';
     if (!in_array($status, ['Pending', 'Active', 'Inactive'])) {
-        Response::error("Invalid status. Must be Pending, Active, or Inactive.", 400);
+        Response::error("Invalid status. Must be exactly: Pending, Active, or Inactive.", 400);
     }
 
     // Validate assistance_type
@@ -714,7 +714,7 @@ if ($method === 'PUT') {
 
             if ($field === 'status') {
                 if (!in_array($val, ['Pending', 'Active', 'Inactive'])) {
-                    Response::error("Invalid status.", 400);
+                    Response::error("Invalid status. Must be exactly: Pending, Active, or Inactive.", 400);
                 }
                 $newStatus = $val;
             } elseif ($field === 'current_grave_id') {
