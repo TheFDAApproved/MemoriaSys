@@ -184,7 +184,6 @@
                 <input
                   type="color"
                   id="main_color"
-                  value="#0f172a"
                   oninput="
                     updateColorHex(this);
                     applyUIColor(this);
@@ -192,8 +191,23 @@
                 />
                 <div>
                   <div class="colorLabel">Primary Color</div>
-                  <div class="colorHex" id="main_color_1">#0f172a</div>
+                  <div class="colorHex" id="main_color_1"></div>
                 </div>
+                <button
+                  class="btn ghostBtn"
+                  type="button"
+                  onclick="
+                    const hexLabel = document.getElementById('main_color_1');
+                    hexLabel.textContent = window.main_mainColor;
+
+                    const uicolor = document.getElementById('main_color');
+                    uicolor.value = window.main_mainColor;
+
+                    applyUIColor(uicolor);
+                  "
+                >
+                  <i class="fas fa-undo"></i>
+                </button>
                 <button
                   class="btn ghostBtn"
                   type="button"
@@ -205,8 +219,21 @@
                     applyUIColor(uicolor);
                   "
                 >
-                  <i class="fas fa-undo"></i> Reset
+                  <i class="fas fa-clock-rotate-left"></i> Reset to default
                 </button>
+                <div class="infoWrap">
+                  <button
+                    class="infoIcon"
+                    type="button"
+                    aria-label="Save changes reminder"
+                    aria-expanded="false"
+                  >
+                    <i class="fas fa-info-circle"></i>
+                  </button>
+                  <div class="infoPopup" role="tooltip">
+                    Remember to click save changes below
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -627,6 +654,9 @@ control_number,deceased_name,last_known_address,death_certificate,deceased_date_
     <script>
       loadSiteContent();
       loadUserContent();
+      const rootStyles = getComputedStyle(document.documentElement);
+      const mainColor = rootStyles.getPropertyValue("--mainColor").trim();
+      window.main_mainColor = mainColor;
     </script>
     <script src="assets/js/settings.js"></script>
   </body>
