@@ -275,14 +275,13 @@ document.addEventListener("DOMContentLoaded", () => {
     const isView = mode === "view";
     const isEdit = mode === "edit";
     const isPassword = mode === "password";
-    const isEditable = isEdit || isPassword;
 
     profileFields.forEach((field) => {
-      if (isEditable) field.removeAttribute("readonly");
+      if (isEdit) field.removeAttribute("readonly");
       else field.setAttribute("readonly", true);
     });
 
-    editModeNotice.hidden = !isEditable;
+    editModeNotice.hidden = !isEdit;
     inlinePasswordSection.hidden = !isPassword;
 
     editProfileBtn.hidden = !isView;
