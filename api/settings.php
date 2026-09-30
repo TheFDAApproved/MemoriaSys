@@ -155,9 +155,9 @@ try {
                         if (empty($sKey) || empty($sDesc)) {
                             throw new Exception("Setting key and description are strictly required for all entries.");
                         }
-                        if (empty($sValue) && !$hasImage) {
-                            throw new Exception("Setting value is required for '{$sKey}' if no image is uploaded.");
-                        }
+                        // if (empty($sValue) && !$hasImage) {
+                        //     throw new Exception("Setting value is required for '{$sKey}' if no image is uploaded.");
+                        // }
 
                         if ($hasImage) {
                             $tmpName = $_FILES['bulk_images']['tmp_name'][$index];
