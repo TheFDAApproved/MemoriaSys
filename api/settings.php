@@ -15,12 +15,12 @@ $pathParts = array_filter(explode('/', trim($pathInfo, '/')));
 $resourceId = array_shift($pathParts);
 
 // Handle Unauthenticated GET Requests First
-if (!$userData) {
+if (!$userData || in_array($userData['role'] ?? "", [ROLE_GROUNDS])) {
     try {
         if ($method === 'GET') {
             if ($resourceId) {
                 $stmt = $pdo->prepare("
-                    SELECT * FROM settings 
+                    SELECT setting_id, setting_key, setting_value, description FROM settings 
                     WHERE setting_id = :id 
                       AND deleted_at IS NULL 
                       AND description NOT LIKE '%sensitive%'
@@ -32,7 +32,7 @@ if (!$userData) {
                 Response::success("Public System setting retrieved", $setting);
             } else {
                 $stmt = $pdo->prepare("
-                    SELECT * FROM settings 
+                    SELECT setting_id, setting_key, setting_value, description FROM settings 
                     WHERE deleted_at IS NULL 
                       AND description NOT LIKE '%sensitive%'
                 ");
