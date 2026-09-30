@@ -104,6 +104,110 @@ class ImageManager
     }
 
     /**
+     * Resize an image file in place to an exact target size.
+     * Stretch-to-fit — the source is mapped onto the full target rect.
+     * Preserves transparency for PNG / GIF / WebP.
+     *
+     * @param string $sourcePath    Path to the image file (modified in place)
+     * @param int    $targetWidth
+     * @param int    $targetHeight
+     * @param string $mimeType      Validated MIME type from validateImage()
+     * @return array ['success' => true] or ['success' => false, 'error' => '...']
+     */
+    private function resizeImage($sourcePath, $targetWidth, $targetHeight, $mimeType)
+    {
+        if (!extension_loaded('gd')) {
+            return ['success' => false, 'error' => 'GD extension is required for image resizing.'];
+        }
+
+        $info = @getimagesize($sourcePath);
+        if ($info === false) {
+            return ['success' => false, 'error' => 'Could not read image dimensions.'];
+        }
+
+        $srcW = (int)$info[0];
+        $srcH = (int)$info[1];
+
+        // Guard against memory blow-ups
+        if ($srcW * $srcH > 25_000_000) {
+            return ['success' => false, 'error' => 'Source image is too large to resize safely.'];
+        }
+
+        // Load the source
+        switch ($mimeType) {
+            case 'image/png':
+                $src = @imagecreatefrompng($sourcePath);
+                break;
+            case 'image/jpeg':
+                $src = @imagecreatefromjpeg($sourcePath);
+                break;
+            case 'image/gif':
+                $src = @imagecreatefromgif($sourcePath);
+                break;
+            case 'image/webp':
+                $src = @imagecreatefromwebp($sourcePath);
+                break;
+            default:
+                return ['success' => false, 'error' => 'Unsupported image type for resizing.'];
+        }
+
+        if (!$src) {
+            return ['success' => false, 'error' => 'Failed to load image for resizing.'];
+        }
+
+        // Prepare the target canvas
+        $dst = imagecreatetruecolor($targetWidth, $targetHeight);
+
+        // Preserve transparency where the source format supports it
+        if (in_array($mimeType, ['image/png', 'image/gif', 'image/webp'], true)) {
+            imagealphablending($dst, false);
+            imagesavealpha($dst, true);
+            $transparent = imagecolorallocatealpha($dst, 0, 0, 0, 127);
+            imagefilledrectangle($dst, 0, 0, $targetWidth, $targetHeight, $transparent);
+        }
+
+        // Stretch-to-fit (distorts if aspect ratios differ)
+        imagecopyresampled(
+            $dst,
+            $src,
+            0,
+            0,
+            0,
+            0,
+            $targetWidth,
+            $targetHeight,
+            $srcW,
+            $srcH
+        );
+
+        // Write back to the same path
+        $saved = false;
+        switch ($mimeType) {
+            case 'image/png':
+                $saved = imagepng($dst, $sourcePath, 9);
+                break;
+            case 'image/jpeg':
+                $saved = imagejpeg($dst, $sourcePath, 90);
+                break;
+            case 'image/gif':
+                $saved = imagegif($dst, $sourcePath);
+                break;
+            case 'image/webp':
+                $saved = imagewebp($dst, $sourcePath, 90);
+                break;
+        }
+
+        imagedestroy($src);
+        imagedestroy($dst);
+
+        if (!$saved) {
+            return ['success' => false, 'error' => 'Failed to write resized image.'];
+        }
+
+        return ['success' => true];
+    }
+
+    /**
      * Get an exclusive lock on a .lock file for a given target path.
      * Returns an array with handle and path on success, false on failure.
      */
@@ -254,7 +358,7 @@ class ImageManager
      * @param string $requestedName   Optional custom base name
      * @param bool   $replaceIfExists If true and file exists, replace it; otherwise add uniqid.
      */
-    public function uploadImage($tmpFilePath, $originalName, $requestedName = '', $replaceIfExists = false)
+    public function uploadImage($tmpFilePath, $originalName, $requestedName = '', $replaceIfExists = false, $dimensions = null)
     {
         if (!file_exists($tmpFilePath)) {
             return ['success' => false, 'error' => 'Source file does not exist.'];
@@ -268,6 +372,27 @@ class ImageManager
         $trueExt = $this->getExtensionFromMime($validation['mime']);
         if (!$trueExt) {
             return ['success' => false, 'error' => 'Unsupported image type.'];
+        }
+
+        /* ---------- NEW: optional resize ---------- */
+        if (
+            is_array($dimensions)
+            && !empty($dimensions['width'])
+            && !empty($dimensions['height'])
+        ) {
+            $resizeResult = $this->resizeImage(
+                $tmpFilePath,
+                (int)$dimensions['width'],
+                (int)$dimensions['height'],
+                $validation['mime']
+            );
+
+            if (empty($resizeResult['success'])) {
+                return [
+                    'success' => false,
+                    'error'   => $resizeResult['error'] ?? 'Image resize failed.',
+                ];
+            }
         }
 
         $baseName = trim($requestedName) !== '' ? trim($requestedName) : pathinfo($originalName, PATHINFO_FILENAME);

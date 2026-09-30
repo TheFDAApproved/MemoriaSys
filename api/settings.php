@@ -146,6 +146,12 @@ try {
 
                 try {
                     $changes = "";
+                    // Per-key target dimensions for uploaded images.
+                    // Anything not listed here is saved at its original size.
+                    $imageDimensions = [
+                        'header' => ['width' => 1276, 'height' => 152],
+                        'footer' => ['width' => 1276, 'height' => 152],
+                    ];
                     foreach ($rawData['bulk_settings'] as $index => $setting) {
                         $sKey = trim($setting['setting_key'] ?? '');
                         $sDesc = trim($setting['description'] ?? '');
@@ -164,7 +170,7 @@ try {
 
                             // STRICT PNG VALIDATION
                             $finfo = finfo_open(FILEINFO_MIME_TYPE);
-                            $mime = finfo_file($finfo, $tmpName);
+                            $mime  = finfo_file($finfo, $tmpName);
                             finfo_close($finfo);
 
                             if ($mime !== 'image/png') {
@@ -174,15 +180,25 @@ try {
                             // Force the filename to be the setting_key.
                             $requestedName = $sKey;
 
+                            // Look up the target size for this key (null = no resize)
+                            $dims = $imageDimensions[$sKey] ?? null;
+
                             $result = $manager->uploadImage(
                                 $tmpName,
                                 $_FILES['bulk_images']['name'][$index],
                                 $requestedName,
-                                true
+                                true,
+                                $dims
                             );
 
                             if (!$result['success']) {
                                 throw new Exception("Image upload failed for {$sKey}: " . $result['error']);
+                            }
+
+                            // Defense in depth: settings only supports PNG.
+                            if (strtolower(pathinfo($result['filename'], PATHINFO_EXTENSION)) !== 'png') {
+                                $uploadedFiles[] = $result['filename']; // let cleanup remove it
+                                throw new Exception("Upload failed: Only PNG images are allowed for '{$sKey}'.");
                             }
 
                             $sValue = $result['filename'];
