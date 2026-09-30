@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Memoria</title>
+
+    <meta
+      name="description"
+      content="Management system for the Cemetery. Locate plots, monitor leases, and manage notifications."
+    />
+    <meta name="author" content="Team DND" />
+    <meta name="theme-color" content="#2f3136" />
+    <meta name="robots" content="index, follow" />
+
+    <meta name="geo.region" content="PH-CEB" />
+    <meta name="geo.placename" content="Mandaue City" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="/" />
+    <meta property="og:site_name" content="Memoria" />
+    <meta property="og:title" content="Memoria | Cemetery Management System" />
+    <meta
+      property="og:description"
+      content="Efficiently manage and locate records within the Cemetery."
+    />
+    <meta
+      property="og:image"
+      content="https://cdn1.iconfinder.com/data/icons/government-buildings-5/504/cemetery-graveyard-tombstone-burial-memorial-512.png"
+    />
+
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+    />
+
+    <link rel="stylesheet" href="assets/css/root.css" />
+    <link
+      rel="stylesheet"
+      href="api/rootcolors.php"
+      onerror="
+        console.error('Failed to load custom colors. Using default theme.')
+      "
+    />
+    <link rel="stylesheet" href="assets/css/settings.css" />
+    <link rel="stylesheet" href="assets/css/delete_modal.css" />
+  </head>
+  <body>
+    <div class="settingsContent">
+      <div class="settingsCard">
+        <div class="sectionTitle profileTitle">
+          <i class="fas fa-user-circle"></i>
+          <div>
+            <h2>Profile Information</h2>
+            <p>Update your personal details and credentials</p>
+          </div>
+        </div>
+
+        <form id="profile_form" autocomplete="off">
+          <div class="formGrid">
+            <div class="formGroup">
+              <label for="name">Fullname</label>
+              <input type="text" class="profileField" id="name" readonly />
+            </div>
+            <div class="formGroup">
+              <label for="user_name">Username</label>
+              <input type="text" class="profileField" id="user_name" readonly />
+            </div>
+            <div class="formGroup">
+              <label for="email">Email Address</label>
+              <input type="email" class="profileField" id="email" readonly />
+            </div>
+            <div class="formGroup">
+              <label for="phone_number">Phone Number</label>
+              <input
+                type="tel"
+                class="profileField"
+                id="phone_number"
+                readonly
+              />
+            </div>
+          </div>
+
+          <div class="inlinePasswordSection" id="inlinePasswordSection" hidden>
+            <hr class="formDivider" />
+            <div class="formGrid">
+              <div class="formGroup">
+                <label for="new_pass">New Password</label>
+                <div class="passwordWrapper">
+                  <input type="password" id="new_pass" />
+                  <button
+                    class="togglePassword"
+                    type="button"
+                    onclick="togglePass('new_pass', this)"
+                  >
+                    <i class="fas fa-eye-slash"></i>
+                  </button>
+                </div>
+              </div>
+              <div class="formGroup">
+                <label for="confirm_pass">Confirm Password</label>
+                <div class="passwordWrapper">
+                  <input type="password" id="confirm_pass" />
+                  <button
+                    class="togglePassword"
+                    type="button"
+                    onclick="togglePass('confirm_pass', this)"
+                  >
+                    <i class="fas fa-eye-slash"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="editModeNotice" id="editModeNotice" hidden>
+            <i class="fas fa-pencil-alt"></i>
+            You're editing your profile. Save or cancel before leaving this
+            page.
+          </div>
+
+          <div class="saveRow">
+            <button
+              class="btn secondaryBtn"
+              type="button"
+              id="cancelProfileBtn"
+              hidden
+            >
+              <i class="fas fa-times"></i> Cancel
+            </button>
+            <button class="btn primaryBtn" type="button" id="editProfileBtn">
+              <i class="fas fa-pen"></i> Edit Profile
+            </button>
+            <button
+              class="btn secondaryBtn"
+              type="button"
+              id="changePasswordBtn"
+            >
+              <i class="fas fa-key"></i> Change Password
+            </button>
+            <button
+              class="btn primaryBtn"
+              type="button"
+              id="saveChangesBtn"
+              hidden
+            >
+              <i class="fas fa-save"></i> Save Changes
+            </button>
+            <button
+              class="btn primaryBtn"
+              type="button"
+              id="updatePasswordBtn"
+              hidden
+            >
+              <i class="fas fa-save"></i> Update Password
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- i think this is on admin or higher i guess the delete modal and alert hehe-->
+    <script src="assets/js/delete_modal.js"></script>
+    <script src="assets/js/alert.js"></script>
+    <script src="assets/js/load_site_contents.js"></script>
+    <script>
+      loadUserContent();
+    </script>
+    <script src="assets/js/settings.js"></script>
+  </body>
+</html>
