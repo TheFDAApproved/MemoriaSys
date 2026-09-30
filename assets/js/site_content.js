@@ -109,7 +109,7 @@ function wireSiteContentUI() {
 //  Save / Edit Settings
 // ================================================================
 
-const SAVE_API_URL = "/api/settings";
+const SAVE_API_URL = "api/settings";
 
 /**
  * Declarative spec: setting_key -> { description, kind }
