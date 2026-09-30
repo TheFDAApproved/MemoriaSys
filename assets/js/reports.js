@@ -836,3 +836,94 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadYearOptions();
   await switchReport("interments");
 });
+
+/* -------------------------------------------------------------------------
+   9. PRINT PIPELINE — refresh data, wait for paint, then print
+   ------------------------------------------------------------------------- */
+
+const PRINT_MIN_PAINT_MS = 120; // give the browser a beat to paint after render
+const PRINT_MAX_WAIT_MS = 4000; // hard cap so a slow image never freezes the button
+
+function printCurrentReport() {
+  const btn = document.getElementById("printReportBtn");
+  if (btn && btn.dataset.busy === "1") return; // prevent double-click spam
+
+  if (btn) {
+    btn.dataset.busy = "1";
+    btn.disabled = true;
+    const label = btn.querySelector(".printBtnLabel");
+    if (label) label.textContent = "Preparing…";
+  }
+
+  // 1. Cancel any pending debounced reload — we're about to force one.
+  for (const [key, timer] of debounceTimers.entries()) {
+    clearTimeout(timer);
+    debounceTimers.delete(key);
+  }
+
+  // 2. Force a fresh fetch for the current report scope.
+  //    We bypass the cache-busting query the loader normally uses
+  //    by appending a timestamp — the loader already sets cache: "no-store",
+  //    so this is just belt-and-braces.
+  loadReportData(currentReportScope)
+    .then(() => waitForPaintAndAssets())
+    .then(() => {
+      window.print();
+    })
+    .catch((err) => {
+      console.error("Print prep failed:", err);
+      // Even if the refresh failed, still let them print what's on screen.
+      window.print();
+    })
+    .finally(() => {
+      if (btn) {
+        btn.dataset.busy = "0";
+        btn.disabled = false;
+        const label = btn.querySelector(".printBtnLabel");
+        if (label) label.textContent = "Export / Print PDF";
+      }
+    });
+}
+
+/**
+ * Waits for:
+ *   - at least one animation frame (paint)
+ *   - a minimum quiet period
+ *   - any <img> inside the master report card to finish loading
+ *   - document.fonts.ready
+ * Capped by PRINT_MAX_WAIT_MS.
+ */
+function waitForPaintAndAssets() {
+  const start = Date.now();
+
+  return new Promise((resolve) => {
+    const finish = () => resolve();
+
+    const check = () => {
+      // Hard cap
+      if (Date.now() - start > PRINT_MAX_WAIT_MS) return finish();
+
+      const card = document.getElementById("master-report-card");
+      const imgs = card ? Array.from(card.querySelectorAll("img")) : [];
+      const imagesReady = imgs.every(
+        (img) => img.complete && img.naturalWidth > 0,
+      );
+
+      const fontsReady = !document.fonts || document.fonts.status === "loaded";
+
+      if (
+        imagesReady &&
+        fontsReady &&
+        Date.now() - start >= PRINT_MIN_PAINT_MS
+      ) {
+        // One more frame so the browser actually paints the fresh DOM
+        requestAnimationFrame(() => requestAnimationFrame(finish));
+      } else {
+        setTimeout(check, 50);
+      }
+    };
+
+    // Kick off after the next frame so the loader can start rendering
+    requestAnimationFrame(() => check());
+  });
+}

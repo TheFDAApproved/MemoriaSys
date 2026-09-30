@@ -127,9 +127,15 @@
             </div>
           </div>
 
-          <button type="button" onclick="window.print()" class="printPdfBtn">
+          <!-- ▼ CHANGED: inline window.print() replaced with the refresh-then-print pipeline -->
+          <button
+            type="button"
+            id="printReportBtn"
+            class="printPdfBtn"
+            onclick="printCurrentReport()"
+          >
             <i class="fas fa-file-pdf"></i>
-            Export / Print PDF
+            <span class="printBtnLabel">Export / Print PDF</span>
           </button>
         </div>
 
