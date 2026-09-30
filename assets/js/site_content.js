@@ -100,6 +100,9 @@ function wireSiteContentUI() {
   if (form) {
     form.addEventListener("submit", saveSiteContent);
   }
+
+  // Clear the invalid state as soon as the user starts fixing a field
+  wireRequiredFieldCleanup();
 }
 
 // ================================================================
@@ -138,6 +141,194 @@ const SETTINGS_SPEC = {
   payment_purposes_list: { description: "Purposes of Payment", kind: "list" },
 };
 
+// ================================================================
+//  Required-field validation
+//  - Blocks submit when a required text field is blank
+//  - Flags every blank field, scrolls to the first one,
+//    plays a shake animation, and fires showAlertTOP
+//  - The red/highlight state auto-clears after a few seconds
+// ================================================================
+
+/**
+ * Keys (from SETTINGS_SPEC) that must not be blank.
+ * Fields that aren't present in the DOM are skipped, so this list is
+ * safe to keep even if a field only exists on some pages.
+ */
+const REQUIRED_TEXT_KEYS = [
+  "dept_name",
+  "cemetery_name",
+  "cemetery_address",
+  "cemetery_google_maps",
+  "office_address",
+  "contact_phone",
+  "contact_email",
+];
+
+/** How long the red / shake highlight stays on screen (ms). */
+const INVALID_FLASH_MS = 2500;
+
+// 1. Inject the shake / highlight styling once.
+(function injectRequiredFieldCss() {
+  if (document.getElementById("requiredFieldStyles")) return;
+  const s = document.createElement("style");
+  s.id = "requiredFieldStyles";
+  s.textContent = `
+    @keyframes requiredFieldShake {
+      0%, 100% { transform: translateX(0); }
+      15%      { transform: translateX(-6px); }
+      30%      { transform: translateX(5px); }
+      45%      { transform: translateX(-4px); }
+      60%      { transform: translateX(3px); }
+      75%      { transform: translateX(-2px); }
+    }
+    .fieldInvalid {
+      animation: requiredFieldShake 520ms cubic-bezier(.36,.07,.19,.97);
+      border-color: #e11d48 !important;
+      box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.18) !important;
+      outline: none !important;
+      scroll-margin-top: 96px;
+      transition: box-shadow 400ms ease, border-color 400ms ease;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .fieldInvalid { animation: none; }
+    }
+  `;
+  document.head.appendChild(s);
+})();
+
+/**
+ * Remove the invalid state and cancel any pending auto-clear timer.
+ * Called by the input/change listeners as soon as the user types.
+ */
+function clearInvalidField(el) {
+  if (!el) return;
+  el.classList.remove("fieldInvalid");
+  if (el._invalidTimer) {
+    clearTimeout(el._invalidTimer);
+    el._invalidTimer = null;
+  }
+}
+
+/**
+ * Flag a field as invalid. Pass { scroll: true } for the field we
+ * want to bring into view.
+ *
+ * The `.fieldInvalid` class auto-removes after INVALID_FLASH_MS so
+ * the red highlight fades away on its own if the user doesn't act.
+ */
+function flashInvalidField(el, { scroll = false } = {}) {
+  if (!el) return;
+
+  // Cancel any timer from a previous flash on this field
+  if (el._invalidTimer) {
+    clearTimeout(el._invalidTimer);
+    el._invalidTimer = null;
+  }
+
+  // Remove → force reflow → re-add so the animation replays on
+  // every submit attempt, even if the class is still present.
+  el.classList.remove("fieldInvalid");
+  void el.offsetWidth; // reflow
+  el.classList.add("fieldInvalid");
+
+  // Auto-clear the red highlight after a few seconds
+  el._invalidTimer = window.setTimeout(() => {
+    el.classList.remove("fieldInvalid");
+    el._invalidTimer = null;
+  }, INVALID_FLASH_MS);
+
+  if (!scroll) return;
+
+  const reduceMotion = window.matchMedia?.(
+    "(prefers-reduced-motion: reduce)",
+  )?.matches;
+
+  el.scrollIntoView({
+    behavior: reduceMotion ? "auto" : "smooth",
+    block: "center",
+  });
+
+  // Focus after the scroll settles; preventScroll stops a second jump.
+  window.setTimeout(
+    () => {
+      try {
+        el.focus({ preventScroll: true });
+      } catch {
+        el.focus();
+      }
+    },
+    reduceMotion ? 0 : 350,
+  );
+}
+
+/** Read the current value of a field the same way saveSiteContent does. */
+function readFieldValue(el) {
+  if (!el) return "";
+  if (el.type === "checkbox") return el.checked ? "1" : "0";
+  return String(el.value ?? "");
+}
+
+/** Every required field that is currently blank (and exists on the page). */
+function findMissingRequiredFields() {
+  const missing = [];
+  for (const key of REQUIRED_TEXT_KEYS) {
+    const el = document.getElementById(key);
+    if (!el) continue; // not rendered on this page → skip
+    if (!readFieldValue(el).trim()) {
+      missing.push({
+        key,
+        el,
+        label: SETTINGS_SPEC[key]?.description || key,
+      });
+    }
+  }
+  return missing;
+}
+
+/** Short, readable alert copy. */
+function buildMissingMessage(labels) {
+  if (labels.length === 1) return `${labels[0]} is required.`;
+  if (labels.length <= 3) return `Please fill in: ${labels.join(", ")}.`;
+  return `Please fill in ${labels.length} required fields (${labels
+    .slice(0, 3)
+    .join(", ")}, …).`;
+}
+
+/**
+ * Returns true when the form is valid.
+ * Otherwise: flags + animates every blank field, scrolls to the first,
+ * shows showAlertTOP, and returns false.
+ */
+function validateRequiredSettings({ scroll = true, alert = true } = {}) {
+  wireRequiredFieldCleanup(); // safety: fields may have been re-rendered
+
+  const missing = findMissingRequiredFields();
+  if (missing.length === 0) return true;
+
+  // Flag all of them (so nothing is silently hidden), scroll the first.
+  missing.forEach((m, i) =>
+    flashInvalidField(m.el, { scroll: scroll && i === 0 }),
+  );
+
+  if (alert && typeof showAlertTOP === "function") {
+    showAlertTOP(buildMissingMessage(missing.map((m) => m.label)), "error");
+  }
+
+  return false;
+}
+
+/** Clear the red/shake state as soon as the user starts fixing a field. */
+function wireRequiredFieldCleanup() {
+  for (const key of REQUIRED_TEXT_KEYS) {
+    const el = document.getElementById(key);
+    if (!el || el.dataset.requiredWired === "1") continue;
+    el.dataset.requiredWired = "1";
+    const clear = () => clearInvalidField(el);
+    el.addEventListener("input", clear);
+    el.addEventListener("change", clear);
+  }
+}
+
 /** Collect all non-empty input values inside a `.list` container. */
 function collectListValues(containerId) {
   const container = document.getElementById(containerId);
@@ -160,6 +351,9 @@ async function saveSiteContent(event) {
   if (event && typeof event.preventDefault === "function") {
     event.preventDefault();
   }
+
+  // ---- Block submit until every required text field is filled ----
+  if (!validateRequiredSettings()) return;
 
   // ---- Build the settings array, tracking file index alignment ----
   const settings = [];
