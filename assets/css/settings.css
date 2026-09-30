@@ -1,0 +1,873 @@
+body {
+  background-color: #f8fafc;
+  font-family: "Inter", sans-serif;
+  margin: 0;
+  padding: 0;
+}
+.settingsContent [hidden] {
+  display: none !important;
+}
+.settingsContent {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 24px;
+  color: #333333;
+
+  /* ============================================================
+     INPUT ERROR ANIMATION (reusable)
+     ============================================================ */
+  @keyframes inputErrorShake {
+    0% {
+      transform: translateX(0);
+    }
+    20% {
+      transform: translateX(-6px);
+    }
+    40% {
+      transform: translateX(6px);
+    }
+    60% {
+      transform: translateX(-4px);
+    }
+    80% {
+      transform: translateX(4px);
+    }
+    100% {
+      transform: translateX(0);
+    }
+  }
+
+  .inputError {
+    /* Kill the base transition so the red border snaps on instantly */
+    transition: none !important;
+    border-color: #ef4444 !important;
+    box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.15) !important;
+    animation: inputErrorShake 0.4s ease;
+  }
+
+  /* Optional: turn the field's label red while the error is active */
+  .formGroup:has(.inputError) > label,
+  .systemItem:has(.inputError) > label,
+  .systemItem:has(.inputError) .labelRow label {
+    color: #dc2626;
+    transition: color 0.2s ease;
+  }
+
+  .bottomCards {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+    gap: 24px;
+    align-items: start;
+  }
+
+  @media (max-width: 1024px) {
+    .bottomCards {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .settingsCard,
+  .excelCard,
+  .dbCard {
+    background-color: #ffffff;
+    border-radius: 8px;
+    padding: 24px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    color: #333333;
+    font-family: "Inter", sans-serif;
+  }
+
+  .settingsCard *,
+  .settingsCard *::before,
+  .settingsCard *::after,
+  .excelCard *,
+  .excelCard *::before,
+  .excelCard *::after,
+  .dbCard *,
+  .dbCard *::before,
+  .dbCard *::after {
+    box-sizing: border-box;
+  }
+
+  .cardTop {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .cardTitleRow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .cardTitleRow h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: #111827;
+  }
+
+  .cardTop > div > p {
+    margin: 6px 0 0;
+    font-size: 14px;
+    color: #6b7280;
+  }
+
+  .cardControls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+
+  .cardControls .btn {
+    height: 42px;
+    flex: 0 0 auto;
+  }
+
+  .cardControls .btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.15);
+  }
+
+  .importPreview {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+    padding: 10px 12px;
+    background-color: #f8fafc;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    animation: fadeIn 0.15s ease-out;
+  }
+
+  .importPreview[hidden] {
+    display: none;
+  }
+
+  .importPreview > i {
+    flex: 0 0 auto;
+    font-size: 18px;
+    color: #10b981;
+  }
+
+  .importPreview .importFileName {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 13.5px;
+    font-weight: 500;
+    color: #1f2937;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .importPreview .importRemoveBtn {
+    flex: 0 0 auto;
+    padding: 8px 10px;
+  }
+  .selectWrapper {
+    position: relative;
+    flex: 1 1 280px;
+    min-width: 0;
+    max-width: 480px;
+    display: flex;
+    align-items: center;
+  }
+
+  .selectWrapper select {
+    width: 100%;
+    height: 42px;
+    padding: 0 38px 0 14px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    background-color: #ffffff;
+    font-family: inherit;
+    font-size: 14px;
+    color: #1f2937;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    cursor: pointer;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    transition:
+      border-color 0.2s ease,
+      box-shadow 0.2s ease;
+    text-overflow: ellipsis;
+  }
+
+  .selectWrapper select:hover:not(:disabled) {
+    border-color: #9ca3af;
+  }
+
+  .selectWrapper select:focus {
+    outline: none;
+    border-color: var(--mainColor, #0f172a);
+    box-shadow: 0 0 0 4px rgba(15, 23, 42, 0.1);
+  }
+
+  .selectWrapper select:disabled {
+    background-color: #f8fafc;
+    border-color: #e2e8f0;
+    color: #94a3b8;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
+  .selectWrapper .selectCaret {
+    position: absolute;
+    right: 14px;
+    font-size: 12px;
+    color: #6b7280;
+    pointer-events: none;
+    transition: color 0.2s ease;
+  }
+
+  .selectWrapper:focus-within .selectCaret {
+    color: var(--mainColor, #0f172a);
+  }
+
+  .dbCard .infoPopup {
+    width: 280px;
+    max-width: calc(100vw - 48px);
+    white-space: normal;
+  }
+
+  .dbCard .infoPopup h3 {
+    margin: 0 0 6px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #111827;
+  }
+
+  .dbCard .infoPopup p {
+    margin: 0;
+    font-size: 13px;
+    color: #4b5563;
+  }
+
+  .excelCard .infoPopup {
+    width: 460px;
+    max-width: min(460px, calc(100vw - 48px));
+    max-height: min(340px, 55vh);
+    overflow-y: auto;
+    padding: 12px 14px;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: normal;
+  }
+
+  .excelCard .infoPopup h3 {
+    margin: 0 0 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #111827;
+  }
+
+  .excelCard .infoPopup p {
+    margin: 0 0 8px;
+    font-size: 13px;
+    color: #4b5563;
+  }
+
+  .excelCard .infoPopup ul {
+    margin: 0 0 10px;
+    padding-left: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .excelCard .infoPopup li {
+    font-size: 13px;
+    color: #4b5563;
+  }
+
+  .excelCard .infoPopup code {
+    padding: 1px 4px;
+    border-radius: 4px;
+    background-color: #f1f5f9;
+    color: #0f172a;
+    font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  .excelCard .infoPopup .infoPopupLabel {
+    margin: 10px 0 6px;
+    font-weight: 600;
+    color: #374151;
+  }
+
+  .excelCard .infoPopup .infoHeaderRow {
+    margin: 0;
+    padding: 10px;
+    max-height: 110px;
+    overflow: auto;
+    background-color: #f8fafc;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    line-height: 1.45;
+    color: #1f2937;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+
+  @media (max-width: 640px) {
+    .cardTop {
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .cardTop > .btn {
+      width: 100%;
+    }
+
+    .selectWrapper {
+      flex: 1 1 100%;
+      max-width: none;
+    }
+
+    .cardControls > .btn,
+    .cardControls > label.btn {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+  }
+
+  .sectionTitle {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 24px;
+
+    i {
+      font-size: 28px;
+      color: #2f3136;
+    }
+
+    h2 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 600;
+    }
+
+    p {
+      margin: 4px 0 0 0;
+      font-size: 14px;
+      color: #6b7280;
+    }
+  }
+
+  .formGroup {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+
+    label {
+      font-size: 14px;
+      font-weight: 500;
+      color: #374151;
+    }
+  }
+
+  .formGrid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    margin-bottom: 16px;
+
+    @media (max-width: 640px) {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .formDivider {
+    border: none;
+    border-top: 1px solid #e5e7eb;
+    margin: 16px 0;
+  }
+
+  .inlinePasswordSection {
+    margin-top: 16px;
+    animation: fadeIn 0.2s ease-out;
+  }
+
+  .editModeNotice {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background-color: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 6px;
+    color: #92400e;
+    font-size: 14px;
+    margin-bottom: 16px;
+    max-width: 550px;
+    width: 100%;
+    box-sizing: border-box;
+
+    i {
+      color: #d97706;
+    }
+  }
+
+  .infoWrap {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .infoIcon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background-color: transparent;
+    color: #9ca3af;
+    cursor: pointer;
+    transition:
+      color 0.15s ease,
+      background-color 0.15s ease;
+
+    i {
+      font-size: 14px;
+      line-height: 1;
+      color: inherit;
+    }
+
+    &:hover {
+      color: var(--mainColor, #0f172a);
+      background-color: #f1f5f9;
+    }
+
+    &:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.15);
+    }
+  }
+
+  .infoPopup {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 8px);
+    z-index: 50;
+    padding: 7px 10px;
+    background-color: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.1);
+    font-size: 12px;
+    line-height: 1.4;
+    color: #4b5563;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(4px);
+    transition:
+      opacity 0.15s ease,
+      transform 0.15s ease,
+      visibility 0.15s ease;
+
+    &.show {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+    }
+
+    a {
+      color: var(--mainColor, #0f172a);
+      font-weight: 500;
+      text-decoration: none;
+      text-underline-offset: 2px;
+
+      &:hover {
+        text-decoration: underline;
+      }
+    }
+  }
+
+  .labelRow {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .systemGrid {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+
+    .systemRowCol {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+
+      @media (max-width: 640px) {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .systemItem {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+
+      > label,
+      .labelRow label {
+        font-size: 14px;
+        font-weight: 500;
+        color: #374151;
+      }
+    }
+
+    .colorRow {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+
+      .colorLabel {
+        font-size: 14px;
+        font-weight: 500;
+      }
+
+      .colorHex {
+        font-size: 12px;
+        color: #6b7280;
+      }
+    }
+
+    .reportUploadRow {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+
+      .reportUploadBox {
+        border: 1px dashed #d1d5db;
+        border-radius: 6px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+
+        .reportPreview {
+          height: 100px;
+          background-color: #f9fafb;
+          border-radius: 4px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          overflow: hidden;
+
+          img {
+            max-height: 100%;
+            max-width: 100%;
+            object-fit: contain;
+          }
+        }
+
+        .reportUploadMeta {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+
+          .reportUploadName {
+            font-size: 14px;
+            font-weight: 500;
+          }
+
+          .actionButtons {
+            display: flex;
+            gap: 8px;
+          }
+
+          > span {
+            font-size: 12px;
+            color: #9ca3af;
+          }
+        }
+      }
+    }
+
+    .signatureGrid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+
+      @media (max-width: 640px) {
+        grid-template-columns: 1fr;
+      }
+
+      .signatureBox .signatureFields {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .signatureBox {
+        background-color: rgb(245 241 241);
+        padding: 10px;
+        border-radius: 10px;
+      }
+    }
+  }
+
+  input[type="text"],
+  input[type="email"],
+  input[type="tel"],
+  input[type="password"] {
+    width: 100%;
+    height: 42px;
+    padding: 0 14px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 14px;
+    color: #1f2937;
+    background-color: #ffffff;
+    box-sizing: border-box;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+
+    &::placeholder {
+      color: #9ca3af;
+      font-weight: 400;
+    }
+
+    &:hover:not([readonly]):not(:disabled) {
+      border-color: #9ca3af;
+    }
+
+    &:focus {
+      outline: none;
+      border-color: var(--mainColor, #0f172a);
+      box-shadow: 0 0 0 4px rgba(15, 23, 42, 0.1);
+      background-color: #ffffff;
+    }
+
+    &[readonly] {
+      background-color: #f8fafc;
+      border-color: #e2e8f0;
+      color: #64748b;
+      cursor: not-allowed;
+      box-shadow: none;
+
+      &:focus {
+        box-shadow: none;
+        border-color: #e2e8f0;
+      }
+    }
+  }
+
+  input[type="color"] {
+    appearance: none;
+    width: 42px;
+    height: 42px;
+    padding: 3px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    background-color: #ffffff;
+    cursor: pointer;
+    transition:
+      transform 0.15s ease,
+      border-color 0.2s ease;
+
+    &::-webkit-color-swatch-wrapper {
+      padding: 0;
+    }
+
+    &::-webkit-color-swatch {
+      border: none;
+      border-radius: 5px;
+    }
+
+    &::-moz-color-swatch {
+      border: none;
+      border-radius: 5px;
+    }
+
+    &:hover {
+      border-color: #9ca3af;
+      transform: scale(1.03);
+    }
+  }
+
+  .passwordWrapper {
+    position: relative;
+    width: 100%;
+
+    input {
+      padding-right: 44px;
+    }
+
+    .togglePassword {
+      position: absolute;
+      right: 8px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      color: #64748b;
+      cursor: pointer;
+      transition: all 0.15s ease;
+
+      i {
+        color: #64748b;
+      }
+
+      &:hover {
+        background-color: #f1f5f9;
+
+        i {
+          color: var(--mainColor, #0f172a);
+        }
+      }
+
+      &:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.2);
+      }
+    }
+  }
+
+  label.btn {
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+
+    input[type="file"] {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+  }
+
+  .saveRow {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 24px;
+  }
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  i {
+    font-size: 14px;
+    line-height: 1;
+  }
+
+  &.primaryBtn {
+    background-color: var(--mainColor, #0f172a);
+    color: #ffffff;
+
+    i {
+      color: #ffffff;
+    }
+
+    &:hover {
+      background-color: #1e293b;
+    }
+  }
+
+  &.secondaryBtn,
+  &.resetBtn {
+    background-color: #ffffff;
+    border-color: #d1d5db;
+    color: #374151;
+
+    i {
+      color: #4b5563;
+    }
+
+    &:hover {
+      background-color: #f3f4f6;
+
+      i {
+        color: #111827;
+      }
+    }
+  }
+
+  &.ghostBtn {
+    background-color: transparent;
+    color: #374151;
+    border-color: #d1d5db;
+
+    i {
+      color: #4b5563;
+    }
+
+    &:hover {
+      background-color: #f3f4f6;
+
+      i {
+        color: #111827;
+      }
+    }
+  }
+
+  &.iconOnly {
+    background: transparent;
+    border: none;
+    padding: 6px;
+    border-radius: 6px;
+
+    i {
+      font-size: 20px;
+      transition: transform 0.15s ease;
+    }
+
+    &:hover i {
+      transform: scale(1.15);
+    }
+
+    &.importBtn i {
+      color: #10b981;
+    }
+
+    &.exportBtn i {
+      color: #3b82f6;
+    }
+  }
+}

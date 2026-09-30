@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Memoria</title>
+
+    <meta
+      name="description"
+      content="Management system for the Cemetery. Locate plots, monitor leases, and manage notifications."
+    />
+    <meta name="author" content="Team DND" />
+    <meta name="theme-color" content="#2f3136" />
+    <meta name="robots" content="index, follow" />
+
+    <meta name="geo.region" content="PH-CEB" />
+    <meta name="geo.placename" content="Mandaue City" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="/" />
+    <meta property="og:site_name" content="Memoria" />
+    <meta property="og:title" content="Memoria | Cemetery Management System" />
+    <meta
+      property="og:description"
+      content="Efficiently manage and locate records within the Cemetery."
+    />
+    <meta
+      property="og:image"
+      content="https://cdn1.iconfinder.com/data/icons/government-buildings-5/504/cemetery-graveyard-tombstone-burial-memorial-512.png"
+    />
+
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+    />
+
+    <link rel="stylesheet" href="assets/css/root.css" />
+    <link
+      rel="stylesheet"
+      href="api/rootcolors.php"
+      onerror="
+        console.error('Failed to load custom colors. Using default theme.')
+      "
+    />
+    <link rel="stylesheet" href="assets/css/settings.css" />
+    <link rel="stylesheet" href="assets/css/delete_modal.css" />
+  </head>
+  <body>
+    <div class="settingsContent">
+      <div class="settingsCard">
+        <div class="sectionTitle profileTitle">
+          <i class="fas fa-user-circle"></i>
+          <div>
+            <h2>Profile Information</h2>
+            <p>Update your personal details and credentials</p>
+          </div>
+        </div>
+
+        <form id="profile_form" autocomplete="off">
+          <div class="formGrid">
+            <div class="formGroup">
+              <label for="name">Fullname</label>
+              <input type="text" class="profileField" id="name" readonly />
+            </div>
+            <div class="formGroup">
+              <label for="user_name">Username</label>
+              <input type="text" class="profileField" id="user_name" readonly />
+            </div>
+            <div class="formGroup">
+              <label for="email">Email Address</label>
+              <input type="email" class="profileField" id="email" readonly />
+            </div>
+            <div class="formGroup">
+              <label for="phone_number">Phone Number</label>
+              <input
+                type="tel"
+                class="profileField"
+                id="phone_number"
+                readonly
+              />
+            </div>
+          </div>
+
+          <div class="inlinePasswordSection" id="inlinePasswordSection" hidden>
+            <hr class="formDivider" />
+            <div class="formGrid">
+              <div class="formGroup">
+                <label for="new_pass">New Password</label>
+                <div class="passwordWrapper">
+                  <input type="password" id="new_pass" />
+                  <button
+                    class="togglePassword"
+                    type="button"
+                    onclick="togglePass('new_pass', this)"
+                  >
+                    <i class="fas fa-eye-slash"></i>
+                  </button>
+                </div>
+              </div>
+              <div class="formGroup">
+                <label for="confirm_pass">Confirm Password</label>
+                <div class="passwordWrapper">
+                  <input type="password" id="confirm_pass" />
+                  <button
+                    class="togglePassword"
+                    type="button"
+                    onclick="togglePass('confirm_pass', this)"
+                  >
+                    <i class="fas fa-eye-slash"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="editModeNotice" id="editModeNotice" hidden>
+            <i class="fas fa-pencil-alt"></i>
+            You're editing your profile. Save or cancel before leaving this
+            page.
+          </div>
+
+          <div class="saveRow">
+            <button
+              class="btn secondaryBtn"
+              type="button"
+              id="cancelProfileBtn"
+              hidden
+            >
+              <i class="fas fa-times"></i> Cancel
+            </button>
+            <button class="btn primaryBtn" type="button" id="editProfileBtn">
+              <i class="fas fa-pen"></i> Edit Profile
+            </button>
+            <button
+              class="btn secondaryBtn"
+              type="button"
+              id="changePasswordBtn"
+            >
+              <i class="fas fa-key"></i> Change Password
+            </button>
+            <button
+              class="btn primaryBtn"
+              type="button"
+              id="saveChangesBtn"
+              hidden
+            >
+              <i class="fas fa-save"></i> Save Changes
+            </button>
+            <button
+              class="btn primaryBtn"
+              type="button"
+              id="updatePasswordBtn"
+              hidden
+            >
+              <i class="fas fa-save"></i> Update Password
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div class="settingsCard">
+        <div class="sectionTitle systemTitle">
+          <i class="fas fa-cogs"></i>
+          <div>
+            <h2>System Configuration</h2>
+            <p>Manage branding, integration, and report settings</p>
+          </div>
+        </div>
+
+        <form autocomplete="off" id="system_config_form">
+          <div class="systemGrid">
+            <div class="systemItem">
+              <label>UI Primary Color</label>
+              <div class="colorRow">
+                <input
+                  type="color"
+                  id="main_color"
+                  value="#0f172a"
+                  oninput="
+                    updateColorHex(this);
+                    applyUIColor(this);
+                  "
+                />
+                <div>
+                  <div class="colorLabel">Primary Color</div>
+                  <div class="colorHex" id="main_color_1">#0f172a</div>
+                </div>
+                <button
+                  class="btn ghostBtn"
+                  type="button"
+                  onclick="
+                    hexLabel = document.getElementById('main_color_1');
+                    hexLabel.textContent = '#0f172a';
+                    uicolor = document.getElementById('main_color');
+                    uicolor.value = '#0f172a';
+                    applyUIColor(uicolor);
+                  "
+                >
+                  <i class="fas fa-undo"></i> Reset
+                </button>
+              </div>
+            </div>
+
+            <div class="systemRowCol">
+              <div class="systemItem">
+                <div class="labelRow">
+                  <label for="textbee_api_key">Textbee API Key</label>
+                  <div class="infoWrap">
+                    <button
+                      class="infoIcon"
+                      type="button"
+                      aria-label="How to get your Textbee API Key"
+                      aria-expanded="false"
+                    >
+                      <i class="fas fa-info-circle"></i>
+                    </button>
+                    <div class="infoPopup" role="tooltip">
+                      Get your Textbee API Key
+                      <a
+                        href="https://textbee.dev/dashboard"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        >here</a
+                      >
+                    </div>
+                  </div>
+                </div>
+                <div class="passwordWrapper">
+                  <input type="password" id="textbee_api_key" />
+                  <button
+                    class="togglePassword"
+                    type="button"
+                    onclick="togglePass('textbee_api_key', this)"
+                  >
+                    <i class="fas fa-eye-slash"></i>
+                  </button>
+                </div>
+              </div>
+              <div class="systemItem">
+                <div class="labelRow">
+                  <label for="textbee_device_id">Textbee Device ID</label>
+                  <div class="infoWrap">
+                    <button
+                      class="infoIcon"
+                      type="button"
+                      aria-label="How to get your Textbee Device ID"
+                      aria-expanded="false"
+                    >
+                      <i class="fas fa-info-circle"></i>
+                    </button>
+                    <div class="infoPopup" role="tooltip">
+                      Get your Textbee Device ID
+                      <a
+                        href="https://textbee.dev/dashboard"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        >here</a
+                      >
+                    </div>
+                  </div>
+                </div>
+                <div class="passwordWrapper">
+                  <input type="password" id="textbee_device_id" />
+                  <button
+                    class="togglePassword"
+                    type="button"
+                    onclick="togglePass('textbee_device_id', this)"
+                  >
+                    <i class="fas fa-eye-slash"></i>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <hr class="formDivider" />
+
+            <div class="systemItem">
+              <label>Reports Header &amp; Footer</label>
+              <div class="reportUploadRow">
+                <div class="reportUploadBox">
+                  <div
+                    class="reportPreview"
+                    data-default-src="assets/images/header.png"
+                  >
+                    <img
+                      id="preview_header"
+                      src="api/images/header.png"
+                      alt="Header"
+                      onerror="
+                        this.onerror = null;
+                        this.src = 'assets/images/header.png';
+                        console.error(
+                          'Failed to load dynamic logo. Using default logo.',
+                        );
+                      "
+                    />
+                  </div>
+                  <div class="reportUploadMeta">
+                    <span class="reportUploadName">Report Header</span>
+                    <div class="actionButtons">
+                      <label class="btn secondaryBtn">
+                        <i class="fas fa-upload"></i> Upload Header
+                        <input
+                          type="file"
+                          id="header"
+                          accept="image/png"
+                          onchange="previewImage(this, 'preview_header')"
+                        />
+                      </label>
+                      <button
+                        class="btn resetBtn"
+                        type="button"
+                        title="Reset to default header"
+                        onclick="
+                          var x = document.getElementById('preview_header');
+                          x.onerror = function () {
+                            this.onerror = null;
+                            this.src = 'assets/images/header.png';
+                            console.error(
+                              'Failed to load dynamic logo. Using default logo.',
+                            );
+                          };
+                          x.src = 'api/images/header.png';
+                        "
+                      >
+                        <i class="fas fa-rotate-left"></i>
+                      </button>
+                    </div>
+                    <span>PNG Only</span>
+                  </div>
+                </div>
+                <div class="reportUploadBox">
+                  <div class="reportPreview">
+                    <img
+                      id="preview_footer"
+                      src="api/images/footer.png"
+                      alt="Header"
+                      onerror="
+                        this.onerror = null;
+                        this.src = 'assets/images/footer.png';
+                        console.error(
+                          'Failed to load dynamic logo. Using default logo.',
+                        );
+                      "
+                    />
+                  </div>
+                  <div class="reportUploadMeta">
+                    <span class="reportUploadName">Report Footer</span>
+                    <div class="actionButtons">
+                      <label class="btn secondaryBtn">
+                        <i class="fas fa-upload"></i> Upload Footer
+                        <input
+                          type="file"
+                          id="footer"
+                          accept="image/png"
+                          onchange="previewImage(this, 'preview_footer')"
+                        />
+                      </label>
+                      <button
+                        class="btn resetBtn"
+                        type="button"
+                        title="Reset to default footer"
+                        onclick="
+                          var x = document.getElementById('preview_footer');
+                          x.onerror = function () {
+                            this.onerror = null;
+                            this.src = 'assets/images/footer.png';
+                            console.error(
+                              'Failed to load dynamic logo. Using default logo.',
+                            );
+                          };
+                          x.src = 'api/images/footer.png';
+                        "
+                      >
+                        <i class="fas fa-rotate-left"></i>
+                      </button>
+                    </div>
+                    <span>PNG Only</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <hr class="formDivider" />
+
+            <div class="systemItem">
+              <label>Reports Name and Title</label>
+              <div class="signatureGrid">
+                <div class="signatureBox">
+                  <div class="signatureFields">
+                    <input
+                      type="text"
+                      id="people_name_1"
+                      placeholder="Fullname"
+                    />
+                    <input
+                      type="text"
+                      id="people_title_1"
+                      placeholder="Title / Position"
+                    />
+                  </div>
+                </div>
+                <div class="signatureBox">
+                  <div class="signatureFields">
+                    <input
+                      type="text"
+                      id="people_name_2"
+                      placeholder="Fullname"
+                    />
+                    <input
+                      type="text"
+                      id="people_title_2"
+                      placeholder="Title / Position"
+                    />
+                  </div>
+                </div>
+                <div class="signatureBox">
+                  <div class="signatureFields">
+                    <input
+                      type="text"
+                      id="people_name_3"
+                      placeholder="Fullname"
+                    />
+                    <input
+                      type="text"
+                      id="people_title_3"
+                      placeholder="Title / Position"
+                    />
+                  </div>
+                </div>
+                <div class="signatureBox">
+                  <div class="signatureFields">
+                    <input
+                      type="text"
+                      id="people_name_4"
+                      placeholder="Fullname"
+                    />
+                    <input
+                      type="text"
+                      id="people_title_4"
+                      placeholder="Title / Position"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="saveRow">
+            <button class="btn primaryBtn" type="submit">
+              <i class="fas fa-save"></i> Save Configuration
+            </button>
+          </div>
+        </form>
+      </div>
+
+      <div class="bottomCards">
+        <div class="excelCard">
+          <div class="cardTop">
+            <div>
+              <div class="cardTitleRow">
+                <h2>Excel Import / Export</h2>
+                <div class="infoWrap">
+                  <button
+                    class="infoIcon"
+                    type="button"
+                    aria-label="CSV import instructions"
+                    aria-expanded="false"
+                  >
+                    <i class="fas fa-info-circle"></i>
+                  </button>
+                  <div class="infoPopup" role="tooltip">
+                    <h3>CSV Import Instructions</h3>
+                    <p>
+                      Upload a <code>.csv</code> file only. The first row must
+                      contain all the column names exactly as shown below, even
+                      if some cells are left blank.
+                    </p>
+                    <ul>
+                      <li>
+                        The only required values are
+                        <code>control_number</code> and
+                        <code>deceased_name</code>.
+                      </li>
+                      <li>
+                        If you include <code>block_name</code> and
+                        <code>grave_code</code>, they must already exist in the
+                        system.
+                      </li>
+                      <li>
+                        <code>status</code> can only be <code>Active</code> or
+                        <code>Inactive</code>.
+                      </li>
+                      <li>
+                        <code>assistance_type</code> can only be
+                        <code>Burial</code>,
+                        <code>Transfer the remains of the late</code>, or
+                        <code>Other</code>.
+                      </li>
+                      <li>
+                        <code>deceased_sex</code> can only be <code>Male</code>,
+                        <code>Female</code>, or <code>Unknown</code>.
+                      </li>
+                      <li>
+                        Dates can be written like <code>2024-01-15</code>,
+                        <code>01/15/2024</code>, or <code>Jan 15 2024</code>.
+                      </li>
+                      <li>
+                        If a <code>control_number</code> already exists, that
+                        row will update the old record.
+                      </li>
+                      <li>
+                        Leave cells empty if you do not have the information.
+                      </li>
+                    </ul>
+                    <p class="infoPopupLabel">
+                      Exact header row for the CSV file:
+                    </p>
+                    <pre class="infoHeaderRow">
+control_number,deceased_name,last_known_address,death_certificate,deceased_date_of_birth,deceased_date_of_death,deceased_sex,block_name,grave_code,row_num,col_num,contact_person_name,contact_person_phone_number,contact_person_email,contact_person_address,assistance_type,burial_permit_number,burial_permit_date,transfer_permit_number,transfer_permit_issued_by,transfer_permit_date,exhumation_permit_number,exhumation_permit_date,date_buried,date_exhumed,burial_clearance_date,lease_expiration_date,status,remarks</pre
+                    >
+                  </div>
+                </div>
+              </div>
+              <p>Import records from an excel file or export current data</p>
+            </div>
+          </div>
+
+          <div class="cardControls">
+            <label class="btn secondaryBtn">
+              <i class="fas fa-file-import"></i> Import CSV File
+              <input type="file" id="csvImport" accept=".csv" />
+            </label>
+            <button class="btn secondaryBtn" type="button" id="excelExportBtn">
+              <i class="fas fa-file-export"></i> Export CSV
+            </button>
+          </div>
+
+          <!-- Selected-file row (hidden until a file is picked) -->
+          <div class="importPreview" id="importPreview" hidden>
+            <i class="fas fa-file-csv"></i>
+            <span class="importFileName" id="importFileName">file.csv</span>
+            <button class="btn primaryBtn" type="button" id="importNowBtn">
+              <i class="fas fa-check"></i> Import Now
+            </button>
+            <button
+              class="btn secondaryBtn importRemoveBtn"
+              type="button"
+              id="importCancelBtn"
+              aria-label="Remove selected file"
+            >
+              <i class="fas fa-times"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="dbCard">
+          <div class="cardTop">
+            <div>
+              <div class="cardTitleRow">
+                <h2>Database Backup &amp; Restore</h2>
+                <div class="infoWrap">
+                  <button
+                    class="infoIcon"
+                    type="button"
+                    aria-label="Database backup information"
+                    aria-expanded="false"
+                  >
+                    <i class="fas fa-info-circle"></i>
+                  </button>
+                  <div class="infoPopup" role="tooltip">
+                    <h3>Please read before restoring</h3>
+                    <p>
+                      Restoring a backup replaces
+                      <strong>all current data</strong>. Make sure nobody else
+                      is using the system. The process may take a few minutes to
+                      finish. The system keeps the
+                      <strong>5 most recent backups</strong>. Creating a new one
+                      replaces the oldest.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <p>
+                Create a backup, restore a previous version, or download a copy.
+              </p>
+            </div>
+
+            <button class="btn primaryBtn" type="button" id="backupNowBtn">
+              <i class="fas fa-plus"></i> Back Up Now
+            </button>
+          </div>
+
+          <div class="cardControls">
+            <div class="selectWrapper">
+              <select id="backupVersion" aria-label="Select a backup version">
+                <option value="" disabled selected>Loading backups…</option>
+              </select>
+              <i class="fas fa-chevron-down selectCaret"></i>
+            </div>
+
+            <button class="btn secondaryBtn" type="button" id="restoreBtn">
+              <i class="fas fa-clock-rotate-left"></i> Restore
+            </button>
+
+            <button class="btn secondaryBtn" type="button" id="downloadBtn">
+              <i class="fas fa-download"></i> Download
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- i think this is on admin or higher i guess the delete modal and alert hehe-->
+    <script src="assets/js/delete_modal.js"></script>
+    <script src="assets/js/alert.js"></script>
+    <script src="assets/js/load_site_contents.js"></script>
+    <script>
+      loadSiteContent();
+      loadUserContent();
+    </script>
+    <script src="assets/js/settings.js"></script>
+  </body>
+</html>
