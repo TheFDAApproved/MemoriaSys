@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta charset="UTF-8" />
+    <meta
+      name="description"
+      content="Management system for the Cemetery. Locate plots, monitor leases, and manage notifications."
+    />
+    <meta content="/" property="og:url" />
+    <meta property="og:site_name" content="Memoria" />
+    <meta content="#2f3136" name="theme-color" />
+    <meta name="author" content="Team DND" />
+    <meta property="og:title" content="Memoria | Cemetery Management System" />
+    <meta
+      property="og:description"
+      content="Efficiently manage and locate records within the Cemetery."
+    />
+    <meta
+      property="og:image"
+      content="https://static.wikia.nocookie.net/reborn/images/6/67/Sky_Ring_Battle.PNG/revision/latest?cb=20120422065712"
+    />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="robots" content="index, follow" />
+    <meta name="geo.region" content="PH-CEB" />
+    <meta name="geo.placename" content="Mandaue City" />
+    <title>Map</title>
+
+    <link rel="stylesheet" href="assets/css/root.css" />
+    <link
+      rel="stylesheet"
+      href="api/rootcolors.php"
+      onerror="
+        console.error('Failed to load custom colors. Using default theme.')
+      "
+    />
+    <link rel="stylesheet" href="assets/css/sidebar.css" />
+    <link rel="stylesheet" href="assets/css/map.css" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
+      rel="stylesheet"
+    />
+
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+    />
+
+    <script>
+      // Run this instantly before the page paints
+      if (localStorage.getItem("memoria_role") === "Administrator") {
+        document.documentElement.classList.add("role-admin");
+      }
+      if (localStorage.getItem("memoria_role") === "Office Staff") {
+        document.documentElement.classList.add("role-office");
+      }
+      if (localStorage.getItem("memoria_role") === "Grounds Staff") {
+        document.documentElement.classList.add("role-grounds");
+      }
+    </script>
+  </head>
+
+  <body>
+    <div class="mapContainer">
+      <div class="main">
+        <div class="mapCard">
+          <div class="mapHeader">
+            <h3>Mandaue City Public Cemetery 2D Map</h3>
+            <div class="mapBtn">
+              <button class="editBtn" id="btnEditMap" type="button">
+                Edit Layout
+              </button>
+              <button class="plotBtn" id="btnAddBlock" type="button">
+                Add Block
+              </button>
+              <button
+                class="saveBtn"
+                id="btnSaveMap"
+                style="display: none"
+                type="button"
+              >
+                Save Layout
+              </button>
+              <button
+                class="cancelBtn"
+                id="btnCancelAdd"
+                style="display: none"
+                type="button"
+              >
+                Cancel resize
+              </button>
+              <button
+                class="reshapeSubBtn done"
+                id="btnKeepSide"
+                style="display: none"
+                type="button"
+                onclick="MAP.keepSplitSide()"
+              >
+                &#10003; Keep this side
+              </button>
+              <button
+                class="reshapeSubBtn"
+                id="btnSwapSide"
+                style="display: none"
+                type="button"
+                onclick="MAP.swapSplitSide()"
+              >
+                &#8646; Other side
+              </button>
+              <button
+                class="reshapeSubBtn done"
+                id="btnDoneReshape"
+                style="display: none"
+                type="button"
+                onclick="MAP.exitReshapeMode()"
+              >
+                &#10003; Done Reshape
+              </button>
+              <button
+                class="cancelBtn"
+                id="btnUndoReshape"
+                style="display: none"
+                type="button"
+                onclick="MAP.undoReshape()"
+              >
+                &#8630; Undo
+              </button>
+            </div>
+          </div>
+
+          <div class="mapMeta">
+            <div class="mapStatus" id="mapStatus"></div>
+          </div>
+
+          <div class="mapCanvas" id="mapCanvas">
+            <canvas id="mapCvs"></canvas>
+            <div class="mapHint" id="mapHint"></div>
+            <div class="mapLoading" id="mapLoading">Loading map&hellip;</div>
+          </div>
+
+          <div class="mapLegend">
+            <div class="legendItem">
+              <div
+                class="legendDot"
+                style="background: #fff; border-color: #cbd5e1"
+              ></div>
+              Available
+            </div>
+            <div class="legendItem">
+              <div
+                class="legendDot"
+                style="background: #dcfce7; border-color: #4ade80"
+              ></div>
+              Occupied
+            </div>
+            <div class="legendItem">
+              <div
+                class="legendDot"
+                style="background: #dbeafe; border-color: #60a5fa"
+              ></div>
+              Reserved
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="modalOverlay" id="modalOverlay">
+        <div class="modalBox">
+          <h3 id="modalTitle"></h3>
+          <div id="modalBody"></div>
+          <div class="modalActions">
+            <button id="modalCancel">Cancel</button>
+            <button id="modalConfirm" class="btnPrimary">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="assets/js/alert.js"></script>
+    <script src="assets/js/map.js"></script>
+    <script src="assets/js/sidebar.js"></script>
+    <script>
+      initAuth(["Office Staff", "Administrator"]);
+    </script>
+  </body>
+</html>

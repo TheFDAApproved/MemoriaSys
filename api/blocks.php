@@ -6,8 +6,17 @@
  * GET    : List all blocks (with counts) or get a specific block with its graves (paginated).
  * POST   : Create a new block (with optional grave generation).
  * PUT    : Update block details and adjust the grave grid (expand/shrink).
- * DELETE : Soft‑delete a block only if all its graves are vacant and unused.
- *         (Graves are also soft‑deleted, preserving history.)
+ * DELETE : Soft‑delete a block.
+ *
+ * NOTE: `rows` and `cols` are reserved words in MariaDB and must be backticked.
+ * NOTE: `coordinates` holds the legacy GPS JSON ({lat,lng}); `coordinates_canvas`
+ *       holds the 2D canvas pixel geometry used by map.js.
+ *
+ * Rename: always allowed, even when the block has graves.
+ *         Grave codes are rewritten so their prefix matches the new block name.
+ *
+ * Delete: always allowed. Soft-deletes every grave in the block too.
+ *         The frontend confirms before calling this.
  */
 
 define('ITS_ME_JUSTTOVERIFY', true);
@@ -22,19 +31,15 @@ $role = $userData['role'] ?? null;
 $isStaff = in_array($role, [ROLE_ADMIN, ROLE_OFFICE, ROLE_GROUNDS]);
 $isAdminOffice = in_array($role, [ROLE_ADMIN, ROLE_OFFICE]);
 
-// Parse path info for resource ID
 $pathInfo   = $_GET['path_info'] ?? $_SERVER['PATH_INFO'] ?? '';
 $pathParts  = array_filter(explode('/', trim($pathInfo, '/')));
-$resourceId = array_shift($pathParts); // numeric ID or empty
+$resourceId = array_shift($pathParts);
 
 $rawData = array_merge(
     json_decode(file_get_contents("php://input"), true) ?: [],
     $_POST ?? []
 );
 
-// -----------------------------------------------------------------------------
-// Helper: Count graves in a block by status (only non‑deleted graves)
-// -----------------------------------------------------------------------------
 function getBlockCounts($pdo, $blockId)
 {
     $stmt = $pdo->prepare("
@@ -50,11 +55,10 @@ function getBlockCounts($pdo, $blockId)
 }
 
 // -----------------------------------------------------------------------------
-// GET – List blocks or block details
+// GET
 // -----------------------------------------------------------------------------
 if ($method === 'GET') {
     if (is_numeric($resourceId)) {
-        // Fetch specific block (only if not deleted)
         if ($isStaff) {
             $blockStmt = $pdo->prepare("
                 SELECT * FROM blocks 
@@ -62,7 +66,8 @@ if ($method === 'GET') {
             ");
         } else {
             $blockStmt = $pdo->prepare("
-                SELECT block_id, block_name, block_type, coordinates, image_link 
+                SELECT block_id, block_name, block_type, coordinates, coordinates_canvas,
+                       image_link, `rows`, `cols`, shape, custom
                 FROM blocks 
                 WHERE block_id = ? AND deleted_at IS NULL
             ");
@@ -73,14 +78,12 @@ if ($method === 'GET') {
             Response::error("Block not found.", 404);
         }
 
-        // Pagination for graves (only non‑deleted graves)
         $limit = isset($_GET['limit']) ? (int) $_GET['limit'] : 100;
         $limit = max(1, min($limit, 500));
         $page  = isset($_GET['page']) ? (int) $_GET['page'] : 1;
         $page  = max(1, $page);
         $offset = ($page - 1) * $limit;
 
-        // Count non‑deleted graves in this block
         $countStmt = $pdo->prepare("
             SELECT COUNT(*) FROM graves 
             WHERE block_id = ? AND deleted_at IS NULL
@@ -91,9 +94,7 @@ if ($method === 'GET') {
         $page = min($page, $totalPages ?: 1);
         $offset = ($page - 1) * $limit;
 
-        // Fetch graves (with occupants) – only active, non‑deleted interments
         if ($isStaff) {
-            // First get grave IDs for pagination
             $graveIdStmt = $pdo->prepare("
                 SELECT grave_id
                 FROM graves
@@ -111,16 +112,10 @@ if ($method === 'GET') {
                 $graveSql = "
                     SELECT 
                         g.grave_id, g.grave_code, g.row_num, g.col_num, g.status, g.remarks,
-                        i.interment_id,
-                        i.control_number,
-                        i.deceased_name,
-                        i.last_known_address,
-                        i.date_buried,
-                        i.lease_expiration_date,
-                        i.contact_person_name,
-                        i.contact_person_phone_number,
-                        i.contact_person_email,
-                        i.contact_person_address
+                        i.interment_id, i.control_number, i.deceased_name,
+                        i.last_known_address, i.date_buried, i.lease_expiration_date,
+                        i.contact_person_name, i.contact_person_phone_number,
+                        i.contact_person_email, i.contact_person_address
                     FROM graves g
                     LEFT JOIN interments i 
                         ON g.grave_id = i.current_grave_id 
@@ -133,7 +128,6 @@ if ($method === 'GET') {
                 $graveStmt->execute($graveIds);
                 $rows = $graveStmt->fetchAll(PDO::FETCH_ASSOC);
 
-                // Group by grave_id
                 $gravesMap = [];
                 foreach ($rows as $row) {
                     $graveId = $row['grave_id'];
@@ -166,7 +160,6 @@ if ($method === 'GET') {
                 $graves = array_values($gravesMap);
             }
         } else {
-            // Public: only non-sensitive grave fields
             $graveSql = "
                 SELECT grave_id, grave_code, row_num, col_num, status
                 FROM graves
@@ -195,14 +188,11 @@ if ($method === 'GET') {
             ]
         ]);
     } else {
-        // ---- Optional search_term ----
         $searchTerm = isset($_GET['search_term']) ? trim((string) $_GET['search_term']) : '';
         if ($searchTerm !== '' && mb_strlen($searchTerm) < 3) {
             Response::error("Search term must be at least 3 characters long", 400);
         }
 
-        // Build the search clause. Staff can search remarks; public cannot
-        // (public responses don't include remarks, so searching on it would leak).
         $searchSQL    = '';
         $searchParams = [];
         if ($searchTerm !== '') {
@@ -219,7 +209,6 @@ if ($method === 'GET') {
             $searchSQL = ' AND (' . implode(' OR ', $parts) . ')';
         }
 
-        // List all blocks – role-based columns, only non-deleted blocks
         if ($isStaff) {
             $sql = "
                 SELECT b.*,
@@ -232,10 +221,10 @@ if ($method === 'GET') {
                 ORDER BY b.block_id
             ";
         } else {
-            // Public: include image_link
             $sql = "
                 SELECT
-                    b.block_id, b.block_name, b.block_type, b.coordinates, b.image_link,
+                    b.block_id, b.block_name, b.block_type, b.coordinates, b.coordinates_canvas,
+                    b.image_link, b.`rows`, b.`cols`, b.shape, b.custom,
                     (SELECT COUNT(*) FROM graves WHERE block_id = b.block_id AND deleted_at IS NULL) AS total_graves,
                     (SELECT COUNT(*) FROM graves WHERE block_id = b.block_id AND status = 'Vacant' AND deleted_at IS NULL) AS vacant,
                     (SELECT COUNT(*) FROM graves WHERE block_id = b.block_id AND status = 'Occupied' AND deleted_at IS NULL) AS occupied
@@ -250,8 +239,6 @@ if ($method === 'GET') {
         $stmt->execute($searchParams);
         $blocks = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Preserve the original bare-array response when no search.
-        // Only wrap when we actually have a search_term to echo back.
         if ($searchTerm === '') {
             Response::success("Blocks retrieved.", $blocks);
         } else {
@@ -268,20 +255,24 @@ if (!$isAdminOffice) {
 }
 
 // -----------------------------------------------------------------------------
-// POST – Create a new block
+// POST
 // -----------------------------------------------------------------------------
 if ($method === 'POST') {
 
     if (empty($rawData['block_name']) || empty($rawData['block_type'])) {
         Response::error("block_name and block_type are required.", 400);
     }
-    $blockName = trim($rawData['block_name']);
-    $blockType = trim($rawData['block_type']);
+    $blockName   = trim($rawData['block_name']);
+    $blockType   = trim($rawData['block_type']);
     $coordinates = $rawData['coordinates'] ?? null;
-    $remarks = trim($rawData['remarks'] ?? '');
-    $image_link = trim($rawData['image_link'] ?? '');
+    $coordinates_canvas = $rawData['coordinates_canvas'] ?? null;
+    $remarks     = trim($rawData['remarks'] ?? '');
+    $image_link  = trim($rawData['image_link'] ?? '');
 
-    $validTypes = ['Niche', 'Bone Chamber', 'Lawn/Grounds', 'Unmapped Area', 'Private', 'Mausoleum', 'Mass Grave', 'Cluster', 'Block'];
+    $shape  = trim($rawData['shape']  ?? 'rectangle');
+    $custom = !empty($rawData['custom']) ? 1 : 0;
+
+    $validTypes = ['Niche', 'Bone Chamber', 'Unmapped Area', 'Private', 'Mausoleum', 'Mass Grave', 'Cluster', 'Block'];
     if (!in_array($blockType, $validTypes)) {
         Response::error("Invalid block_type. Allowed: " . implode(', ', $validTypes), 400);
     }
@@ -305,20 +296,28 @@ if ($method === 'POST') {
     try {
         $stmt = $pdo->prepare("
             INSERT INTO blocks 
-                (block_name, block_type, coordinates, remarks, image_link, created_by, updated_by)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+                (block_name, block_type, coordinates, coordinates_canvas, remarks, image_link,
+                 `rows`, `cols`, shape, custom, created_by, updated_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $stmt->execute([
             $blockName,
             $blockType,
             $coordinates,
+            $coordinates_canvas,
             $remarks,
             $image_link,
+            $rows,
+            $cols,
+            $shape,
+            $custom,
             $userData['user_id'],
             $userData['user_id']
         ]);
         $blockId = $pdo->lastInsertId();
 
+        // Only generate graves when both rows and cols are greater than 0.
+        // A block with rows=0 or cols=0 is created with no grave grid at all.
         if ($rows > 0 && $cols > 0) {
             $graveSql = "INSERT INTO graves (block_id, grave_code, row_num, col_num, status) VALUES ";
             $values = [];
@@ -339,7 +338,7 @@ if ($method === 'POST') {
         }
 
         $pdo->commit();
-        systemLog("Created new block ID $blockId: $blockName", $userData['user_id']);
+        systemLog("Created new block ID $blockId: $blockName (rows=$rows cols=$cols)", $userData['user_id']);
         Response::success("Block created.", ['block_id' => $blockId], 201);
     } catch (PDOException $e) {
         $pdo->rollBack();
@@ -349,7 +348,7 @@ if ($method === 'POST') {
 }
 
 // -----------------------------------------------------------------------------
-// PUT – Update a block
+// PUT
 // -----------------------------------------------------------------------------
 if ($method === 'PUT') {
 
@@ -358,7 +357,6 @@ if ($method === 'PUT') {
     }
     $blockId = (int) $resourceId;
 
-    // Fetch current block (only if not deleted)
     $currentStmt = $pdo->prepare("
         SELECT * FROM blocks 
         WHERE block_id = ? AND deleted_at IS NULL
@@ -369,7 +367,6 @@ if ($method === 'PUT') {
         Response::error("Block not found.", 404);
     }
 
-    // Get current max rows/cols (only non‑deleted graves)
     $maxStmt = $pdo->prepare("
         SELECT MAX(row_num) AS max_r, MAX(col_num) AS max_c 
         FROM graves 
@@ -379,21 +376,15 @@ if ($method === 'PUT') {
     $max = $maxStmt->fetch(PDO::FETCH_ASSOC);
     $currentMaxRows = (int)($max['max_r'] ?? 0);
     $currentMaxCols = (int)($max['max_c'] ?? 0);
-
-    // Check if there are any graves at all
     $hasGraves = ($currentMaxRows > 0 && $currentMaxCols > 0);
 
-    // --- Build update fields (block_name, type, coordinates, remarks, image_link) ---
     $updates = [];
     $params = [];
 
-    // Block name handling: only allow change if no graves exist
+    // Rename: always allowed. Grave codes get their prefix rewritten to match.
     if (isset($rawData['block_name'])) {
         $newName = trim($rawData['block_name']);
         if ($newName !== $current['block_name']) {
-            if ($hasGraves) {
-                Response::error("Cannot change block_name because the block already has graves.", 400);
-            }
             $check = $pdo->prepare("
                 SELECT block_id FROM blocks 
                 WHERE block_name = ? AND block_id != ? AND deleted_at IS NULL
@@ -402,12 +393,30 @@ if ($method === 'PUT') {
             if ($check->fetch()) {
                 Response::error("Block name already exists.", 409);
             }
+
+            $oldName = $current['block_name'];
             $updates[] = "block_name = ?";
             $params[] = $newName;
+
+            if ($hasGraves) {
+                $graveUpdate = $pdo->prepare("
+                    UPDATE graves 
+                    SET grave_code = CONCAT(?, SUBSTRING(grave_code, ?))
+                    WHERE block_id = ? 
+                      AND deleted_at IS NULL
+                      AND grave_code LIKE ?
+                ");
+                $graveUpdate->execute([
+                    $newName . '-',
+                    strlen($oldName) + 1,
+                    $blockId,
+                    $oldName . '-%',
+                ]);
+            }
         }
     }
 
-    $allowedFields = ['block_type', 'coordinates', 'remarks', 'image_link'];
+    $allowedFields = ['block_type', 'coordinates', 'coordinates_canvas', 'remarks', 'image_link', 'shape', 'custom'];
     foreach ($allowedFields as $field) {
         if (array_key_exists($field, $rawData)) {
             $updates[] = "$field = ?";
@@ -415,35 +424,36 @@ if ($method === 'PUT') {
         }
     }
 
-    // --- Grid adjustment ---
     $newRows = isset($rawData['rows']) ? (int) $rawData['rows'] : null;
     $newCols = isset($rawData['cols']) ? (int) $rawData['cols'] : null;
 
-    // If no fields to update and no grid change, exit early
+    if ($newRows !== null) {
+        $updates[] = "`rows` = ?";
+        $params[] = $newRows;
+    }
+    if ($newCols !== null) {
+        $updates[] = "`cols` = ?";
+        $params[] = $newCols;
+    }
+
     if (empty($updates) && $newRows === null && $newCols === null) {
         Response::error("No fields to update.", 400);
     }
 
-    // Validate dimensions if provided
-    if ($newRows !== null && $newRows < 1) Response::error("rows must be at least 1.", 400);
-    if ($newCols !== null && $newCols < 1) Response::error("cols must be at least 1.", 400);
+    if ($newRows !== null && $newRows < 0) Response::error("rows cannot be negative.", 400);
+    if ($newCols !== null && $newCols < 0) Response::error("cols cannot be negative.", 400);
 
-    // Cap dimensions to prevent abuse (optional)
     $maxAllowed = 500;
     if (($newRows !== null && $newRows > $maxAllowed) || ($newCols !== null && $newCols > $maxAllowed)) {
         Response::error("rows and cols cannot exceed $maxAllowed.", 400);
     }
 
-    // Determine target dimensions
     $targetRows = $newRows ?? $currentMaxRows;
     $targetCols = $newCols ?? $currentMaxCols;
-
-    // If grid dimensions unchanged, skip grid adjustment
     $gridChanged = ($targetRows != $currentMaxRows || $targetCols != $currentMaxCols);
 
     $pdo->beginTransaction();
     try {
-        // Update block meta fields (include updated_by)
         if (!empty($updates)) {
             $updates[] = "updated_by = ?";
             $params[] = $userData['user_id'];
@@ -453,34 +463,9 @@ if ($method === 'PUT') {
             $stmt->execute($params);
         }
 
-        // ---- Grid adjustment ----
         if ($gridChanged) {
-            // --- Shrink: remove graves outside target dimensions (soft delete) ---
             if ($targetRows < $currentMaxRows || $targetCols < $currentMaxCols) {
-                // FIX: Use INNER JOIN and explicitly check for Active or Pending interments.
-                // This allows graves with only 'Inactive' (historical) records to be safely removed
-                // if the physical block dimensions were mapped incorrectly.
-                $checkSql = "
-                    SELECT EXISTS (
-                        SELECT 1
-                        FROM graves g
-                        INNER JOIN interments i
-                            ON (i.current_grave_id = g.grave_id OR i.transfer_to_grave = g.grave_id)
-                        WHERE g.block_id = ?
-                          AND g.deleted_at IS NULL
-                          AND (g.row_num > ? OR g.col_num > ?)
-                          AND i.deleted_at IS NULL
-                          AND i.status IN ('Active', 'Pending')
-                    )
-                ";
-                $checkStmt = $pdo->prepare($checkSql);
-                $checkStmt->execute([$blockId, $targetRows, $targetCols]);
-                if ($checkStmt->fetchColumn()) {
-                    $pdo->rollBack();
-                    Response::error("Cannot shrink block: some graves to be removed have Active or Pending interment records.", 400);
-                }
-
-                // Soft‑delete the graves outside the new grid
+                // Shrink: soft-delete graves outside the new bounds.
                 $del = $pdo->prepare("
                     UPDATE graves 
                     SET deleted_at = NOW(), updated_by = ? 
@@ -489,19 +474,15 @@ if ($method === 'PUT') {
                 $del->execute([$userData['user_id'], $blockId, $targetRows, $targetCols]);
             }
 
-            // --- Expand: add new graves (only if not already existing) ---
             if ($targetRows > $currentMaxRows || $targetCols > $currentMaxCols) {
-                // Fetch block name for grave codes (once)
                 $nameStmt = $pdo->prepare("SELECT block_name FROM blocks WHERE block_id = ?");
                 $nameStmt->execute([$blockId]);
                 $blockName = $nameStmt->fetchColumn();
 
-                // Build bulk INSERT values for new cells only
                 $values = [];
                 $insertParams = [];
                 for ($r = 1; $r <= $targetRows; $r++) {
                     for ($c = 1; $c <= $targetCols; $c++) {
-                        // Only add if this cell is outside the existing grid
                         if ($r > $currentMaxRows || $c > $currentMaxCols) {
                             $code = $blockName . '-' . str_pad($r, 2, '0', STR_PAD_LEFT) . '-' . str_pad($c, 2, '0', STR_PAD_LEFT);
                             $values[] = "(?, ?, ?, ?, 'Vacant')";
@@ -515,7 +496,6 @@ if ($method === 'PUT') {
 
                 if (!empty($values)) {
                     $insertSql = "INSERT INTO graves (block_id, grave_code, row_num, col_num, status) VALUES " . implode(', ', $values);
-                    // Use INSERT IGNORE to safely skip any duplicates (shouldn't happen with our logic)
                     $insertSql = str_replace("INSERT INTO", "INSERT IGNORE INTO", $insertSql);
                     $insertStmt = $pdo->prepare($insertSql);
                     $insertStmt->execute($insertParams);
@@ -534,7 +514,11 @@ if ($method === 'PUT') {
 }
 
 // -----------------------------------------------------------------------------
-// DELETE – Soft‑delete a block (only if all graves are vacant and unused)
+// DELETE
+//
+// NOTE: The delete guard has been removed. Deleting a block now soft-deletes
+// every grave inside it too. The frontend confirms before calling this so a
+// stray click can't wipe real burial records.
 // -----------------------------------------------------------------------------
 if ($method === 'DELETE') {
     if (!is_numeric($resourceId)) {
@@ -542,7 +526,6 @@ if ($method === 'DELETE') {
     }
     $blockId = (int) $resourceId;
 
-    // Check if block exists and is not already deleted
     $blockCheck = $pdo->prepare("
         SELECT block_id FROM blocks 
         WHERE block_id = ? AND deleted_at IS NULL
@@ -552,31 +535,8 @@ if ($method === 'DELETE') {
         Response::error("Block not found or already deleted.", 404);
     }
 
-    // Check for non‑vacant graves OR any interment referencing any grave in the block (only non‑deleted ones)
-    $checkSql = "
-        SELECT 
-            (SELECT COUNT(*) FROM graves WHERE block_id = ? AND status != 'Vacant' AND deleted_at IS NULL) AS non_vacant_count,
-            (SELECT COUNT(*) FROM interments 
-             WHERE (current_grave_id IN (SELECT grave_id FROM graves WHERE block_id = ? AND deleted_at IS NULL)
-                    OR transfer_to_grave IN (SELECT grave_id FROM graves WHERE block_id = ? AND deleted_at IS NULL))
-               AND deleted_at IS NULL
-            ) AS interment_count
-    ";
-    $checkStmt = $pdo->prepare($checkSql);
-    $checkStmt->execute([$blockId, $blockId, $blockId]);
-    $result = $checkStmt->fetch(PDO::FETCH_ASSOC);
-
-    if ($result['non_vacant_count'] > 0) {
-        Response::error("Cannot delete block: it contains " . $result['non_vacant_count'] . " grave(s) that are not vacant.", 400);
-    }
-    if ($result['interment_count'] > 0) {
-        Response::error("Cannot delete block: some graves have associated interment records (active, pending, or inactive).", 400);
-    }
-
-    // Proceed: soft‑delete all graves first, then the block
     $pdo->beginTransaction();
     try {
-        // Soft‑delete graves
         $delGraves = $pdo->prepare("
             UPDATE graves 
             SET deleted_at = NOW(), updated_by = ? 
@@ -584,7 +544,6 @@ if ($method === 'DELETE') {
         ");
         $delGraves->execute([$userData['user_id'], $blockId]);
 
-        // Soft‑delete the block
         $delBlock = $pdo->prepare("
             UPDATE blocks 
             SET deleted_at = NOW(), updated_by = ? 
@@ -602,7 +561,4 @@ if ($method === 'DELETE') {
     }
 }
 
-// -----------------------------------------------------------------------------
-// Method not allowed
-// -----------------------------------------------------------------------------
 Response::error("Method Not Allowed", 405);
