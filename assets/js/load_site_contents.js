@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  const API_URL = "/api/settings";
+  const API_URL = "api/settings";
 
   // Dropdowns: setting_key -> placeholder text
   const SELECT_SETTINGS = {
@@ -232,7 +232,7 @@
 (function () {
   "use strict";
 
-  const USER_API = "/api/users/me";
+  const USER_API = "api/users/me";
 
   /* ------------------------------------------------------------------
    * Special id-prefix aliases: id prefix -> JSON key.

@@ -2,7 +2,7 @@
    settings.js
    ================================================================ */
 
-const EXCEL_API = "/api/csv"; // ← change to your actual endpoint
+const EXCEL_API = "api/csv"; // ← change to your actual endpoint
 
 document.addEventListener("DOMContentLoaded", () => {
   /* ============================================================
@@ -209,7 +209,7 @@ document.addEventListener("DOMContentLoaded", () => {
     phone_number: "phone_number",
   };
 
-  const PROFILE_API = "/api/users/me";
+  const PROFILE_API = "api/users/me";
   /* -------- Map an error message to the field it belongs to --------
      Order matters: more specific patterns first. */
   const PROFILE_ERROR_FIELD_MAP = [
@@ -349,7 +349,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  const LOGOUT_API = "/api/auth"; // adjust to your actual logout endpoint
+  const LOGOUT_API = "api/auth"; // adjust to your actual logout endpoint
   const LOGIN_URL = "login.html";
 
   updatePasswordBtn?.addEventListener("click", () => {
@@ -405,7 +405,7 @@ document.addEventListener("DOMContentLoaded", () => {
      3. SYSTEM CONFIGURATION
      ============================================================ */
   const systemConfigForm = document.getElementById("system_config_form");
-  const SYSTEM_API = "/api/settings";
+  const SYSTEM_API = "api/settings";
 
   // Simple single-input settings
   const SYSTEM_SETTINGS = [
@@ -747,7 +747,7 @@ document.addEventListener("DOMContentLoaded", () => {
      POST   /api/backup            → create (5-file retention)
      PUT    /api/backup/{file}     → restore
      ============================================================ */
-  const BACKUP_API = "/api/backup";
+  const BACKUP_API = "api/backup";
   const BACKUP_LIMIT = 5; // must mirror BACKUP_LIMIT in PHP
 
   const backupNowBtn = document.getElementById("backupNowBtn");
