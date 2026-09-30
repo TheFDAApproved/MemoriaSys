@@ -179,15 +179,18 @@ function saveTextBeeCredentials($plainTextApiKey, $plainTextDeviceId, $userId = 
         $encryptedDeviceId = encryptCredential($plainTextDeviceId);
 
         // 2. Prepare the database insert/update statement
-        // Using ON DUPLICATE KEY UPDATE to handle existing keys
+        // Using ON DUPLICATE KEY UPDATE to handle existing keys.
+        // NOTE: VALUES(col) syntax is used for MariaDB 10.4 compatibility
+        // (the `AS new` alias syntax requires MySQL 8.0.19+ / MariaDB 11.x+).
         $stmt = $pdo->prepare("
             INSERT INTO settings 
             (setting_key, setting_value, description, created_at, updated_at, created_by, updated_by)
-            VALUES (:key, :value, :desc, NOW(), NOW(), :created_by, :updated_by) AS new
+            VALUES (:key, :value, :desc, NOW(), NOW(), :created_by, :updated_by)
             ON DUPLICATE KEY UPDATE
-            setting_value = new.setting_value,
+            setting_value = VALUES(setting_value),
+            description   = VALUES(description),
             updated_at    = NOW(),
-            updated_by    = new.updated_by
+            updated_by    = VALUES(updated_by)
         ");
 
         // Save the encrypted API Key

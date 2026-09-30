@@ -217,13 +217,13 @@ try {
                             INSERT INTO settings 
                                 (setting_key, setting_value, description, created_at, updated_at, created_by, updated_by, deleted_at)
                             VALUES 
-                            (:key, :value, :desc, NOW(), NOW(), :created_by, :updated_by, NULL) AS new
+                                (:key, :value, :desc, NOW(), NOW(), :created_by, :updated_by, NULL)
                             ON DUPLICATE KEY UPDATE
-                                setting_value = new.setting_value,
-                                description   = new.description,
+                                setting_value = VALUES(setting_value),
+                                description   = VALUES(description),
                                 updated_at    = NOW(),
-                                updated_by    = new.updated_by,
-                                deleted_at    = NULL   -- restore if it was soft-deleted
+                                updated_by    = VALUES(updated_by),
+                                deleted_at    = NULL
                         ";
 
                         $stmt = $pdo->prepare($sql);
