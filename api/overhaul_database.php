@@ -32,7 +32,7 @@ try {
     $pdo = new PDO("mysql:host=$host;dbname=$db;charset=$charset", $user, $pass, $options);
 
     // -----------------------------------------------------------------
-    // 2. Create tables, trigger, comments, indexes
+    // 2. Create tables, triggers, comments, indexes
     // -----------------------------------------------------------------
     $ddl = [
         <<<'SQL'
@@ -198,6 +198,11 @@ SQL,
         //      has been chosen yet.
         //   2. Real reservations (pending_interment_id IS NOT NULL) — an
         //      incoming occupant exists and will be activated on execute.
+        //
+        // Uniqueness on pending_interment_id is soft-delete-aware: a
+        // soft-deleted reservation must NOT block a new active reservation
+        // for the same pending interment, so we use a generated shadow
+        // column instead of a plain UNIQUE.
         <<<'SQL'
 CREATE TABLE reservation_details (
     reservation_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -228,9 +233,15 @@ CREATE TABLE reservation_details (
     created_by INT NULL,
     updated_by INT NULL,
 
-    -- One active reservation per pending interment.
-    -- MySQL allows multiple NULLs, so plan-only rows coexist freely.
-    CONSTRAINT uk_active_pending_interment UNIQUE (pending_interment_id),
+    -- One ACTIVE reservation per pending interment.
+    -- Generated column is NULL for soft-deleted rows, so they don't block
+    -- the slot. MySQL allows multiple NULLs in a UNIQUE index, so plan-only
+    -- rows (pending_interment_id IS NULL) coexist freely.
+    active_pending_interment_id INT
+        GENERATED ALWAYS AS (
+            CASE WHEN deleted_at IS NULL THEN pending_interment_id ELSE NULL END
+        ) STORED,
+    CONSTRAINT uk_active_pending_interment UNIQUE (active_pending_interment_id),
 
     -- One active reservation per target grave. The generated column is NULL
     -- for plan-only rows, so a plan can coexist with a real reservation on
@@ -344,14 +355,26 @@ CREATE TABLE payments (
 );
 SQL,
 
+        // ------------------------------------------------------------------
+        // Triggers – drop first so the script is idempotent, then create.
+        // (No DELIMITER needed: PDO::exec sends one whole statement per call,
+        //  so the internal semicolons in BEGIN...END are parsed correctly.)
+        // ------------------------------------------------------------------
+
+        "DROP TRIGGER IF EXISTS log_grave_transfer",
+        "DROP TRIGGER IF EXISTS log_initial_interment",
+
+        // Logs any real change of current_grave_id:
+        //   NULL -> grave   (initial burial)
+        //   grave -> grave  (transfer)
+        //   grave -> NULL   (removed / exhumed)
+        // Uses the NULL-safe <=> operator so NULL -> grave also logs.
         <<<'SQL'
 CREATE TRIGGER log_grave_transfer
 BEFORE UPDATE ON interments
 FOR EACH ROW
 BEGIN
-    IF OLD.current_grave_id IS NOT NULL
-       AND (OLD.current_grave_id <=> NEW.current_grave_id) = 0 THEN
-
+    IF (OLD.current_grave_id <=> NEW.current_grave_id) = 0 THEN
         INSERT INTO transfer_log (
             interment_id,
             from_grave_id,
@@ -365,7 +388,32 @@ BEGIN
             NOW(),
             NEW.remarks
         );
+    END IF;
+END
+SQL,
 
+        // Logs initial burial if an interment is inserted directly with a
+        // grave. If it is inserted as Pending with NULL and later updated,
+        // the UPDATE trigger above will log it instead.
+        <<<'SQL'
+CREATE TRIGGER log_initial_interment
+AFTER INSERT ON interments
+FOR EACH ROW
+BEGIN
+    IF NEW.current_grave_id IS NOT NULL THEN
+        INSERT INTO transfer_log (
+            interment_id,
+            from_grave_id,
+            to_grave_id,
+            transfer_date,
+            reason
+        ) VALUES (
+            NEW.interment_id,
+            NULL,
+            NEW.current_grave_id,
+            NOW(),
+            NEW.remarks
+        );
     END IF;
 END
 SQL,
@@ -408,7 +456,7 @@ SQL,
     foreach ($ddl as $sql) {
         $pdo->exec($sql);
     }
-    echo "Tables, trigger, comments, and indexes created.\n";
+    echo "Tables, triggers, comments, and indexes created.\n";
 
     // -----------------------------------------------------------------
     // 3. Insert the single admin user
@@ -697,6 +745,9 @@ SQL,
 
     // -----------------------------------------------------------------
     // 8. Create transfer history for some active interments
+    //    (The log_grave_transfer trigger now records NULL->grave, so the
+    //     initial-burial rows for Active interments inserted above are
+    //     already in transfer_log. The moves below add grave->grave rows.)
     // -----------------------------------------------------------------
     echo "Creating transfer history for some interments...\n";
 
@@ -727,7 +778,8 @@ SQL,
 
         $moveReason = "Transferred from grave " . $oldGraveId . " to " . $newGraveId . " for family plot consolidation.";
 
-        // NOTE: transfer_to_grave removed from the UPDATE.
+        // NOTE: transfer_to_grave removed from the UPDATE. The trigger
+        // logs this move automatically.
         $stmtUpdateInterment->execute([
             $newGraveId,
             date('Y-m-d'),

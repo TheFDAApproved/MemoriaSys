@@ -244,10 +244,15 @@ CREATE TABLE reservation_details (
     created_by INT NULL,
     updated_by INT NULL,
 
+    -- Shadow columns for soft-delete-aware uniqueness.
     -- One active reservation per pending interment.
     -- MySQL allows multiple NULLs in a UNIQUE index, so plan-only rows
     -- (pending_interment_id IS NULL) coexist freely.
-    CONSTRAINT uk_active_pending_interment UNIQUE (pending_interment_id),
+    active_pending_interment_id INT
+        GENERATED ALWAYS AS (
+            CASE WHEN deleted_at IS NULL THEN pending_interment_id ELSE NULL END
+        ) STORED,
+    CONSTRAINT uk_active_pending_interment UNIQUE (active_pending_interment_id),
 
     -- One active reservation per target grave (prevents double-booking).
     -- The generated column is NULL for plan-only rows, so a plan can
@@ -261,6 +266,7 @@ CREATE TABLE reservation_details (
         ) STORED,
     CONSTRAINT uk_active_target_grave UNIQUE (active_target_grave_id),
 
+    -- One active reservation per old interment being displaced.
     active_old_interment_id INT
         GENERATED ALWAYS AS (CASE WHEN deleted_at IS NULL THEN old_interment_id ELSE NULL END) STORED,
     CONSTRAINT uk_active_old_interment UNIQUE (active_old_interment_id),
@@ -372,34 +378,59 @@ CREATE TABLE payments (
 );
 
 --  ----------------------------------------------------------------------
---  TRIGGER – Auto-log grave transfers
+--  TRIGGERS – Auto-log grave movements
 --  ----------------------------------------------------------------------
+DROP TRIGGER IF EXISTS log_grave_transfer;
+DROP TRIGGER IF EXISTS log_initial_interment;
+
 DELIMITER //
 
+-- Logs any real change of current_grave_id:
+--   NULL -> grave   (initial burial)
+--   grave -> grave  (transfer)
+--   grave -> NULL   (removed / exhumed)
 CREATE TRIGGER log_grave_transfer
 BEFORE UPDATE ON interments
 FOR EACH ROW
 BEGIN
-    -- Only log a REAL transfer:
-    --   1. There was a previous grave (OLD.current_grave_id IS NOT NULL)
-    --   2. The grave actually changed
-    IF OLD.current_grave_id IS NOT NULL
-       AND (OLD.current_grave_id <=> NEW.current_grave_id) = 0 THEN
-
+    IF (OLD.current_grave_id <=> NEW.current_grave_id) = 0 THEN
         INSERT INTO transfer_log (
             interment_id,
             from_grave_id,
             to_grave_id,
-            transfer_date,    -- ⬅️ Stores the exact moment of the move
+            transfer_date,
             reason
         ) VALUES (
             NEW.interment_id,
             OLD.current_grave_id,
             NEW.current_grave_id,
-            NOW(),            -- ⬅️ Exact date + time the trigger ran
+            NOW(),
             NEW.remarks
         );
+    END IF;
+END//
 
+-- Logs initial burial if an interment is inserted directly with a grave.
+-- If it is inserted as Pending with NULL and later updated, the UPDATE
+-- trigger above will log it instead.
+CREATE TRIGGER log_initial_interment
+AFTER INSERT ON interments
+FOR EACH ROW
+BEGIN
+    IF NEW.current_grave_id IS NOT NULL THEN
+        INSERT INTO transfer_log (
+            interment_id,
+            from_grave_id,
+            to_grave_id,
+            transfer_date,
+            reason
+        ) VALUES (
+            NEW.interment_id,
+            NULL,
+            NEW.current_grave_id,
+            NOW(),
+            NEW.remarks
+        );
     END IF;
 END//
 
