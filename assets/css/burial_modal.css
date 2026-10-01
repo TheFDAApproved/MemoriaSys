@@ -76,6 +76,11 @@
 
 .modalOverlay .paperForm input[type="text"],
 .modalOverlay .paperForm input[type="date"],
+.modalOverlay .paperForm input[type="email"],
+.modalOverlay .paperForm input[type="tel"],
+.modalOverlay .paperForm input[type="url"],
+.modalOverlay .paperForm input[type="number"],
+.modalOverlay .paperForm input[type="password"],
 .modalOverlay .paperForm select {
     box-sizing: border-box;
     width: 100%;
@@ -86,11 +91,16 @@
     background: #fff;
     color: #334155;
     font-size: 14px;
-    transition: border 0.2s;
+    transition: border 0.2s, color 0.2s;
 }
 
 .modalOverlay .paperForm input[type="text"]:focus,
 .modalOverlay .paperForm input[type="date"]:focus,
+.modalOverlay .paperForm input[type="email"]:focus,
+.modalOverlay .paperForm input[type="tel"]:focus,
+.modalOverlay .paperForm input[type="url"]:focus,
+.modalOverlay .paperForm input[type="number"]:focus,
+.modalOverlay .paperForm input[type="password"]:focus,
 .modalOverlay .paperForm select:focus {
     border-color: #3b82f6;
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
@@ -135,6 +145,27 @@
     color: #1e293b;
 }
 
+.modalOverlay .paperForm .paperEditBtn {
+    padding: 10px 28px;
+    border: none;
+    border-radius: 6px;
+    background: #1e3a8a;
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.modalOverlay .paperForm .paperEditBtn:hover {
+    background: #172554;
+}
+
+.modalOverlay .paperForm .paperEditBtn:focus-visible {
+    outline: 2px solid #1e3a8a;
+    outline-offset: 2px;
+}
+
 .modalOverlay .paperForm .paperSaveBtn {
     padding: 10px 28px;
     border: none;
@@ -156,36 +187,32 @@
     cursor: not-allowed;
 }
 
-@media (max-width: 700px) {
-    .modalOverlay {
-        padding: 20px 12px;
-    }
-
-    .modalOverlay .paperForm {
-        padding: 24px 18px;
-    }
-
-    .modalOverlay .paperForm .row {
-        flex-wrap: wrap;
-        gap: 12px;
-    }
-
-    .modalOverlay .paperForm .col {
-        flex: 1 1 100%;
-    }
-
-    .modalOverlay .paperForm .paperFormActions {
-        flex-direction: column-reverse;
-    }
-
-    .modalOverlay .paperForm .paperCancelBtn,
-    .modalOverlay .paperForm .paperSaveBtn {
-        width: 100%;
-    }
-}
-
 .modalOverlay .paperForm select.select-readonly {
     background-image: none;
     padding-right: 10px;
+    cursor: default;
+}
+
+.modalOverlay .paperForm input:disabled,
+.modalOverlay .paperForm input[readonly],
+.modalOverlay .paperForm select:disabled,
+.modalOverlay .paperForm textarea:disabled,
+.modalOverlay .paperForm textarea[readonly] {
+    color: #64748b;
+    -webkit-text-fill-color: #64748b;
+    opacity: 1;
+}
+
+.modalOverlay .paperForm input:disabled::placeholder,
+.modalOverlay .paperForm input[readonly]::placeholder,
+.modalOverlay .paperForm textarea:disabled::placeholder,
+.modalOverlay .paperForm textarea[readonly]::placeholder {
+    color: #94a3b8;
+    -webkit-text-fill-color: #94a3b8;
+}
+
+.modalOverlay .paperForm select#block:disabled,
+.modalOverlay .paperForm select#grave_code:disabled {
+    background-image: none;
     cursor: default;
 }

@@ -373,10 +373,10 @@ body {
     color: #2563eb;
 }
 
-.editBtn:hover {
-    background: #eef2ff;
-    border-color: #e0e7ff;
-    color: var(--mainColor);
+.printBtn:hover {
+    background: #f1f5f9;
+    border-color: #e2e8f0;
+    color: #334155;
 }
 
 .deleteBtn:hover {

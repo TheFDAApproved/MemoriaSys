@@ -99,6 +99,27 @@ document.addEventListener('DOMContentLoaded', function () {
         return (json && json.data) ? json.data : json;
     }
 
+    async function refetchTransfer(pendingId) {
+        if (!pendingId) return null;
+
+        try {
+            const res = await fetch(`${API_URL}/${encodeURIComponent(pendingId)}`, {
+                headers: { Accept: 'application/json' },
+                credentials: 'same-origin',
+                cache: 'no-store',
+            });
+            if (!res.ok) return null;
+
+            const json = await res.json().catch(() => null);
+            if (!json || json.success === false) return null;
+
+            const payload = (json && json.data) ? json.data : json;
+            return (payload && payload.transfer) ? payload.transfer : null;
+        } catch (_) {
+            return null;
+        }
+    }
+
     async function loadMonitor() {
         const reqId = ++state.requestId;
 
@@ -350,19 +371,27 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    function viewOldOccupant(transfer) {
+    async function viewOldOccupant(transfer) {
         if (!transfer.old_occupant) return;
 
+        const pendingId = (transfer.new_occupant || {}).interment_id;
+        const fresh = await refetchTransfer(pendingId);
+        const payload = fresh || transfer;
+
         if (typeof window.openMonitorOldOccupant === 'function') {
-            window.openMonitorOldOccupant(transfer);
+            window.openMonitorOldOccupant(payload);
             return;
         }
         console.warn('[monitor] monitor_burial_modal.js is not loaded.');
     }
 
-    function viewNewOccupant(transfer) {
+    async function viewNewOccupant(transfer) {
+        const pendingId = (transfer.new_occupant || {}).interment_id;
+        const fresh = await refetchTransfer(pendingId);
+        const payload = fresh || transfer;
+
         if (typeof window.openMonitorNewOccupant === 'function') {
-            window.openMonitorNewOccupant(transfer);
+            window.openMonitorNewOccupant(payload);
             return;
         }
         console.warn('[monitor] monitor_burial_modal.js is not loaded.');

@@ -409,8 +409,12 @@
     document.addEventListener('reserve_burial_modal:update', async (event) => {
         const detail = event.detail || {};
         const oldIntermentId = detail.old_interment_id;
+        const onSuccess = typeof detail.onSuccess === 'function' ? detail.onSuccess : null;
+        const onError = typeof detail.onError === 'function' ? detail.onError : null;
+
         if (!oldIntermentId) {
             console.warn('[reserve.js] reserve_burial_modal:update missing old_interment_id.');
+            if (onError) onError(new Error('Missing interment ID.'));
             return;
         }
 
@@ -448,9 +452,12 @@
             await fetchReservations();
 
             notify('success', 'Changes saved successfully.');
+
+            if (onSuccess) onSuccess((json && json.data) ? json.data : null);
         } catch (err) {
             console.error('[reserve.js] Failed to save reservation plan:', err);
             notify('error', err.message || 'Failed to save reservation plan.');
+            if (onError) onError(err);
         }
     });
 

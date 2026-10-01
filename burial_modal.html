@@ -64,6 +64,10 @@
                     <input type="text" id="req_phone" required>
                 </div>
                 <div class="col">
+                    <label>Email Address:</label>
+                    <input type="email" id="req_email" autocomplete="email">
+                </div>
+                <div class="col">
                     <label class="required">Seeking assistance in the form of:</label>
                     <select id="req_assistance" required>
                         <option>Burial of the late</option>
@@ -156,6 +160,13 @@
                 <div class="col">
                     <label>Expiration Date:</label>
                     <input type="date" id="expiration_date" readonly required>
+                </div>
+                <div class="col">
+                    <label class="required">Status:</label>
+                    <select id="status" required>
+                        <option value="Active">Active</option>
+                        <option value="Inactive">Inactive</option>
+                    </select>
                 </div>
             </div>
 

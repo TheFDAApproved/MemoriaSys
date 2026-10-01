@@ -385,11 +385,11 @@
             : dash(item.control_number);
 
         const actionButtons = `
-        <button type="button" class="viewBtn" data-action="view" data-id="${id}" title="View" aria-label="View">
+        <button type="button" class="viewBtn" data-action="view" data-id="${id}" title="View / Edit" aria-label="View / Edit">
           <i class="fas fa-file-lines"></i>
         </button>
-        <button type="button" class="editBtn" data-action="edit" data-id="${id}" title="Edit" aria-label="Edit">
-          <i class="fas fa-pen"></i>
+        <button type="button" class="printBtn" data-action="print" onclick="memoria_certificate('${id}')" title="Print" aria-label="Print">
+          <i class="fas fa-print"></i>
         </button>
         <button type="button" class="deleteBtn" data-action="delete" data-id="${id}" title="Delete" aria-label="Delete">
           <i class="fas fa-trash"></i>
@@ -411,6 +411,7 @@
         <td>${dash(item.contact_person_name)}</td>
         <td>${dash(item.contact_person_phone_number)}</td>
         <td>${escapeHtml(buildContactAddress(item))}</td>
+        <td>${dash(item.status)}</td>
         <td class="remarksCell">${dash(item.remarks)}</td>
         <td class="actionCell"><div class="actions">${actionButtons}</div></td>
       </tr>`;
@@ -442,6 +443,7 @@
         <td>${dash(item.contact_person_name)}</td>
         <td>${dash(item.contact_person_phone_number)}</td>
         <td>${escapeHtml(buildContactAddress(item))}</td>
+        <td>${dash(item.status)}</td>
         <td class="remarksCell">${dash(item.remarks)}</td>
         <td class="actionCell"></td>
       </tr>`;
@@ -647,27 +649,26 @@
 
             if (action === 'view') {
                 if (item && global.BurialModal && typeof global.BurialModal.open === 'function') {
-                    global.BurialModal.open('view', mapItemToModal(item));
+                    global.BurialModal.open('view', mapItemToModal(item), {
+                        takenControlNos: state.items
+                            .filter((r) => Number(r.interment_id) !== Number(id))
+                            .map((r) => r.control_number),
+                    });
                 } else {
                     document.dispatchEvent(new CustomEvent('records:view', { detail: { item, id } }));
                 }
                 return;
             }
 
-            if (action === 'edit') {
-                if (item && global.BurialModal && typeof global.BurialModal.open === 'function') {
-                    global.BurialModal.open('edit', mapItemToModal(item), {
-                        takenControlNos: state.items
-                            .filter((r) => Number(r.interment_id) !== Number(id))
-                            .map((r) => r.control_number),
-                    });
-                } else {
-                    document.dispatchEvent(new CustomEvent('records:edit', { detail: { item, id } }));
-                }
+            if (action === 'print') {
+                document.dispatchEvent(new CustomEvent('records:print', { detail: { item, id } }));
                 return;
             }
 
-            if (action === 'delete') handleDelete(id, item);
+            if (action === 'delete') {
+                handleDelete(id, item);
+                return;
+            }
             return;
         }
 
@@ -728,6 +729,7 @@
             deceased_cert: item.death_certificate,
 
             req_name: item.contact_person_name,
+            req_email: item.contact_person_email,  
             req_phone: item.contact_person_phone_number,
             req_street: item.contact_person_address,
             barangay: item.contact_person_address_barangay,
@@ -748,6 +750,7 @@
             row_num: item.row_num,
             col_num: item.col_num,
 
+            status: item.status,
             remarks: item.remarks,
         };
     }
@@ -810,15 +813,18 @@
         const detail = event.detail || {};
         const mode = detail.mode;
         const payload = detail.data || {};
+        const onSuccess = typeof detail.onSuccess === 'function' ? detail.onSuccess : null;
+        const onError = typeof detail.onError === 'function' ? detail.onError : null;
 
         if (mode === 'view') return;
 
         if (!payload.control_number || !payload.deceased_name || !payload.assistance_type) {
             notify('error', 'Control Number, Deceased Name and Assistance Type are required.');
+            if (onError) onError(new Error('Validation failed.'));
             return;
         }
 
-        const status = payload.status || 'Pending';
+        const status = payload.status || 'Active';
         if (status !== 'Active') payload.current_grave_id = null;
 
         const isEdit = mode === 'edit' && payload.interment_id != null;
@@ -839,6 +845,7 @@
                     detail: { error: err, action: isEdit ? 'update' : 'create', payload },
                 })
             );
+            if (onError) onError(err);
             return;
         }
 
@@ -849,6 +856,15 @@
                 detail: { mode: isEdit ? 'edit' : 'add', result, payload },
             })
         );
+
+        if (onSuccess) {
+            let updatedData = payload;
+            if (isEdit) {
+                const fresh = RecordsAPI.getItem(payload.interment_id);
+                if (fresh) updatedData = mapItemToModal(fresh);
+            }
+            onSuccess(updatedData, result);
+        }
     }
 
     document.addEventListener('burial_modal:save', handleModalSave);
