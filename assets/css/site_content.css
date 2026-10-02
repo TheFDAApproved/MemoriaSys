@@ -12,6 +12,10 @@ body {
   padding: 24px;
   color: #333333;
 
+  label.required::after {
+    content: " *";
+    color: #dc2626;
+  }
   .contentForm {
     display: flex;
     flex-direction: column;

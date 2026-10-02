@@ -412,13 +412,13 @@
           <div class="formGrid">
             <div class="formRow">
               <div class="formField">
-                <label class="formLabel" for="dept_name"
+                <label class="formLabel required" for="dept_name"
                   >Main Department Name</label
                 >
                 <input type="text" id="dept_name" name="dept_name" />
               </div>
               <div class="formField">
-                <label class="formLabel" for="cemetery_name"
+                <label class="formlabel required" for="cemetery_name"
                   >Cemetery Name</label
                 >
                 <input type="text" id="cemetery_name" name="cemetery_name" />
@@ -438,7 +438,9 @@
           <div class="formGrid">
             <div class="formRow">
               <div class="formField">
-                <label for="cemetery_address">Cemetery Physical Address</label>
+                <label for="cemetery_address" class="required"
+                  >Cemetery Physical Address</label
+                >
                 <input
                   type="text"
                   id="cemetery_address"
@@ -446,14 +448,16 @@
                 />
               </div>
               <div class="formField">
-                <label for="office_address"
+                <label for="office_address" class="required"
                   >Administrative Office Address</label
                 >
                 <input type="text" id="office_address" name="office_address" />
               </div>
             </div>
             <div class="formField">
-              <label for="cemetery_google_maps">Google Maps Embed URL</label>
+              <label for="cemetery_google_maps" class="required"
+                >Google Maps Embed URL</label
+              >
               <textarea
                 id="cemetery_google_maps"
                 name="cemetery_google_maps"
@@ -474,11 +478,15 @@
           <div class="formGrid">
             <div class="formRow">
               <div class="formField">
-                <label for="contact_phone">Contact Hotline / Phone</label>
+                <label for="contact_phone" class="required"
+                  >Contact Hotline / Phone</label
+                >
                 <input type="text" id="contact_phone" name="contact_phone" />
               </div>
               <div class="formField">
-                <label for="contact_email">Official Email Address</label>
+                <label for="contact_email" class="required"
+                  >Official Email Address</label
+                >
                 <input type="email" id="contact_email" name="contact_email" />
               </div>
             </div>

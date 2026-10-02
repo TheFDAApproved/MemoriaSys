@@ -228,6 +228,49 @@ document.addEventListener("DOMContentLoaded", () => {
     return null;
   }
 
+  /* -------- Fields that must not be empty --------
+     key   = the input's HTML id
+     value = the label shown to the user
+     Fields that don't exist on the page are silently skipped,
+     so you can leave "address" here even if you add it later. */
+  const REQUIRED_PROFILE_FIELDS = {
+    name: "Full Name",
+    user_name: "Username",
+    email: "Email",
+    phone_number: "Phone Number",
+    address: "Address",
+  };
+
+  /** Returns [{ el, label }, ...] for every required field that is blank. */
+  function getMissingProfileFields() {
+    const missing = [];
+    for (const [id, label] of Object.entries(REQUIRED_PROFILE_FIELDS)) {
+      const el = document.getElementById(id);
+      if (!el || el.disabled) continue; // not on this page / not editable
+      if (el.value.trim() === "") missing.push({ el, label });
+    }
+    return missing;
+  }
+
+  /**
+   * Shows a warning toast + shake/focus on the first offender.
+   * @returns {boolean} true when everything is filled in.
+   */
+  function validateProfileFields() {
+    const missing = getMissingProfileFields();
+    if (missing.length === 0) return true;
+
+    const labels = missing.map((m) => m.label);
+    showAlertTOP(
+      labels.length === 1
+        ? `Please fill in the required field: ${labels[0]}.`
+        : `Please fill in the required fields: ${labels.join(", ")}.`,
+      "warning",
+    );
+    animateInputError(missing[0].el); // scrolls + shakes + focuses the first one
+    return false;
+  }
+
   /* -------- Snapshot of the current input values -------- */
   const originalProfile = {};
 
@@ -293,6 +336,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
   setProfileMode("view");
 
+  /* -------- Drop the error highlight as soon as the field is filled -------- */
+  Object.keys(REQUIRED_PROFILE_FIELDS).forEach((id) => {
+    const el = document.getElementById(id);
+    el?.addEventListener("input", () => {
+      if (el.value.trim() !== "") el.classList.remove("inputError");
+    });
+  });
+
   /* -------- Enter edit mode -------- */
   editProfileBtn?.addEventListener("click", () => {
     snapshotProfile();
@@ -321,6 +372,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   /* -------- Save Changes (profile only) -------- */
   saveChangesBtn?.addEventListener("click", async () => {
+    if (!validateProfileFields()) return;
+
     const payload = buildProfilePayload();
 
     saveChangesBtn.disabled = true;
@@ -348,10 +401,11 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  const LOGOUT_API = "api/auth"; // adjust to your actual logout endpoint
   const LOGIN_URL = "login.html";
 
   updatePasswordBtn?.addEventListener("click", () => {
+    if (!validateProfileFields()) return;
+
     const newPass = document.getElementById("new_pass")?.value ?? "";
     const confirmPass = document.getElementById("confirm_pass")?.value ?? "";
 
@@ -376,23 +430,13 @@ document.addEventListener("DOMContentLoaded", () => {
       confirmIcon: "fa-key",
       loadingText: "Changing…",
       onConfirm: async () => {
-        // 1. Send the update
-        const payload = buildProfilePayload({ password: newPass });
+        const payload = { password: newPass };
         await saveProfileToServer(payload);
 
-        // 2. Best-effort logout
-        try {
-          await fetch(LOGOUT_API, {
-            method: "DELETE",
-            credentials: "same-origin",
-          });
-        } catch (e) {
-          console.warn("Logout failed — redirecting anyway.", e);
-        }
-
-        // 3. Redirect
-        window.location.href = LOGIN_URL;
-
+        showAlertTOP("Password updated, please log-in again", "success");
+        setTimeout(() => {
+          window.location.href = LOGIN_URL;
+        }, 3500);
         // Never resolve — keeps the modal in its "Changing…" state
         // while the browser navigates away.
         return new Promise(() => {});

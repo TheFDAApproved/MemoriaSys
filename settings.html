@@ -68,19 +68,19 @@
         <form id="profile_form" autocomplete="off">
           <div class="formGrid">
             <div class="formGroup">
-              <label for="name">Fullname</label>
+              <label for="name" class="required">Fullname</label>
               <input type="text" class="profileField" id="name" readonly />
             </div>
             <div class="formGroup">
-              <label for="user_name">Username</label>
+              <label for="user_name" class="required">Username</label>
               <input type="text" class="profileField" id="user_name" readonly />
             </div>
             <div class="formGroup">
-              <label for="email">Email Address</label>
+              <label for="email" class="required">Email Address</label>
               <input type="email" class="profileField" id="email" readonly />
             </div>
             <div class="formGroup">
-              <label for="phone_number">Phone Number</label>
+              <label for="phone_number" class="required">Phone Number</label>
               <input
                 type="tel"
                 class="profileField"
@@ -94,7 +94,7 @@
             <hr class="formDivider" />
             <div class="formGrid">
               <div class="formGroup">
-                <label for="new_pass">New Password</label>
+                <label for="new_pass" class="required">New Password</label>
                 <div class="passwordWrapper">
                   <input type="password" id="new_pass" />
                   <button
@@ -107,7 +107,9 @@
                 </div>
               </div>
               <div class="formGroup">
-                <label for="confirm_pass">Confirm Password</label>
+                <label for="confirm_pass" class="required"
+                  >Confirm Password</label
+                >
                 <div class="passwordWrapper">
                   <input type="password" id="confirm_pass" />
                   <button

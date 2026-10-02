@@ -287,11 +287,7 @@ function findMissingRequiredFields() {
 
 /** Short, readable alert copy. */
 function buildMissingMessage(labels) {
-  if (labels.length === 1) return `${labels[0]} is required.`;
-  if (labels.length <= 3) return `Please fill in: ${labels.join(", ")}.`;
-  return `Please fill in ${labels.length} required fields (${labels
-    .slice(0, 3)
-    .join(", ")}, …).`;
+  return "Please fill in the required fields";
 }
 
 /**
