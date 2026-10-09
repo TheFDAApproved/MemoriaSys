@@ -17,6 +17,7 @@
         items: [],
         loading: false,
         controller: null,
+        requestId: 0,
     };
 
     const els = {
@@ -172,9 +173,35 @@
 
     const setLoading = (isLoading) => {
         state.loading = isLoading;
+
         const wrapper = els.tbody.closest('.tableWrapper');
         if (wrapper) wrapper.classList.toggle('isLoading', isLoading);
+
+        if (isLoading && els.noData) {
+            els.noData.style.display = 'none';
+        }
+
+        if (els.prevBtn) {
+            els.prevBtn.disabled = isLoading || state.page <= 1;
+        }
+        if (els.nextBtn) {
+            els.nextBtn.disabled = isLoading || state.page >= state.totalPages;
+        }
     };
+
+    function showEmptyState() {
+        if (!els.noData) return;
+        els.noData.innerHTML =
+            '<i class="fas fa-inbox"></i> No data found';
+        els.noData.style.display = '';
+    }
+
+    function showError(message) {
+        if (!els.noData) return;
+        els.noData.innerHTML =
+            `<i class="fas fa-triangle-exclamation"></i> ${escapeHtml(message)}`;
+        els.noData.style.display = '';
+    }
 
     async function fetchReservations() {
         if (state.controller) state.controller.abort();
@@ -189,7 +216,11 @@
             params.set('status', state.status);
         }
 
+        const reqId = ++state.requestId;
+
         setLoading(true);
+
+        let loadError = null;
 
         try {
             const response = await fetch(`${API_URL}?${params.toString()}`, {
@@ -199,10 +230,13 @@
                 signal: state.controller.signal,
             });
 
+            if (reqId !== state.requestId) return;
+
             const json = await response.json().catch(() => null);
 
             if (!response.ok) {
-                const msg = (json && (json.message || json.error)) || `Request failed (${response.status})`;
+                const msg = (json && (json.message || json.error))
+                    || `Request failed (${response.status})`;
                 throw new Error(msg);
             }
             if (json && json.success === false) {
@@ -216,20 +250,24 @@
             state.page = Number(pg.current_page) || state.page;
             state.totalPages = Math.max(1, Number(pg.total_pages) || 1);
             state.totalRecords = Number(pg.total_records) || state.items.length;
-
-            render();
         } catch (err) {
             if (err.name === 'AbortError') return;
+            if (reqId !== state.requestId) return;
+            loadError = err;
+        }
 
-            console.error('[reserve.js] Fetch error:', err);
+        if (reqId !== state.requestId) return;
+
+        setLoading(false);
+
+        if (loadError) {
             state.items = [];
             state.totalPages = 1;
             state.totalRecords = 0;
             render();
-
-            showError(err.message || 'Failed to load reservations.');
-        } finally {
-            setLoading(false);
+            showError(loadError.message || 'Failed to load reservations.');
+        } else {
+            render();
         }
     }
 
@@ -238,7 +276,7 @@
 
         try {
             const res = await fetch(`${API_URL}/${encodeURIComponent(graveId)}`, {
-                headers: { Accept: 'application/json' },
+                headers: { 'Accept': 'application/json' },
                 credentials: 'same-origin',
                 cache: 'no-store',
             });
@@ -264,10 +302,17 @@
         els.tbody.innerHTML = '';
 
         if (!state.items.length) {
-            els.noData.style.display = '';
+            if (els.noData) {
+                if (state.loading) {
+                    els.noData.style.display = 'none';
+                } else {
+                    showEmptyState();
+                }
+            }
             return;
         }
-        els.noData.style.display = 'none';
+
+        if (els.noData) els.noData.style.display = 'none';
 
         const fragment = document.createDocumentFragment();
 
@@ -390,13 +435,6 @@
         span.textContent = '…';
         span.setAttribute('aria-hidden', 'true');
         return span;
-    }
-
-    function showError(message) {
-        if (!els.noData) return;
-        els.noData.innerHTML =
-            `<i class="fas fa-triangle-exclamation"></i> ${escapeHtml(message)}`;
-        els.noData.style.display = '';
     }
 
     function goToPage(page) {
@@ -678,6 +716,8 @@
         if (v.length === 0 || v.length >= MIN_SEARCH_LENGTH) state.search = v;
         toggleSearchClear(v);
     }
+
+    if (els.noData) els.noData.style.display = 'none';
 
     fetchReservations();
 })();
