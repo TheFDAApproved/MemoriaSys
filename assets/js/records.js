@@ -345,10 +345,15 @@
 
     function setLoading(isLoading) {
         state.loading = isLoading;
+
         if (els.tableWrapper) {
             els.tableWrapper.classList.toggle('isLoading', !!isLoading);
         } else if (els.tbody) {
             els.tbody.classList.toggle('isLoading', !!isLoading);
+        }
+
+        if (isLoading && els.noData) {
+            els.noData.style.display = 'none';
         }
     }
 
@@ -463,9 +468,16 @@
         els.tbody.innerHTML = '';
 
         if (!state.items.length) {
-            if (els.noData) els.noData.style.display = '';
+            if (els.noData) {
+                if (state.loading || state.lastError) {
+                    els.noData.style.display = 'none';
+                } else {
+                    els.noData.style.display = '';
+                }
+            }
             return;
         }
+
         if (els.noData) els.noData.style.display = 'none';
 
         const groups = [];
@@ -729,7 +741,7 @@
             deceased_cert: item.death_certificate,
 
             req_name: item.contact_person_name,
-            req_email: item.contact_person_email,  
+            req_email: item.contact_person_email,
             req_phone: item.contact_person_phone_number,
             req_street: item.contact_person_address,
             barangay: item.contact_person_address_barangay,
@@ -882,6 +894,8 @@
         if (!global.BurialModal && els.addBtn) {
             console.warn('[records.js] BurialModal not found — load burial_modal.js before records.js.');
         }
+
+        if (els.noData) els.noData.style.display = 'none';
 
         bindEvents();
         fetchRecords();

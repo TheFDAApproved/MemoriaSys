@@ -10,7 +10,8 @@ document.addEventListener('DOMContentLoaded', function () {
         totalRecords: 0,
         appliedSearch: '',
         requestId: 0,
-        lastRenderKey: ''
+        lastRenderKey: '',
+        loading: false,
     };
 
     const els = {
@@ -202,8 +203,29 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    function setLoading(isLoading) {
+        state.loading = isLoading;
+
+        if (els.tableWrapper) {
+            els.tableWrapper.classList.toggle('isLoading', !!isLoading);
+        }
+
+        if (isLoading && els.noData) {
+            els.noData.style.display = 'none';
+        }
+
+        if (els.prevBtn) {
+            els.prevBtn.disabled = isLoading || state.page <= 1;
+        }
+        if (els.nextBtn) {
+            els.nextBtn.disabled = isLoading || state.page >= state.totalPages;
+        }
+    }
+
     async function loadMonitor() {
         const reqId = ++state.requestId;
+
+        setLoading(true);
 
         try {
             const data = await fetchMonitor();
@@ -215,18 +237,19 @@ document.addEventListener('DOMContentLoaded', function () {
             state.totalRecords = parseInt(pag.total_records, 10) || 0;
 
             if (state.page > state.totalPages) state.page = state.totalPages;
-
-            renderTable();
-            renderPagination();
         } catch (e) {
             if (reqId !== state.requestId) return;
             console.warn('[monitor] fetch failed:', e);
             state.items = [];
             state.totalPages = 1;
             state.totalRecords = 0;
-            renderTable();
-            renderPagination();
         }
+
+        if (reqId !== state.requestId) return;
+
+        setLoading(false);
+        renderTable();
+        renderPagination();
     }
 
     function buildRenderKey() {
@@ -306,11 +329,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (!state.items.length) {
             els.tableBody.innerHTML = '';
-            els.noData.style.display = 'flex';
+            if (els.noData) {
+                els.noData.style.display = state.loading ? 'none' : 'flex';
+            }
             return;
         }
 
-        els.noData.style.display = 'none';
+        if (els.noData) els.noData.style.display = 'none';
         els.tableBody.innerHTML = state.items.map(buildRowHtml).join('');
 
         if (changed) {
@@ -325,8 +350,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (els.currentPageNum) els.currentPageNum.textContent = state.page;
         if (els.totalPagesNum) els.totalPagesNum.textContent = total;
 
-        els.prevBtn.disabled = state.page <= 1;
-        els.nextBtn.disabled = state.page >= total;
+        els.prevBtn.disabled = state.loading || state.page <= 1;
+        els.nextBtn.disabled = state.loading || state.page >= total;
 
         let startPage, endPage;
 
@@ -392,6 +417,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function goToPage(page) {
         if (page < 1 || page > state.totalPages) return;
         if (page === state.page) return;
+        if (state.loading) return;
 
         state.page = page;
         state.lastRenderKey = '';
@@ -596,6 +622,9 @@ document.addEventListener('DOMContentLoaded', function () {
     window.addEventListener('resize', centerActivePage);
 
     updateCloseButton();
+
+    if (els.noData) els.noData.style.display = 'none';
+
     loadMonitor();
 
     document.addEventListener('monitor_burial_modal:saved', function () {
