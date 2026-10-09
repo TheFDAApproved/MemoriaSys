@@ -591,6 +591,12 @@ document.addEventListener("DOMContentLoaded", () => {
         throw new Error(result?.message || `HTTP ${response.status}`);
       }
 
+      const mainColorEntry = entries.find(
+        (entry) => entry.key === "main_color",
+      );
+
+      window.main_mainColor = mainColorEntry?.value ?? "";
+
       showAlertTOP("Settings saved successfully.", "success");
     } catch (err) {
       console.error("Save Configuration failed:", err);
