@@ -257,12 +257,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 '</tr>';
         }).join('');
 
-        if (!silent) {
-            els.tableBody.classList.remove('animate');
-            void els.tableBody.offsetWidth;
-            els.tableBody.classList.add('animate');
-        }
-
         if (els.tableScrollWrapper && prevScroll > 0) {
             els.tableScrollWrapper.scrollTop = prevScroll;
         }

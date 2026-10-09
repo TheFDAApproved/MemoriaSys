@@ -119,7 +119,7 @@ body {
     border: none;
     border-radius: 10px;
     cursor: pointer;
-    transition: opacity 0.2s ease, transform 0.2s ease;
+    transition: opacity 0.2s ease;
 }
 
 .filterActionBtn i {
@@ -128,10 +128,6 @@ body {
 
 .filterActionBtn:hover {
     opacity: 0.9;
-}
-
-.filterActionBtn:active {
-    transform: translateY(1px);
 }
 
 .filterActionBtn:focus-visible {
@@ -285,25 +281,26 @@ body {
     border-bottom: none;
 }
 
-@keyframes rowFadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(6px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+.tableScrollWrapper thead th:nth-child(5),
+.tableScrollWrapper tbody td:nth-child(5) {
+    width: 170px; 
 }
 
-.tableScrollWrapper tbody.animate {
-    animation: rowFadeIn 0.15s ease both;
+.tableScrollWrapper thead th:nth-child(6),
+.tableScrollWrapper tbody td:nth-child(6) {
+    width: 145px;  
+}
+
+.tableScrollWrapper thead th:nth-child(8),
+.tableScrollWrapper tbody td:nth-child(8) {
+    width: 150px;  
 }
 
 .cellSelect {
+    display: block;
     width: 100%;
-    max-width: 160px;
+    max-width: 100%;
+    height: 30px;
     padding: 6px 28px 6px 10px;
     font-size: 13px;
     font-family: inherit;
@@ -355,10 +352,6 @@ body {
 .actionBtn:focus-visible {
     outline: none;
     box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.15);
-}
-
-.actionBtn:active {
-    transform: translateY(1px);
 }
 
 .edit-action:hover {
