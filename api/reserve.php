@@ -173,6 +173,7 @@ $formatItem = function ($row) use ($parsePlanRemarks) {
         // ---- Saved reservation plan ----
         'plan_reservation_id'  => isset($row['plan_reservation_id']) && $row['plan_reservation_id'] !== null
             ? (int) $row['plan_reservation_id'] : null,
+        'plan_status'          => $row['plan_status'] ?? null,
         'plan_assistance_type' => $row['plan_assistance_type'] ?? null,
         'plan_burial_type'     => $planBurialType,
         'plan_remarks'         => $planParts['remarks'],
@@ -211,6 +212,7 @@ if ($method === 'GET') {
                g.grave_id, g.grave_code, g.row_num, g.col_num, g.status AS grave_status, g.remarks AS grave_remarks,
                b.block_name, b.block_id, b.block_type,
                rd.reservation_id           AS plan_reservation_id,
+               rd.old_new_status           AS plan_status,
                rd.old_new_assistance_type  AS plan_assistance_type,
                rd.old_new_remarks          AS plan_remarks,
                rd.exhumation_permit_number AS plan_exhumation_permit_number,
@@ -255,6 +257,7 @@ if ($method === 'GET') {
                g.status AS grave_status, g.remarks AS grave_remarks,
                b.block_name, b.block_id, b.block_type,
                NULL AS plan_reservation_id,
+               NULL AS plan_status,
                NULL AS plan_assistance_type,
                NULL AS plan_remarks,
                NULL AS plan_exhumation_permit_number,
@@ -490,6 +493,12 @@ if ($method === 'POST') {
     //     Exhumation Permit No. and Transfer Permit No. inside the JSON blob
     //     AND into the dedicated reservation_details columns.
     //
+    //     Also accepts an optional `status` field (Active / Inactive) to set
+    //     the old occupant's planned future status (old_new_status). When
+    //     omitted or blank, the status is derived from whether a new grave
+    //     was chosen (Active) or not (Inactive), preserving the previous
+    //     behaviour for callers that don't send it.
+    //
     //     Creates a *plan-only* row (pending_interment_id = NULL) if none exists
     //     for this old occupant; otherwise updates the existing row in place.
     //
@@ -555,6 +564,18 @@ if ($method === 'POST') {
                 $assistanceType = $candidate;
             }
 
+            // Accept the user-selected status for the old occupant, when supplied.
+            // Maps to the reservation_details.old_new_status enum ('Active','Inactive').
+            $oldNewStatusOverride = null;
+            if (isset($rawData['status']) && $rawData['status'] !== '') {
+                $candidate = (string) $rawData['status'];
+                if (!in_array($candidate, ['Active', 'Inactive'], true)) {
+                    $pdo->rollBack();
+                    Response::error("Invalid status. Must be Active or Inactive.", 400);
+                }
+                $oldNewStatusOverride = $candidate;
+            }
+
             // Bundle plan fields (burial_type / remarks / date_interment /
             // expiration_date / exhumation_permit_number / transfer_permit_number)
             // into a single JSON blob.
@@ -588,7 +609,16 @@ if ($method === 'POST') {
                 ], JSON_UNESCAPED_UNICODE);
             }
 
-            $oldNewStatus = $newGraveId ? 'Active' : 'Inactive';
+            // Caller-supplied status wins; otherwise fall back to the previous
+            // derivation (moved to a new grave → Active; no new grave → Inactive).
+            $oldNewStatus = $oldNewStatusOverride ?? ($newGraveId ? 'Active' : 'Inactive');
+
+            // An Inactive old occupant has no grave by definition. If the
+            // caller left a grave_code in the payload, drop the resolved
+            // grave id so the persisted row matches the display rule.
+            if ($oldNewStatus === 'Inactive') {
+                $newGraveId = null;
+            }
 
             // Dedicated columns use NULL rather than '' when the field is blank,
             // so the "blank stays blank" contract holds on read.
@@ -947,6 +977,11 @@ if ($method === 'POST') {
             $oldNewStatus = $candidate;
         } else {
             $oldNewStatus = $oldNewGraveId ? 'Active' : 'Inactive';
+        }
+
+        // An Inactive old occupant has no grave by definition.
+        if ($oldNewStatus === 'Inactive') {
+            $oldNewGraveId = null;
         }
 
         if (!empty($rawData['old_occupant_assistance_type'])) {

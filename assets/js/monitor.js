@@ -45,6 +45,88 @@ document.addEventListener('DOMContentLoaded', function () {
         return s === '' ? '-' : s;
     }
 
+    function formatSmsDate(value) {
+        if (!value) return '';
+        const d = new Date(value);
+        if (Number.isNaN(d.getTime())) return String(value);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return y + '-' + m + '-' + day;
+    }
+
+    function buildSmsMessage(occupant) {
+        const contact = (occupant && occupant.contact_person_name)
+            ? String(occupant.contact_person_name).trim()
+            : '';
+        const deceased = (occupant && occupant.deceased_name)
+            ? String(occupant.deceased_name).trim()
+            : '';
+
+        let msg = 'Hello ' + (contact || 'Sir/Ma\'am') + ', this is an official notice.';
+
+        const expiry = formatSmsDate(occupant && occupant.lease_expiration_date);
+        const subject = deceased || 'the deceased';
+
+        if (expiry) {
+            msg += ' The lease for ' + subject + ' expires on ' + expiry + '.';
+        } else {
+            msg += ' This is regarding the lease for ' + subject + '.';
+        }
+
+        return msg;
+    }
+
+    function renderPhoneLink(occupant) {
+        if (!occupant) return '-';
+        const raw = occupant.contact_person_phone_number;
+        if (raw === null || raw === undefined) return '-';
+        const s = String(raw).trim();
+        if (s === '') return '-';
+
+        const contactName = String(occupant.contact_person_name || '').trim();
+        const deceasedName = String(occupant.deceased_name || '').trim();
+        const expiryRaw = occupant.lease_expiration_date || '';
+
+        return (
+            '<a href="#" class="smsPhoneLink" data-action="sms"' +
+            ' data-phone="' + escapeHtml(s) + '"' +
+            ' data-contact="' + escapeHtml(contactName) + '"' +
+            ' data-deceased="' + escapeHtml(deceasedName) + '"' +
+            ' data-expiry="' + escapeHtml(expiryRaw) + '"' +
+            ' title="Send SMS">' +
+            escapeHtml(s) +
+            '</a>'
+        );
+    }
+
+    function handleSmsClick(event) {
+        const link = event.target.closest('[data-action="sms"]');
+        if (!link || !els.tableBody.contains(link)) return;
+        event.preventDefault();
+
+        const phone = String(link.dataset.phone || '').trim();
+        if (!phone) {
+            if (typeof window.showAlertTOP === 'function') {
+                window.showAlertTOP('This occupant has no contact number on file.', 'warning');
+            }
+            return;
+        }
+
+        if (typeof window.openSmsModal !== 'function') {
+            console.warn('[monitor] openSmsModal is not available — load sms_notification.js.');
+            return;
+        }
+
+        const message = buildSmsMessage({
+            contact_person_name: link.dataset.contact || '',
+            deceased_name: link.dataset.deceased || '',
+            lease_expiration_date: link.dataset.expiry || ''
+        });
+
+        window.openSmsModal(phone, message);
+    }
+
     function isApiFailure(res, json) {
         if (!res.ok) return true;
         if (!json || typeof json !== 'object') return true;
@@ -171,7 +253,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const oldName = oldOcc ? displayVal(oldOcc.deceased_name) : '-';
         const oldExpiration = oldOcc ? displayVal(oldOcc.lease_expiration_date) : '-';
         const oldContactName = oldOcc ? displayVal(oldOcc.contact_person_name) : '-';
-        const oldContactPhone = oldOcc ? displayVal(oldOcc.contact_person_phone_number) : '-';
+        const oldContactPhoneCell = renderPhoneLink(oldOcc);
 
         const blockName = displayVal(grave.block_name);
         const graveCode = displayVal(grave.grave_code);
@@ -182,7 +264,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const newName = displayVal(newOcc.deceased_name);
         const newAddress = displayVal(newOcc.last_known_address);
         const newContactName = displayVal(newOcc.contact_person_name);
-        const newContactPhone = displayVal(newOcc.contact_person_phone_number);
+        const newContactPhoneCell = renderPhoneLink(newOcc);
         const newContactAddress = displayVal(newOcc.contact_person_address);
         const remarks = displayVal(newOcc.remarks || (oldOcc && oldOcc.remarks));
 
@@ -205,11 +287,11 @@ document.addEventListener('DOMContentLoaded', function () {
             '<td>' + locationCell + '</td>' +
             '<td>' + escapeHtml(oldExpiration) + '</td>' +
             '<td>' + escapeHtml(oldContactName) + '</td>' +
-            '<td>' + escapeHtml(oldContactPhone) + '</td>' +
+            '<td>' + oldContactPhoneCell + '</td>' +
             '<td>' + escapeHtml(newName) + '</td>' +
             '<td>' + escapeHtml(newAddress) + '</td>' +
             '<td>' + escapeHtml(newContactName) + '</td>' +
-            '<td>' + escapeHtml(newContactPhone) + '</td>' +
+            '<td>' + newContactPhoneCell + '</td>' +
             '<td>' + escapeHtml(newContactAddress) + '</td>' +
             '<td>' + escapeHtml(remarks) + '</td>' +
             '<td><div class="actions">' + actionsHtml + '</div></td>' +
@@ -505,6 +587,8 @@ document.addEventListener('DOMContentLoaded', function () {
         if (action === 'check') confirmTransfer(pendingId, transfer);
         if (action === 'cancel') cancelTransfer(pendingId, transfer);
     });
+
+    els.tableBody.addEventListener('click', handleSmsClick);
 
     els.prevBtn.addEventListener('click', () => goToPage(state.page - 1));
     els.nextBtn.addEventListener('click', () => goToPage(state.page + 1));

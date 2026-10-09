@@ -9,6 +9,8 @@ const MonitorBurialModal = (() => {
     let originalValues = {};
     let isEditMode = false;
 
+    let burialTypePlaceholderText = null;
+
     let blocksLoaded = false;
     let blockOptions = [];
     let selectedSlot = null;
@@ -25,6 +27,38 @@ const MonitorBurialModal = (() => {
 
     const AVAILABLE_BLOCK_STATUSES = new Set(['available', 'vacant', 'open', 'active']);
     const AVAILABLE_GRAVE_STATUSES = new Set(['vacant', 'available', 'open']);
+
+    const OLD_OCCUPANT_EDITABLE_FIELDS = new Set([
+        'req_assistance',
+        'permit_exhumation',
+        'permit_transfer',
+        'burial_block',
+        'block',
+        'grave_code',
+        'date_interment',
+        'status',
+        'deceased_remarks'
+    ]);
+
+    const NEW_OCCUPANT_READONLY_FIELDS = new Set([
+        'status',
+        'block',
+        'grave_code',
+        'burial_block'
+    ]);
+
+    const OLD_SAVE_FIELDS = [
+        'assistance_type',
+        'exhumation_permit_number',
+        'transfer_permit_number',
+        'block_type',
+        'block_name',
+        'grave_code',
+        'date_buried',
+        'lease_expiration_date',
+        'status',
+        'remarks'
+    ];
 
     function alertMsg(message, type) {
         if (!message) return;
@@ -151,6 +185,144 @@ const MonitorBurialModal = (() => {
         return AVAILABLE_BLOCK_STATUSES.has(status);
     }
 
+    function normalizeType(value) {
+        const s = String(value || '').trim();
+        if (!s) return '';
+        if (/niche|wall/i.test(s)) return 'Niche Wall';
+        if (/bone/i.test(s)) return 'Bone Chamber';
+        if (/lawn|ground|standard/i.test(s)) return 'Lawn / Grounds';
+        if (/unmapped/i.test(s)) return 'Unmapped Area';
+        if (/private|owned|mausoleum/i.test(s)) return 'Private / Owned';
+        return s;
+    }
+
+    function blocksMatchingType(typeLabel) {
+        const norm = normalizeType(typeLabel);
+        if (!norm) return blockOptions;
+        return blockOptions.filter(b => normalizeType(b.type) === norm);
+    }
+
+    function currentBurialType() {
+        const select = modalEl ? modalEl.querySelector('#burial_block') : null;
+        return select ? (select.value || '') : '';
+    }
+
+    function setBurialTypeFromBlockType(blockType) {
+        if (!modalEl) return;
+        const select = modalEl.querySelector('#burial_block');
+        if (!select || select.tagName !== 'SELECT') return;
+
+        const raw = String(blockType || '').trim();
+        if (!raw) return;
+
+        const norm = normalizeType(raw);
+
+        let matched = Array.from(select.options).find(
+            o => o.value !== '' && normalizeType(o.value) === norm
+        );
+        if (!matched) {
+            matched = Array.from(select.options).find(o => o.value === raw);
+        }
+        if (!matched) {
+            const opt = document.createElement('option');
+            opt.value = raw;
+            opt.textContent = raw;
+            select.appendChild(opt);
+            matched = opt;
+        }
+
+        select.value = matched.value;
+        updateBurialTypePlaceholder();
+    }
+
+    function updateBurialTypePlaceholder() {
+        if (!modalEl) return;
+        const select = modalEl.querySelector('#burial_block');
+        if (!select || select.tagName !== 'SELECT') return;
+        if (!select.options.length) return;
+
+        const placeholder = select.options[0];
+
+        if (burialTypePlaceholderText === null) {
+            const original = (placeholder.textContent || '').trim();
+            burialTypePlaceholderText = original || 'Select Burial Type';
+        }
+
+        const isReadOnly = !isEditMode;
+        const hasValue = !!select.value;
+
+        placeholder.textContent =
+            (isReadOnly && !hasValue) ? '' : burialTypePlaceholderText;
+    }
+
+    function isOldOccupantInactive() {
+        if (currentOccupantType !== 'old') return false;
+        const statusEl = modalEl ? modalEl.querySelector('#status') : null;
+        const domVal = statusEl ? String(statusEl.value || '') : '';
+        if (domVal) return domVal === 'Inactive';
+        return String((currentData && currentData.status) || '') === 'Inactive';
+    }
+
+    function shouldBlankBlockGravePlaceholder() {
+        return !isEditMode;
+    }
+
+    function guardBlockGraveWhenInactive(event) {
+        if (!modalEl) return;
+        if (!isEditMode) return;
+        if (currentOccupantType !== 'old') return;
+        if (!isOldOccupantInactive()) return;
+
+        if (event && typeof event.preventDefault === 'function') {
+            event.preventDefault();
+        }
+        if (event && typeof event.stopPropagation === 'function') {
+            event.stopPropagation();
+        }
+
+        const id = event && event.currentTarget ? event.currentTarget.id : '';
+
+        if (id === 'burial_block') {
+            alertMsg(
+                'Please change the status to Active before selecting a Burial Type.',
+                'warning'
+            );
+        } else {
+            alertMsg(
+                'Please change the status to Active before selecting a Block or Grave Code.',
+                'warning'
+            );
+        }
+    }
+
+    async function handleStatusChange() {
+        if (!modalEl) return;
+
+        const statusSelect = modalEl.querySelector('#status');
+        if (!statusSelect) return;
+
+        const isInactive = statusSelect.value === 'Inactive';
+        const blockSelect = modalEl.querySelector('#block');
+
+        if (isInactive) {
+            if (blockSelect) blockSelect.value = '';
+
+            const burialTypeEl = modalEl.querySelector('#burial_block');
+            if (burialTypeEl) burialTypeEl.selectedIndex = 0;
+
+            renderBlockOptions('');
+            resetGraveSelectUI();
+            updateBurialTypePlaceholder();
+            return;
+        }
+
+        if (blockSelect) blockSelect.value = '';
+        resetGraveSelectUI();
+        await loadBlocks();
+        renderBlockOptions('');
+        updateBurialTypePlaceholder();
+    }
+
     async function fetchBlocks() {
         const url = BLOCKS_API + '?status=available';
         const res = await fetch(url, {
@@ -187,22 +359,29 @@ const MonitorBurialModal = (() => {
         }
     }
 
-    function renderBlockOptions(keepValue) {
+    function renderBlockOptions(keepValue, filterType) {
         if (!modalEl) return;
         const select = modalEl.querySelector('#block');
         if (!select || select.tagName !== 'SELECT') return;
 
         const current = keepValue !== undefined ? keepValue : select.value;
+        const list = filterType ? blocksMatchingType(filterType) : blockOptions;
 
         select.innerHTML = '';
         const placeholder = document.createElement('option');
         placeholder.value = '';
-        placeholder.textContent = 'Select Block...';
+        if (shouldBlankBlockGravePlaceholder()) {
+            placeholder.textContent = '';
+        } else if (filterType && list.length === 0) {
+            placeholder.textContent = 'No blocks for this Burial Type';
+        } else {
+            placeholder.textContent = 'Select Block...';
+        }
         placeholder.disabled = true;
         placeholder.selected = true;
         select.appendChild(placeholder);
 
-        blockOptions.forEach(b => {
+        list.forEach(b => {
             const opt = document.createElement('option');
             opt.value = b.name;
             opt.textContent = b.name;
@@ -214,10 +393,13 @@ const MonitorBurialModal = (() => {
         if (current) {
             const exists = Array.from(select.options).some(o => o.value === current);
             if (!exists) {
+                const match = blockOptions.find(b => b.name === current);
                 const opt = document.createElement('option');
                 opt.value = current;
                 opt.textContent = current;
                 opt.dataset.placeholder = 'true';
+                if (match && match.id != null) opt.dataset.blockId = String(match.id);
+                if (match && match.type) opt.dataset.blockType = match.type;
                 select.appendChild(opt);
             }
             select.value = current;
@@ -267,13 +449,13 @@ const MonitorBurialModal = (() => {
         const select = modalEl ? modalEl.querySelector('#grave_code') : null;
         if (!select || select.tagName !== 'SELECT') return;
 
-        const isView = !isEditMode;
+        const blank = shouldBlankBlockGravePlaceholder();
 
         select.innerHTML = '';
 
         const placeholder = document.createElement('option');
         placeholder.value = '';
-        placeholder.textContent = isView
+        placeholder.textContent = blank
             ? ''
             : (graves.length ? 'Select Grave Code...' : 'No available grave codes');
         placeholder.disabled = true;
@@ -337,12 +519,12 @@ const MonitorBurialModal = (() => {
         const select = modalEl ? modalEl.querySelector('#grave_code') : null;
         if (!select || select.tagName !== 'SELECT') return;
 
-        const isView = !isEditMode;
+        const blank = shouldBlankBlockGravePlaceholder();
 
         select.innerHTML = '';
         const placeholder = document.createElement('option');
         placeholder.value = '';
-        placeholder.textContent = isView ? '' : 'Select Block first...';
+        placeholder.textContent = blank ? '' : 'Select Block first...';
         placeholder.disabled = true;
         placeholder.selected = true;
         select.appendChild(placeholder);
@@ -464,6 +646,11 @@ const MonitorBurialModal = (() => {
         const opt = blockSelect.options[blockSelect.selectedIndex];
         const blockId = opt ? opt.dataset.blockId : null;
         const blockName = (blockSelect.value || '').trim();
+        const blockType = opt ? (opt.dataset.blockType || '') : '';
+
+        if (blockName && blockType) {
+            setBurialTypeFromBlockType(blockType);
+        }
 
         if (!blockId || !blockName) {
             renderGraveOptions([], null);
@@ -487,6 +674,22 @@ const MonitorBurialModal = (() => {
             blockChangeTimer = null;
             loadGraveOptions(blockId, blockName, pinnedGraveId, pinnedGraveCode);
         }, BLOCK_CHANGE_DEBOUNCE_MS);
+    }
+
+    function onBurialTypeChange() {
+        if (!modalEl) return;
+
+        const burialType = currentBurialType();
+        const blockSelect = modalEl.querySelector('#block');
+        const blockIsEditable = blockSelect && !blockSelect.disabled;
+
+        if (blockIsEditable) {
+            blockSelect.value = '';
+            resetGraveSelectUI();
+            renderBlockOptions('', burialType);
+        }
+
+        updateBurialTypePlaceholder();
     }
 
     async function ensureLoaded() {
@@ -572,15 +775,101 @@ const MonitorBurialModal = (() => {
         const blockSelect = modalEl.querySelector('#block');
         if (blockSelect) {
             blockSelect.addEventListener('change', () => {
+                if (
+                    isEditMode &&
+                    currentOccupantType === 'old' &&
+                    isOldOccupantInactive() &&
+                    blockSelect.value
+                ) {
+                    blockSelect.value = '';
+                    resetGraveSelectUI();
+                    alertMsg(
+                        'Please change the status to Active before selecting a Block or Grave Code.',
+                        'warning'
+                    );
+                    return;
+                }
                 if (!blockSelect.disabled) onBlockChange();
+            });
+            blockSelect.addEventListener('mousedown', guardBlockGraveWhenInactive);
+            blockSelect.addEventListener('keydown', (e) => {
+                if (
+                    e.key === 'Enter' ||
+                    e.key === ' ' ||
+                    e.key === 'Spacebar' ||
+                    e.key === 'ArrowDown' ||
+                    e.key === 'ArrowUp'
+                ) {
+                    guardBlockGraveWhenInactive(e);
+                }
             });
         }
 
         const graveSelect = modalEl.querySelector('#grave_code');
         if (graveSelect) {
             graveSelect.addEventListener('change', () => {
+                if (
+                    isEditMode &&
+                    currentOccupantType === 'old' &&
+                    isOldOccupantInactive() &&
+                    graveSelect.value
+                ) {
+                    graveSelect.value = '';
+                    selectedSlot = null;
+                    setGraveCodeHint('');
+                    alertMsg(
+                        'Please change the status to Active before selecting a Block or Grave Code.',
+                        'warning'
+                    );
+                    return;
+                }
                 updateSelectedSlotFromGraveSelect();
                 setGraveCodeHint('');
+            });
+            graveSelect.addEventListener('mousedown', guardBlockGraveWhenInactive);
+            graveSelect.addEventListener('keydown', (e) => {
+                if (
+                    e.key === 'Enter' ||
+                    e.key === ' ' ||
+                    e.key === 'Spacebar' ||
+                    e.key === 'ArrowDown' ||
+                    e.key === 'ArrowUp'
+                ) {
+                    guardBlockGraveWhenInactive(e);
+                }
+            });
+        }
+
+        const burialTypeSelect = modalEl.querySelector('#burial_block');
+        if (burialTypeSelect) {
+            burialTypeSelect.addEventListener('mousedown', guardBlockGraveWhenInactive);
+            burialTypeSelect.addEventListener('keydown', (e) => {
+                if (
+                    e.key === 'Enter' ||
+                    e.key === ' ' ||
+                    e.key === 'Spacebar' ||
+                    e.key === 'ArrowDown' ||
+                    e.key === 'ArrowUp'
+                ) {
+                    guardBlockGraveWhenInactive(e);
+                }
+            });
+            burialTypeSelect.addEventListener('change', () => {
+                if (
+                    isEditMode &&
+                    currentOccupantType === 'old' &&
+                    isOldOccupantInactive() &&
+                    burialTypeSelect.value
+                ) {
+                    burialTypeSelect.selectedIndex = 0;
+                    updateBurialTypePlaceholder();
+                    alertMsg(
+                        'Please change the status to Active before selecting a Burial Type.',
+                        'warning'
+                    );
+                    return;
+                }
+                onBurialTypeChange();
             });
         }
 
@@ -588,6 +877,11 @@ const MonitorBurialModal = (() => {
         if (dateInterment) {
             dateInterment.addEventListener('input', recalcExpirationFromInterment);
             dateInterment.addEventListener('change', recalcExpirationFromInterment);
+        }
+
+        const statusSelect = modalEl.querySelector('#status');
+        if (statusSelect) {
+            statusSelect.addEventListener('change', handleStatusChange);
         }
     }
 
@@ -633,6 +927,8 @@ const MonitorBurialModal = (() => {
             planTransferPermit = old.planned_transfer_permit_number;
         }
 
+        const planStatus = pick(old.planned_new_status, old.status, '');
+
         const base = {
             interment_id: old.interment_id,
             control_number: old.control_number,
@@ -654,6 +950,8 @@ const MonitorBurialModal = (() => {
             date_buried: old.date_buried,
             burial_clearance_date: old.burial_clearance_date,
             lease_expiration_date: old.lease_expiration_date,
+
+            status: planStatus,
 
             block_name: '',
             grave_code: '',
@@ -697,6 +995,12 @@ const MonitorBurialModal = (() => {
             }
         });
 
+        if (base.status === 'Inactive') {
+            base.block_name = '';
+            base.grave_code = '';
+            base.block_type = '';
+        }
+
         return base;
     }
 
@@ -725,6 +1029,8 @@ const MonitorBurialModal = (() => {
             date_buried: n.date_buried,
             burial_clearance_date: n.burial_clearance_date,
             lease_expiration_date: n.lease_expiration_date,
+
+            status: pick(n.status, 'Pending'),
 
             block_name: g.block_name,
             grave_code: g.grave_code,
@@ -811,12 +1117,7 @@ const MonitorBurialModal = (() => {
         setFieldValue('permit_exhumation', data.exhumation_permit_number);
         setFieldValue('permit_transfer', data.transfer_permit_number);
 
-        const rawType = pick(data.block_type);
-        let mappedType = rawType;
-        if (/niche|wall/i.test(rawType)) mappedType = 'Niche Wall';
-        else if (/bone/i.test(rawType)) mappedType = 'Bone Chamber';
-        else if (/lawn|ground|standard/i.test(rawType)) mappedType = 'Lawn / Grounds';
-        setFieldValue('burial_block', mappedType);
+        setFieldValue('burial_block', normalizeType(pick(data.block_type)));
 
         setFieldValue('block', data.block_name);
         setFieldValue('grave_code', data.grave_code);
@@ -824,6 +1125,16 @@ const MonitorBurialModal = (() => {
         setFieldValue('expiration_date', data.lease_expiration_date);
 
         setFieldValue('deceased_remarks', data.remarks);
+
+        const fallbackStatus = currentOccupantType === 'old' ? 'Active' : 'Pending';
+        const statusVal = pick(data.status, fallbackStatus);
+        setFieldValue('status', statusVal);
+
+        if (currentOccupantType === 'old' && statusVal === 'Inactive') {
+            setFieldValue('block', '');
+            setFieldValue('grave_code', '');
+            setFieldValue('burial_block', '');
+        }
     }
 
     function setButtonState() {
@@ -837,12 +1148,17 @@ const MonitorBurialModal = (() => {
         modalEl.classList.toggle('view-mode', !isEditMode);
 
         const fields = modalEl.querySelectorAll('input, select, textarea');
+        const isOld = currentOccupantType === 'old';
 
         fields.forEach(field => {
             let editable;
 
             if (field.id === 'expiration_date' || field.id === 'control_no') {
                 editable = false;
+            } else if (isEditMode && isOld) {
+                editable = OLD_OCCUPANT_EDITABLE_FIELDS.has(field.id);
+            } else if (isEditMode && !isOld) {
+                editable = !NEW_OCCUPANT_READONLY_FIELDS.has(field.id);
             } else {
                 editable = isEditMode;
             }
@@ -856,6 +1172,8 @@ const MonitorBurialModal = (() => {
             }
         });
 
+        updateBurialTypePlaceholder();
+
         setButtonState();
     }
 
@@ -864,7 +1182,11 @@ const MonitorBurialModal = (() => {
         applyMode();
 
         const blockSelect = modalEl.querySelector('#block');
-        if (blockSelect) renderBlockOptions(blockSelect.value || '');
+        if (blockSelect) {
+            const currentBlockName = blockSelect.value || '';
+            const burialType = currentBurialType();
+            renderBlockOptions(currentBlockName, burialType);
+        }
 
         reloadGraveOptionsForCurrentBlock();
     }
@@ -875,7 +1197,36 @@ const MonitorBurialModal = (() => {
         }
         isEditMode = false;
         applyMode();
+
+        const blockSelect = modalEl.querySelector('#block');
+        renderBlockOptions(blockSelect ? (blockSelect.value || '') : '');
+
         reloadGraveOptionsForCurrentBlock();
+    }
+
+    async function refetchReservation() {
+        const pendingId = currentReservation
+            && currentReservation.new_occupant
+            && currentReservation.new_occupant.interment_id;
+
+        if (!pendingId) return null;
+
+        try {
+            const res = await fetch(`${MONITOR_API}/${encodeURIComponent(pendingId)}`, {
+                headers: { Accept: 'application/json' },
+                credentials: 'same-origin',
+                cache: 'no-store',
+            });
+            if (!res.ok) return null;
+
+            const json = await res.json().catch(() => null);
+            if (!json || json.success === false) return null;
+
+            const payload = (json && json.data) ? json.data : json;
+            return (payload && payload.transfer) ? payload.transfer : null;
+        } catch (_) {
+            return null;
+        }
     }
 
     async function handleSubmit(e) {
@@ -917,14 +1268,51 @@ const MonitorBurialModal = (() => {
         try {
             await saveEdits(edited);
 
-            const prevGraveId = originalValues._grave_id;
-            originalValues = {
-                ...edited,
-                _grave_id: (selectedSlot && selectedSlot.grave_id) || prevGraveId || null,
-            };
+            let fresh = null;
+            try {
+                fresh = await refetchReservation();
+            } catch (_) {
+                fresh = null;
+            }
+
+            let appliedData;
+
+            if (fresh) {
+                currentReservation = fresh;
+                appliedData = currentOccupantType === 'old'
+                    ? mapOldOccupant(fresh)
+                    : mapNewOccupant(fresh);
+            } else {
+                const isInactiveOld = currentOccupantType === 'old'
+                    && edited.status === 'Inactive';
+
+                appliedData = {
+                    ...edited,
+                    block_name: isInactiveOld ? '' : (edited.block_name || ''),
+                    grave_code: isInactiveOld ? '' : (edited.grave_code || ''),
+                    block_type: isInactiveOld ? '' : (edited.block_type || ''),
+                };
+            }
+
+            currentData = appliedData;
+            originalValues = { ...appliedData };
+            originalValues._grave_id = currentReservation
+                && currentReservation.target_grave
+                ? (Number(currentReservation.target_grave.grave_id) || null)
+                : null;
+
+            selectedSlot = (appliedData.grave_code && currentReservation
+                && currentReservation.target_grave)
+                ? {
+                    grave_id: Number(currentReservation.target_grave.grave_id) || null,
+                    grave_code: appliedData.grave_code,
+                }
+                : null;
 
             isEditMode = false;
             applyMode();
+            populateFields(appliedData);
+            renderBlockOptions(appliedData.block_name || '');
             await reloadGraveOptionsForCurrentBlock();
 
             alertMsg('Changes saved successfully.', 'success');
@@ -980,6 +1368,7 @@ const MonitorBurialModal = (() => {
             burial_clearance_date: val('clearance_date') || null,
             lease_expiration_date: val('expiration_date') || null,
             remarks: val('deceased_remarks'),
+            status: val('status'),
         };
     }
 
@@ -987,13 +1376,22 @@ const MonitorBurialModal = (() => {
         let url, payload;
 
         if (currentOccupantType === 'old') {
+            const isInactive = edited.status === 'Inactive';
+
             url = `${MONITOR_API}?action=save_old_edits`;
             payload = {
                 reservation_id: currentReservation.reservation_id,
                 old_interment_id: currentReservation.old_occupant
                     ? currentReservation.old_occupant.interment_id : null,
-                ...edited,
             };
+
+            OLD_SAVE_FIELDS.forEach(key => {
+                if (key === 'block_name' || key === 'grave_code' || key === 'block_type') {
+                    payload[key] = isInactive ? '' : (edited[key] || '');
+                } else {
+                    payload[key] = edited[key] || '';
+                }
+            });
         } else {
             url = `${MONITOR_API}?action=save_new_edits`;
             payload = {
@@ -1051,7 +1449,10 @@ const MonitorBurialModal = (() => {
         if (hint) { hint.textContent = ''; hint.classList.remove('visible'); }
 
         await loadBlocks();
-        renderBlockOptions(data.block_name);
+
+        populateFields(data);
+        applyMode();
+        renderBlockOptions(data.block_name || '');
 
         selectedSlot = (data.grave_code && reservation.target_grave)
             ? {
@@ -1059,9 +1460,6 @@ const MonitorBurialModal = (() => {
                 grave_code: data.grave_code,
             }
             : null;
-
-        populateFields(data);
-        applyMode();
 
         await reloadGraveOptionsForCurrentBlock();
 

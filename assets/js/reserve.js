@@ -123,6 +123,53 @@
         return '';
     };
 
+    function formatSmsDate(value) {
+        if (!value) return '';
+        const d = new Date(value);
+        if (Number.isNaN(d.getTime())) return String(value);
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return y + '-' + m + '-' + day;
+    }
+
+    function buildSmsMessage(item) {
+        const contact = (item && item.contact_person_name)
+            ? String(item.contact_person_name).trim()
+            : '';
+        const deceased = (item && item.deceased_name)
+            ? String(item.deceased_name).trim()
+            : '';
+
+        let msg = 'Hello ' + (contact || 'Sir/Ma\'am') + ', this is an official notice.';
+
+        const expiry = formatSmsDate(item && item.lease_expiration_date);
+        const subject = deceased || 'the deceased';
+
+        if (expiry) {
+            msg += ' The lease for ' + subject + ' expires on ' + expiry + '.';
+        } else {
+            msg += ' This is regarding the lease for ' + subject + '.';
+        }
+
+        return msg;
+    }
+
+    function renderPhoneCell(item) {
+        const raw = item ? item.contact_person_phone_number : '';
+        if (raw === null || raw === undefined) return '-';
+        const s = String(raw).trim();
+        if (s === '') return '-';
+
+        return (
+            '<a href="#" class="smsPhoneLink" data-action="sms"' +
+            ' data-grave-id="' + escapeHtml(item.grave_id) + '"' +
+            ' title="Send SMS">' +
+            escapeHtml(s) +
+            '</a>'
+        );
+    }
+
     const setLoading = (isLoading) => {
         state.loading = isLoading;
         const wrapper = els.tbody.closest('.tableWrapper');
@@ -237,7 +284,7 @@
 
             const expirationCell = formatDate(item.lease_expiration_date);
             const contactPerson = escapeHtml(item.contact_person_name || '-');
-            const contactPhone = escapeHtml(item.contact_person_phone_number || '-');
+            const phoneCell = renderPhoneCell(item);
             const remarksCell = escapeHtml(getRemarks(item) || '-');
 
             let actionButtons = '';
@@ -275,7 +322,7 @@
         <td>${blockCell}</td>
         <td>${expirationCell}</td>
         <td>${contactPerson}</td>
-        <td>${contactPhone}</td>
+        <td>${phoneCell}</td>
         <td class="remarksCell">${remarksCell}</td>
         <td class="actionCell">${actionCell}</td>
       `;
@@ -375,6 +422,31 @@
         openViewModal(item);
     }
 
+    function handleSmsClick(event) {
+        const link = event.target.closest('[data-action="sms"]');
+        if (!link || !els.tbody.contains(link)) return;
+        event.preventDefault();
+
+        const graveId = Number(link.dataset.graveId);
+        const item = state.items.find((row) => Number(row.grave_id) === graveId);
+        if (!item) return;
+
+        const phone = String(item.contact_person_phone_number || '').trim();
+        if (!phone) {
+            notify('warning', 'This reservation has no contact number on file.');
+            return;
+        }
+
+        if (typeof window.openSmsModal !== 'function') {
+            console.warn('[reserve.js] openSmsModal is not available — load sms_notification.js.');
+            notify('error', 'SMS feature is not available right now.');
+            return;
+        }
+
+        const message = buildSmsMessage(item);
+        window.openSmsModal(phone, message);
+    }
+
     function openReserveModal(item) {
         if (typeof window.openReserveBurialModal === 'function') {
             window.openReserveBurialModal(item);
@@ -430,6 +502,7 @@
             expiration_date: detail.data?.expiration_date || '',
             exhumation_permit_number: detail.data?.exhumation_permit_number || '',
             transfer_permit_number: detail.data?.transfer_permit_number || '',
+            status: detail.data?.status || '',
         };
 
         try {
@@ -569,6 +642,8 @@
     if (els.nextBtn) {
         els.nextBtn.addEventListener('click', () => goToPage(state.page + 1));
     }
+
+    els.tbody.addEventListener('click', handleSmsClick);
 
     window.ReserveTable = {
         refresh: () => fetchReservations(),

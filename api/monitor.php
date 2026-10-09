@@ -20,6 +20,11 @@
  * reservation_details.exhumation_permit_number / transfer_permit_number
  * columns, which are the canonical source on read.
  *
+ * The Old Occupant's planned future Block / Grave / Status are written to
+ * reservation_details.old_new_grave_id / old_new_status. When the caller
+ * supplies status='Inactive', the grave is force-cleared (mirrors Reserve's
+ * update_reservation_plan behaviour).
+ *
  * CONCURRENCY
  *   - Execute (Confirm) and Cancel (DELETE) lock the pending interment row
  *     with SELECT ... FOR UPDATE, so two writers on the same pending row
@@ -62,11 +67,6 @@ $resourceId = array_shift($pathParts);
 // Concurrency helpers – must be called inside an active transaction
 // -----------------------------------------------------------------------------
 
-/**
- * Take FOR UPDATE locks on one or more grave rows, in ascending grave_id
- * order, so two concurrent requests that each need the same pair of graves
- * cannot form a circular wait.
- */
 function lockGraveRows(PDO $pdo, array $graveIds): void
 {
     $graveIds = array_values(array_unique(array_filter(
@@ -88,16 +88,6 @@ function lockGraveRows(PDO $pdo, array $graveIds): void
     }
 }
 
-/**
- * Re-derive a grave's status from the interments table, atomically.
- *
- * Occupied  <=> at least one Active, non-deleted interment references it.
- * Vacant    otherwise.
- *
- * The caller MUST hold a FOR UPDATE lock on this grave row.
- *
- * Returns the new status string, or null if the grave no longer exists.
- */
 function rederiveGraveStatus(PDO $pdo, int $graveId): ?string
 {
     $stmt = $pdo->prepare("
@@ -190,8 +180,6 @@ $formatTransfer = function ($row) {
             'planned_new_assistance_type' => $row['old_new_assistance_type'],
             'planned_new_remarks'         => $row['old_new_remarks'],
 
-            // Staged Old-Occupant permit values. Dedicated columns are the
-            // canonical source; the JSON blob is a compatibility fallback.
             'planned_exhumation_permit_number' => $row['old_new_exhumation_permit_number'] ?? null,
             'planned_transfer_permit_number'   => $row['old_new_transfer_permit_number']   ?? null,
 
@@ -400,6 +388,11 @@ if ($method === 'POST') {
     //     The Old Occupant's Exhumation Permit No. and Transfer Permit No.
     //     are also written to their dedicated columns.
     //
+    //     Also writes the planned Block / Grave / Status into
+    //     reservation_details.old_new_grave_id / old_new_status. When the
+    //     caller supplies status='Inactive', the grave is force-cleared so
+    //     the persisted plan is always internally consistent.
+    //
     //     CONCURRENCY: the reservation_details row is locked FOR UPDATE for
     //     the duration of the transaction, so two concurrent saves cannot
     //     interleave their JSON blob writes.
@@ -469,16 +462,12 @@ if ($method === 'POST') {
             if (!empty($rawData['remarks'])) {
                 $existing['remarks'] = (string) $rawData['remarks'];
             }
-            // Also mirror the date fields at the top level so Reserve's parser
-            // can read them without having to look inside old_edits.
             if (!empty($rawData['date_buried'])) {
                 $existing['date_interment'] = (string) $rawData['date_buried'];
             }
             if (!empty($rawData['lease_expiration_date'])) {
                 $existing['expiration_date'] = (string) $rawData['lease_expiration_date'];
             }
-            // Mirror the permit fields at the top level too, matching the shape
-            // Reserve's update_reservation_plan writes.
             if (isset($rawData['exhumation_permit_number'])) {
                 $existing['exhumation_permit_number'] = (string) $rawData['exhumation_permit_number'];
             }
@@ -507,30 +496,54 @@ if ($method === 'POST') {
             ");
             $upd->execute([$newJson, $exhumationPermitCol, $transferPermitCol, $userData['user_id'], $reservationId]);
 
-            if (!empty($rawData['grave_code'])) {
-                $code = trim((string) $rawData['grave_code']);
+            // -----------------------------------------------------------------
+            // Old Occupant's planned Block / Grave / Status.
+            //
+            // Mirrors Reserve's update_reservation_plan:
+            //   - Caller-supplied status wins; otherwise keep the existing one.
+            //   - status='Inactive' force-clears the grave (an Inactive
+            //     occupant has no grave by definition).
+            //   - An empty grave_code means "no grave" (NULL), matching the
+            //     display rule.
+            // -----------------------------------------------------------------
+            $rawGraveCode = trim((string) ($rawData['grave_code'] ?? ''));
+            $newGraveId = null;
+            if ($rawGraveCode !== '') {
                 $gs = $pdo->prepare("
                     SELECT grave_id FROM graves
                     WHERE grave_code = ? AND deleted_at IS NULL
                 ");
-                $gs->execute([$code]);
+                $gs->execute([$rawGraveCode]);
                 $gid = $gs->fetchColumn();
-
-                // A typo'd grave code used to be silently ignored — the caller
-                // got a 200 "saved" while the destination was never set. Reject
-                // the request instead so the UI can surface the error.
                 if ($gid === false) {
                     $pdo->rollBack();
-                    Response::error("Grave code '$code' not found.", 400);
+                    Response::error("Grave code '$rawGraveCode' not found.", 400);
                 }
-
-                $upd2 = $pdo->prepare("
-                    UPDATE reservation_details
-                    SET old_new_grave_id = ?, old_new_status = 'Active'
-                    WHERE reservation_id = ?
-                ");
-                $upd2->execute([(int) $gid, $reservationId]);
+                $newGraveId = (int) $gid;
             }
+
+            $statusProvided = isset($rawData['status']) && $rawData['status'] !== '';
+            $oldNewStatus = $statusProvided
+                ? (string) $rawData['status']
+                : ($rd['old_new_status'] ?: null);
+
+            if ($oldNewStatus !== null && !in_array($oldNewStatus, ['Active', 'Inactive'], true)) {
+                $pdo->rollBack();
+                Response::error("Invalid status. Must be Active or Inactive.", 400);
+            }
+
+            if ($oldNewStatus === 'Inactive') {
+                $newGraveId = null;
+            }
+
+            $upd2 = $pdo->prepare("
+                UPDATE reservation_details
+                SET old_new_grave_id = ?,
+                    old_new_status    = ?,
+                    updated_by        = ?
+                WHERE reservation_id = ?
+            ");
+            $upd2->execute([$newGraveId, $oldNewStatus, $userData['user_id'], $reservationId]);
 
             $pdo->commit();
         } catch (PDOException $e) {
@@ -608,7 +621,6 @@ if ($method === 'POST') {
 
         $pdo->beginTransaction();
         try {
-            // Lock the pending interment row and confirm it is still Pending.
             $chk = $pdo->prepare("
                 SELECT status FROM interments
                 WHERE interment_id = ? AND deleted_at IS NULL
@@ -691,8 +703,6 @@ if ($method === 'POST') {
             if (isset($decoded['old_edits']) && is_array($decoded['old_edits'])) {
                 $oldEdits = $decoded['old_edits'];
             }
-            // Pick up permit values staged by Reserve's update_reservation_plan
-            // action, which stores them at the top level of the JSON blob.
             if (empty($oldEdits['exhumation_permit_number']) && !empty($decoded['exhumation_permit_number'])) {
                 $oldEdits['exhumation_permit_number'] = $decoded['exhumation_permit_number'];
             }
@@ -702,8 +712,6 @@ if ($method === 'POST') {
         }
     }
 
-    // The dedicated columns are the canonical storage for the staged
-    // old-occupant permit values, so they take the highest priority.
     if (!empty($rd['exhumation_permit_number'])) {
         $oldEdits['exhumation_permit_number'] = $rd['exhumation_permit_number'];
     }
@@ -714,10 +722,6 @@ if ($method === 'POST') {
     $pdo->beginTransaction();
     try {
 
-        // ---- 1. Lock the pending interment row so concurrent POST / DELETE
-        //         on the same pending interment serialize. The re-check under
-        //         the lock catches a request that slipped in between our
-        //         pre-transaction read and now. ----
         $lockStmt = $pdo->prepare("
             SELECT interment_id FROM interments
             WHERE interment_id = ? AND status = 'Pending' AND deleted_at IS NULL
@@ -730,10 +734,6 @@ if ($method === 'POST') {
             );
         }
 
-        // ---- 2. Lock & re-read the old occupant INSIDE the transaction. The
-        //         pre-transaction read we used to do could be stale: Records
-        //         DELETE / PUT could have moved or soft-deleted the old
-        //         occupant between then and now. ----
         $old = null;
         if ($oldIntermentId) {
             $oldStmt = $pdo->prepare("
@@ -751,10 +751,6 @@ if ($method === 'POST') {
             }
         }
 
-        // ---- 3. Determine which graves we might touch, and lock them all in
-        //         ascending grave_id order BEFORE we reason about occupancy.
-        //         This is what prevents concurrent Records / Reserve requests
-        //         from sliding into the destination grave while we validate it.
         $gravesToLock = [$targetGraveId];
         if ($old) {
             $peekOldUpdate = $rawData['old_occupant_update'] ?? [];
@@ -786,7 +782,6 @@ if ($method === 'POST') {
                 ? $oldUpdate['assistance_type']
                 : ($rd['old_new_assistance_type'] ?? null);
 
-            // Human-readable remarks only — never the raw JSON blob.
             $planRemarksText = '';
             if (!empty($rd['old_new_remarks'])) {
                 $decodedPlan = json_decode($rd['old_new_remarks'], true);
@@ -811,8 +806,6 @@ if ($method === 'POST') {
                     if ((int) $oldNewGraveId === $targetGraveId) {
                         throw new Exception("Old occupant cannot stay in the same grave being reserved.");
                     }
-                    // We already hold the FOR UPDATE lock on $oldNewGraveId,
-                    // so this vacancy check is now race-free.
                     $checkNew = $pdo->prepare("
                         SELECT status FROM graves
                         WHERE grave_id = ? AND status = 'Vacant' AND deleted_at IS NULL
@@ -823,8 +816,6 @@ if ($method === 'POST') {
                         throw new Exception("The destination grave for the old occupant is not vacant or does not exist.");
                     }
 
-                    // Move first (fires the trigger with original remarks),
-                    // then apply assistance_type / remarks separately.
                     $moveStmt = $pdo->prepare("
                         UPDATE interments
                         SET current_grave_id = ?, status = 'Active', updated_by = ?
@@ -853,8 +844,6 @@ if ($method === 'POST') {
                         $tail->execute($setParams);
                     }
 
-                    // Derive rather than blindly set — idempotent and safe
-                    // even if a co-interment already occupies this grave.
                     rederiveGraveStatus($pdo, (int) $oldNewGraveId);
                 } else {
                     $setClauses = ['current_grave_id = NULL', "status = 'Active'"];
@@ -899,8 +888,6 @@ if ($method === 'POST') {
                 $updateOld->execute($setParams);
             }
 
-            // Apply staged edits, including the Date of Interment and the
-            // auto-calculated Expiration Date.
             if (!empty($oldEdits)) {
                 $editableOldFields = [
                     'deceased_name',
@@ -946,7 +933,6 @@ if ($method === 'POST') {
             }
         }
 
-        // Execute the pending interment (new occupant).
         $updatePending = $pdo->prepare("
             UPDATE interments
             SET status = 'Active', current_grave_id = ?, updated_by = ?
@@ -955,8 +941,6 @@ if ($method === 'POST') {
         $updatePending->execute([$targetGraveId, $userData['user_id'], $pendingId]);
 
         if ($targetGraveId) {
-            // Derive rather than blindly set — idempotent, and correct even
-            // if the target grave already has other Active co-interments.
             rederiveGraveStatus($pdo, $targetGraveId);
         }
 
@@ -1033,8 +1017,6 @@ if ($method === 'DELETE') {
     $pdo->beginTransaction();
     try {
 
-        // ---- 1. Lock the pending interment row so a concurrent POST (execute)
-        //         cannot interleave with this cancellation. ----
         $lockStmt = $pdo->prepare("
             SELECT interment_id FROM interments
             WHERE interment_id = ? AND status = 'Pending' AND deleted_at IS NULL
@@ -1047,17 +1029,12 @@ if ($method === 'DELETE') {
             );
         }
 
-        // ---- 2. Lock the target grave before reasoning about its status. ----
         if ($targetGraveId) {
             lockGraveRows($pdo, [$targetGraveId]);
         }
 
         $cancelRemark = "Cancelled on " . date('Y-m-d H:i:s');
 
-        // current_grave_id is explicitly cleared so the chk_status_grave
-        // CHECK (status = 'Active' OR current_grave_id IS NULL) always
-        // passes, even if the pending row unexpectedly had a grave
-        // attached due to data drift.
         $del = $pdo->prepare("
             UPDATE interments
             SET status = 'Inactive',
@@ -1070,9 +1047,6 @@ if ($method === 'DELETE') {
         $del->execute([$cancelRemark, $userData['user_id'], $pendingId]);
 
         if ($targetGraveId) {
-            // Derive the new status atomically. Replaces the previous
-            // read-then-write pattern, which could leave a grave Occupied
-            // with zero Active occupants when two requests raced.
             $newGraveStatus = rederiveGraveStatus($pdo, $targetGraveId);
             $graveFreed     = ($newGraveStatus === 'Vacant');
         }

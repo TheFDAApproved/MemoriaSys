@@ -236,16 +236,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 ? '<select class="cellSelect" data-field="status">' + buildOptions(STATUS_OPTIONS, user.status) + '</select>'
                 : escapeHtml(user.status);
 
-            const phoneCell = isEditing
-                ? '<input type="tel" class="cellSelect" data-field="phone_number" ' +
-                'value="' + escapeHtml(formatPhoneDisplay(user.phone_number)) + '" ' +
-                'placeholder="+63 912 345 6789" maxlength="16" autocomplete="off" ' +
-                'inputmode="numeric" ' +
-                'style="background-image:none;padding-right:10px;">'
-                : escapeHtml(formatPhoneDisplay(user.phone_number));
+            const phoneCell = escapeHtml(formatPhoneDisplay(user.phone_number));
 
             const actions = isEditing
                 ? '<button type="button" class="actionBtn save-action" data-action="save" title="Save"><i class="fas fa-check"></i></button>' +
+                '<button type="button" class="actionBtn cancel-action" data-action="cancel" title="Cancel"><i class="fas fa-times"></i></button>' +
                 '<button type="button" class="actionBtn delete-action" data-action="delete" title="Delete"><i class="fas fa-trash"></i></button>'
                 : '<button type="button" class="actionBtn edit-action" data-action="edit" title="Edit"><i class="fas fa-pen"></i></button>' +
                 '<button type="button" class="actionBtn delete-action" data-action="delete" title="Delete"><i class="fas fa-trash"></i></button>';
@@ -377,11 +372,24 @@ document.addEventListener('DOMContentLoaded', function () {
         els.searchInput.style.paddingRight = hasText ? '36px' : '';
     }
 
-    els.tableBody.addEventListener('input', function (e) {
-        const input = e.target;
-        if (input && input.matches && input.matches('input[data-field="phone_number"]')) {
-            input.value = formatPhoneInput(input.value);
-        }
+    function cancelEdit() {
+        if (state.editingId === null) return;
+        state.editingId = null;
+        state.lastRenderKey = '';
+        renderTable(false);
+    }
+
+    document.addEventListener('mousedown', function (e) {
+        if (state.editingId === null) return;
+
+        if (e.target.closest('button[data-action]')) return;
+
+        const editingRow = els.tableBody.querySelector(
+            'tr[data-user-id="' + state.editingId + '"]'
+        );
+        if (editingRow && editingRow.contains(e.target)) return;
+
+        cancelEdit();
     });
 
     els.tableBody.addEventListener('click', async function (e) {
@@ -398,33 +406,27 @@ document.addEventListener('DOMContentLoaded', function () {
             state.editingId = userId;
             state.lastRenderKey = '';
             renderTable(false);
-            const phoneInput = row.querySelector('input[data-field="phone_number"]');
-            if (phoneInput) setTimeout(function () { phoneInput.focus(); }, 30);
+            const roleSelect = els.tableBody.querySelector(
+                'tr[data-user-id="' + userId + '"] select[data-field="role"]'
+            );
+            if (roleSelect) setTimeout(function () { roleSelect.focus(); }, 30);
+            return;
+        }
+
+        if (action === 'cancel') {
+            cancelEdit();
             return;
         }
 
         if (action === 'save') {
             const roleSel = row.querySelector('select[data-field="role"]');
             const statusSel = row.querySelector('select[data-field="status"]');
-            const phoneInput = row.querySelector('input[data-field="phone_number"]');
             if (!roleSel || !statusSel) return;
 
             const body = {
                 role: toDbRole(roleSel.value),
                 status: statusSel.value
             };
-
-            if (phoneInput) {
-                const trimmed = phoneInput.value.trim();
-                if (trimmed !== '' && trimmed !== '+63' && trimmed !== '+63 ') {
-                    const forDb = formatPhoneForDb(trimmed);
-                    if (forDb === null) {
-                        alert('Please enter a valid Philippine mobile number (10 digits after +63).');
-                        return;
-                    }
-                    body.phone_number = forDb;
-                }
-            }
 
             btn.disabled = true;
 

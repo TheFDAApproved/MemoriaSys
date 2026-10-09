@@ -216,3 +216,11 @@
     background-image: none;
     cursor: default;
 }
+
+.modalOverlay .paperForm select#block[aria-readonly="true"],
+.modalOverlay .paperForm select#grave_code[aria-readonly="true"],
+.modalOverlay .paperForm select#burial_block[aria-readonly="true"],
+.modalOverlay .paperForm select#status[aria-readonly="true"] {
+    color: #64748b;
+    -webkit-text-fill-color: #64748b;
+}
