@@ -359,6 +359,7 @@
                             );
                           };
                           x.src = 'api/images/header.png';
+                          refreshImages();
                         "
                       >
                         <i class="fas fa-rotate-left"></i>
@@ -408,6 +409,7 @@
                             );
                           };
                           x.src = 'api/images/footer.png';
+                          refreshImages();
                         "
                       >
                         <i class="fas fa-rotate-left"></i>
@@ -659,6 +661,7 @@ control_number,deceased_name,last_known_address,death_certificate,deceased_date_
       const rootStyles = getComputedStyle(document.documentElement);
       const mainColor = rootStyles.getPropertyValue("--mainColor").trim();
       window.main_mainColor = mainColor;
+      refreshImages();
     </script>
     <script src="assets/js/settings.js"></script>
   </body>

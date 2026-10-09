@@ -351,3 +351,183 @@
   /* expose globally */
   window.loadUserContent = loadUserContent;
 })();
+
+(function () {
+  "use strict";
+
+  /* ==================================================================
+   * refreshImages()
+   * ------------------------------------------------------------------
+   * Cache-busts every <img> (plus <source srcset> and <video poster>)
+   * by writing a fresh ?t=<timestamp> onto the URL, forcing the
+   * browser to re-download the image instead of reusing its cache.
+   *
+   *   await window.refreshImages();                       // whole page
+   *   window.refreshImages(document.querySelector("#gallery"));
+   *   window.refreshImages(document, { stamp: "v2", timeout: 5000 });
+   *
+   * Returns a Promise that resolves with a small summary object once
+   * every image has loaded (or the timeout elapsed).
+   * ================================================================== */
+
+  const CACHE_PARAM = "t"; // query param used for cache-busting
+  const DEFAULT_SELECTOR = "img, source, video[poster]";
+  const DEFAULT_TIMEOUT = 10000;
+
+  /* ---------------------- helpers ---------------------- */
+
+  /** Should we touch this URL at all? */
+  function isBustable(raw) {
+    if (typeof raw !== "string") return false;
+    const value = raw.trim();
+    if (!value || value.startsWith("#")) return false;
+    // Never rewrite inline / non-network URLs
+    if (/^(data|blob|javascript|mailto|tel|about):/i.test(value)) return false;
+    return true;
+  }
+
+  /** Return `raw` with ?t=<stamp> set (replacing any previous value). */
+  function withStamp(raw, stamp) {
+    try {
+      const url = new URL(raw, document.baseURI);
+      // Only http(s) — skip anything exotic
+      if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+      url.searchParams.set(CACHE_PARAM, stamp); // set() replaces, never stacks
+      return url.href;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Cache-bust every candidate URL inside a srcset string. */
+  function bustSrcset(srcset, stamp) {
+    // Commas inside data: URLs would break naive splitting — just skip those.
+    if (!srcset || /data:/i.test(srcset)) return null;
+
+    return srcset
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) => {
+        const pieces = part.split(/\s+/); // [url, ...descriptors]
+        const busted = withStamp(pieces[0], stamp);
+        if (!busted) return part;
+        pieces[0] = busted;
+        return pieces.join(" ");
+      })
+      .join(", ");
+  }
+
+  /** Resolve when an <img> finishes loading (or errors / times out). */
+  function waitForImage(img, timeout) {
+    return new Promise((resolve) => {
+      // Already decoded and usable? Nothing to wait for.
+      if (img.complete && img.naturalWidth > 0) {
+        resolve(true);
+        return;
+      }
+
+      let settled = false;
+
+      const cleanup = () => {
+        clearTimeout(timer);
+        img.removeEventListener("load", onLoad);
+        img.removeEventListener("error", onError);
+      };
+
+      const finish = (ok) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(ok);
+      };
+
+      const onLoad = () => finish(true);
+      const onError = () => finish(false);
+      const timer = setTimeout(() => finish(false), timeout);
+
+      img.addEventListener("load", onLoad);
+      img.addEventListener("error", onError);
+    });
+  }
+
+  /* ---------------------- main ---------------------- */
+
+  function refreshImages(root, options) {
+    const scope =
+      root && typeof root.querySelectorAll === "function" ? root : document;
+
+    const opts = options || {};
+    const stamp = String(opts.stamp != null ? opts.stamp : Date.now());
+    const selector =
+      typeof opts.selector === "string" ? opts.selector : DEFAULT_SELECTOR;
+    const timeout = Number.isFinite(opts.timeout)
+      ? opts.timeout
+      : DEFAULT_TIMEOUT;
+
+    // Collect the elements we care about.
+    const elements = Array.from(scope.querySelectorAll(selector));
+
+    // If `scope` itself is a matching element (e.g. you passed an <img>),
+    // make sure it's included too.
+    if (scope.nodeType === 1 && scope.matches && scope.matches(selector)) {
+      elements.unshift(scope);
+    }
+
+    const jobs = []; // { el, attr, value }
+
+    for (const el of elements) {
+      const tag = el.tagName;
+
+      if (tag === "IMG") {
+        const src = el.getAttribute("src");
+        if (isBustable(src)) {
+          const busted = withStamp(src, stamp);
+          if (busted) jobs.push({ el, attr: "src", value: busted });
+        }
+
+        const srcset = el.getAttribute("srcset");
+        const bustedSet = bustSrcset(srcset, stamp);
+        if (bustedSet) jobs.push({ el, attr: "srcset", value: bustedSet });
+      } else if (tag === "SOURCE") {
+        const srcset = el.getAttribute("srcset");
+        const bustedSet = bustSrcset(srcset, stamp);
+        if (bustedSet) jobs.push({ el, attr: "srcset", value: bustedSet });
+      } else if (tag === "VIDEO") {
+        const poster = el.getAttribute("poster");
+        if (isBustable(poster)) {
+          const busted = withStamp(poster, stamp);
+          if (busted) jobs.push({ el, attr: "poster", value: busted });
+        }
+      }
+    }
+
+    if (jobs.length === 0) {
+      return Promise.resolve({ stamp, updated: 0, loaded: 0, failed: 0 });
+    }
+
+    // Apply all the new URLs first…
+    for (const job of jobs) {
+      job.el.setAttribute(job.attr, job.value);
+    }
+
+    // …then wait for the <img> elements to actually finish loading.
+    const images = elements.filter((el) => el.tagName === "IMG");
+
+    return Promise.all(images.map((img) => waitForImage(img, timeout))).then(
+      (results) => {
+        const loaded = results.filter(Boolean).length;
+        return {
+          stamp,
+          updated: jobs.length,
+          loaded,
+          failed: images.length - loaded,
+        };
+      },
+    );
+  }
+
+  /* expose globally */
+  window.refreshImages = refreshImages;
+  window.reloadImages = refreshImages; // friendly alias
+})();

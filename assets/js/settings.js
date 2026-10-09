@@ -602,6 +602,9 @@ document.addEventListener("DOMContentLoaded", () => {
       console.error("Save Configuration failed:", err);
       showAlertTOP(err.message || "Failed to save settings.", "error");
     } finally {
+      document.getElementById("preview_footer").src = "api/images/footer.png";
+      document.getElementById("preview_header").src = "api/images/header.png";
+      refreshImages();
       submitBtn.disabled = false;
       submitBtn.innerHTML = originalHTML;
     }

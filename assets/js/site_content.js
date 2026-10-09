@@ -463,6 +463,16 @@ async function saveSiteContent(event) {
     if (submitBtn) {
       submitBtn.disabled = false;
       if (originalHTML !== null) submitBtn.innerHTML = originalHTML;
+      document.getElementById("preview_logo_1").src = "api/images/logo_1.png";
+      document.getElementById("preview_logo_2").src = "api/images/logo_2.png";
+      document.getElementById("preview_cemetery_logo").src =
+        "api/images/cemetery_logo.png";
+      document.getElementById("preview_cemetery_mark").src =
+        "api/images/cemetery_mark.png";
+      document.getElementById("preview_cemetery_background").src =
+        "api/images/cemetery_background.png";
+      document.getElementById("preview_qr_code").src = "api/images/qr_code.png";
+      refreshImages();
     }
   }
 }
