@@ -53,6 +53,7 @@
     />
     <link rel="stylesheet" href="assets/css/settings.css" />
     <link rel="stylesheet" href="assets/css/delete_modal.css" />
+    <link rel="stylesheet" href="assets/css/infowrap.css" />
   </head>
   <body>
     <div class="settingsContent">
@@ -364,6 +365,20 @@
                       >
                         <i class="fas fa-rotate-left"></i>
                       </button>
+                      <div class="infoWrap">
+                        <button
+                          class="infoIcon"
+                          type="button"
+                          aria-label="Remember to hard refresh"
+                          aria-expanded="false"
+                        >
+                          <i class="fas fa-info-circle"></i>
+                        </button>
+                        <div class="infoPopup" role="tooltip">
+                          It takes time to reflect the saved image. Hard reload
+                          or hard refresh if possible
+                        </div>
+                      </div>
                     </div>
                     <span>PNG Only</span>
                   </div>
@@ -414,6 +429,20 @@
                       >
                         <i class="fas fa-rotate-left"></i>
                       </button>
+                      <div class="infoWrap">
+                        <button
+                          class="infoIcon"
+                          type="button"
+                          aria-label="Remember to hard refresh"
+                          aria-expanded="false"
+                        >
+                          <i class="fas fa-info-circle"></i>
+                        </button>
+                        <div class="infoPopup" role="tooltip">
+                          It takes time to reflect the saved image. Hard reload
+                          or hard refresh if possible
+                        </div>
+                      </div>
                     </div>
                     <span>PNG Only</span>
                   </div>
@@ -664,5 +693,6 @@ control_number,deceased_name,last_known_address,death_certificate,deceased_date_
       refreshImages();
     </script>
     <script src="assets/js/settings.js"></script>
+    <script src="assets/js/infowrap.js"></script>
   </body>
 </html>
