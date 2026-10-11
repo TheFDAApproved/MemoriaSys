@@ -694,5 +694,13 @@ control_number,deceased_name,last_known_address,death_certificate,deceased_date_
     </script>
     <script src="assets/js/settings.js"></script>
     <script src="assets/js/infowrap.js"></script>
+    <script>
+      var xyz = document.getElementById("main_color_1");
+      if (xyz.textContent === "") {
+        xyz.textContent = "#0f172a";
+        document.getElementById("main_color").value = "#0f172a";
+        window.main_mainColor = "#0f172a";
+      }
+    </script>
   </body>
 </html>
