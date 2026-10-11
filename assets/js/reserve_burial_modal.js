@@ -342,6 +342,7 @@ const ReserveBurialModal = (() => {
     setOneDate("transfer_permit_date", V("transfer_permit_date"));
     setOneDate("exhumation_permit_date", V("exhumation_permit_date"));
     setOneDate("date_buried", V("date_buried"));
+    setOneDate("date_exhumed", V("date_exhumed"));
     setOneDate("lease_expiration_date", V("lease_expiration_date"));
 
     setOne("contact_person_name", V("contact_person_name"));
@@ -1076,7 +1077,7 @@ const ReserveBurialModal = (() => {
 
     const cur = locationHeaderEl?.querySelector(".locCurrent");
     if (cur) {
-      if (currentInfo) cur.textContent = ` (currently at ${currentInfo})`;
+      if (currentInfo) cur.textContent = ` (they are currently in the ${currentInfo})`;
       else cur.textContent = "(Locked, going into this assigned grave)";
     }
   }
@@ -1249,6 +1250,7 @@ const ReserveBurialModal = (() => {
     setDateIfPresent("transfer_permit_date", src.transfer_permit_date);
     setDateIfPresent("exhumation_permit_date", src.exhumation_permit_date);
     setDateIfPresent("date_buried", src.date_buried);
+    setDateIfPresent("date_exhumed", src.date_exhumed);
     setDateIfPresent("lease_expiration_date", src.lease_expiration_date);
 
     setIfPresent("contact_person_name", src.contact_person_name);
@@ -1414,6 +1416,11 @@ const ReserveBurialModal = (() => {
       remarks: read("remarks"),
       old_new_status: read("status") || "Inactive",
       old_new_grave_code: read("grave_code"),
+      burial_permit_date: read("burial_permit_date") || null,
+      transfer_permit_date: read("transfer_permit_date") || null,
+      transfer_permit_issued_by: read("transfer_permit_issued_by"),
+      exhumation_permit_date: read("exhumation_permit_date") || null,
+      date_exhumed: read("date_exhumed") || null,
     };
   }
 
@@ -2490,12 +2497,27 @@ const ReserveBurialModal = (() => {
       contact_person_address_barangay:
         modalEl.querySelector("#contact_person_address_barangay")?.value || "",
       assistance_type: assistance,
+
       burial_permit_number:
         modalEl.querySelector("#burial_permit_number")?.value.trim() || "",
+      burial_permit_date:                                             
+        modalEl.querySelector("#burial_permit_date")?.value || null,  
+
       exhumation_permit_number:
         modalEl.querySelector("#exhumation_permit_number")?.value.trim() || "",
+      exhumation_permit_date:                                        
+        modalEl.querySelector("#exhumation_permit_date")?.value || null, 
+
       transfer_permit_number:
         modalEl.querySelector("#transfer_permit_number")?.value.trim() || "",
+      transfer_permit_issued_by:                                      
+        modalEl.querySelector("#transfer_permit_issued_by")?.value.trim() || "",
+      transfer_permit_date:                                           
+        modalEl.querySelector("#transfer_permit_date")?.value || null, 
+
+      date_exhumed:                                                  
+        modalEl.querySelector("#date_exhumed")?.value || null,
+
       burial_clearance_date:
         modalEl.querySelector("#burial_clearance_date")?.value || null,
       date_buried: dateBuried,
@@ -2512,6 +2534,11 @@ const ReserveBurialModal = (() => {
       if (payload.old_new_status === "Active") {
         payload.old_new_grave_code = (cur.old_new_grave_code || "").trim();
       }
+      // ▼ ADDED: send O's planned assistance type (only meaningful when Active)
+      if (payload.old_new_status === "Active" && cur.assistance_type) {
+        payload.old_new_assistance_type = cur.assistance_type;
+      }
+      // ▲ ADDED
       const diff = computeOldDiff(cur, oldOccupantDraft.original);
       if (Object.keys(diff).length) payload.old_edited_fields = diff;
     } else if (isInactive) {

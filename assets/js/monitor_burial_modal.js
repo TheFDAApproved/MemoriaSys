@@ -27,6 +27,9 @@ const MonitorBurialModal = (() => {
     let nextBtn = null;
     let backBtn = null;
 
+    // ▼ ADDED: header element ref (parity with Reserve)
+    let locationHeaderEl = null;
+
     const MONITOR_API = 'api/monitor.php';
     const BLOCKS_API  = 'api/blocks.php';
     const GRAVES_API  = 'api/graves.php';
@@ -85,6 +88,26 @@ const MonitorBurialModal = (() => {
         const style = document.createElement('style');
         style.id = 'reserveWizardMiniStyles';
         style.textContent = `
+            /* ▼ ADDED: location header (parity with Reserve) */
+            #burial_modal_overlay .wizardLocationHeader {
+                margin: 12px 0 6px;
+                padding: 6px 10px;
+                background: #f4f8ff;
+                border-left: 3px solid #2b6cd4;
+                border-radius: 4px;
+                font-size: 0.95rem;
+                font-weight: 600;
+                color: #1f2a3d;
+                width: 25%;
+            }
+            #burial_modal_overlay .wizardLocationHeader .locName { color: #2b6cd4; }
+            #burial_modal_overlay .wizardLocationHeader .locCurrent {
+                font-weight: 400;
+                font-size: 0.85rem;
+                color: #56637a;
+            }
+            /* ▲ ADDED */
+
             #burial_modal_overlay .paperFormActions {
                 display: flex !important;
                 align-items: center;
@@ -216,15 +239,71 @@ const MonitorBurialModal = (() => {
         e.value = raw ? addYearsISO(raw, LEASE_YEARS) : '';
     }
 
-    function controlNoField() {
-        if (!modalEl) return null;
-        return (
-            modalEl.querySelector('#control_number') ||
-            modalEl.querySelector('#control_no') ||
-            modalEl.querySelector('[name="control_number"]') ||
-            modalEl.querySelector('[name="control_no"]')
-        );
+    // ▼ ADDED: location header helpers (parity with Reserve)
+    function ensureLocationHeader() {
+        if (!modalEl) return;
+        injectWizardStyles();
+        const burialBlock = modalEl.querySelector('#burial_block');
+        if (!burialBlock) return;
+        const wrapper = burialBlock.closest('.col') || burialBlock.parentElement;
+        if (!wrapper) return;
+
+        const stray = modalEl.querySelector('.wizardLocationHeader');
+        if (stray && stray !== locationHeaderEl) stray.remove();
+
+        if (!locationHeaderEl || !document.body.contains(locationHeaderEl)) {
+            const h = document.createElement('div');
+            h.className = 'wizardLocationHeader';
+            h.innerHTML = `Where will <span class="locName">this person</span> go? <span class="locCurrent"></span>`;
+            wrapper.parentNode.insertBefore(h, wrapper);
+            locationHeaderEl = h;
+        }
     }
+
+    function updateLocationHeaderText(name, currentInfo) {
+        ensureLocationHeader();
+        const span = locationHeaderEl?.querySelector('.locName');
+        if (span) span.textContent = name || 'this person';
+
+        const cur = locationHeaderEl?.querySelector('.locCurrent');
+        if (cur) {
+            if (currentInfo) cur.textContent = ` (they are currently in the ${currentInfo})`;
+            else cur.textContent = '(Locked, going into this assigned grave)';
+        }
+    }
+
+    function refreshOldOccupantHeader() {
+        if (!modalEl) return;
+        const nameEl = modalEl.querySelector('#deceased_name');
+        const fromField = (nameEl?.value || '').trim();
+        const name =
+            fromField ||
+            pick(oldOccupantOriginal?.deceased_name, oldModeSnapshot?.deceased_name) ||
+            'this occupant';
+
+        // ▼ FIXED: "currently at" should show O's CURRENT grave (the target
+        //          grave N is moving into), not O's destination.
+        const srcBlock = pick(
+            reservation?.target_grave?.block_name,
+            oldOccupantOriginal?.block
+        );
+        const srcGrave = pick(
+            reservation?.target_grave?.grave_code,
+            oldOccupantOriginal?.grave_code
+        );
+        // ▲ FIXED
+        const info = (srcBlock || srcGrave) ? `${srcBlock || '—'} / ${srcGrave || '—'}` : '';
+        updateLocationHeaderText(name, info);
+}
+
+    function refreshNewOccupantHeader() {
+        if (!modalEl) return;
+        const nameEl = modalEl.querySelector('#deceased_name');
+        const fromField = (nameEl?.value || '').trim();
+        const name = fromField || pick(newModeSnapshot?.deceased_name) || 'the incoming person';
+        updateLocationHeaderText(name, '');
+    }
+    // ▲ ADDED
 
     function normalizeType(value) {
         const s = String(value || '').trim();
@@ -716,6 +795,17 @@ const MonitorBurialModal = (() => {
                 e.target.value = formatNameValue(e.target.value);
             });
         });
+
+        // ▼ ADDED: live-update location header name as user types
+        const headerNameEl = modalEl.querySelector('#deceased_name');
+        if (headerNameEl) {
+            headerNameEl.addEventListener('input', () => {
+                if (submissionSucceeded) return;
+                if (wizardMode === 'old') refreshOldOccupantHeader();
+                else if (wizardMode === 'new') refreshNewOccupantHeader();
+            });
+        }
+        // ▲ ADDED
 
         const blockSelect = modalEl.querySelector('#block');
         if (blockSelect) {
@@ -1215,6 +1305,10 @@ const MonitorBurialModal = (() => {
                 await loadGraveOptions(blockId, data.block, pinnedGraveId, data.grave_code);
             }
         }
+
+        // ▼ ADDED: refresh "Where will <name> go?" header
+        refreshOldOccupantHeader();
+        // ▲ ADDED
     }
 
     async function enterNewStep() {
@@ -1226,6 +1320,10 @@ const MonitorBurialModal = (() => {
         populateFields(data);
         applyMode();
         updateWizardButtons();
+
+        // ▼ ADDED: refresh "Where will <name> go?" header
+        refreshNewOccupantHeader();
+        // ▲ ADDED
     }
 
     // ▼ CHANGED: full parity with Reserve's handleNextClick —
@@ -1238,6 +1336,7 @@ const MonitorBurialModal = (() => {
             lockFieldsOnly();
             updateBurialTypePlaceholder();
             updateWizardButtons();
+            refreshNewOccupantHeader();
             return;
         }
 
@@ -1314,6 +1413,7 @@ const MonitorBurialModal = (() => {
             lockFieldsOnly();
             updateBurialTypePlaceholder();
             updateWizardButtons();
+            refreshOldOccupantHeader();
             return;
         }
 
@@ -1404,10 +1504,17 @@ const MonitorBurialModal = (() => {
             payload.old_new_status = status;
 
             if (status === 'Active' && oSource.grave_code) {
-                // ▼ CHANGED: also send the resolved grave_id (server prefers it).
-                const gid = resolveSelectedGraveId();
-                if (gid) payload.old_new_grave_id = gid;
-                // ▲ CHANGED
+                // ▼ FIXED: only resolve the id when the OLD step is the active form,
+                //          because only then does #grave_code hold O's destination.
+                //          On the 'new' step, #grave_code holds N's target, so sending
+                //          its id here would assign O to the wrong grave.
+                //          Falling back to just the code is safe: monitor.php
+                //          resolves `old_new_grave_code` → grave_id itself.
+                if (wizardMode === 'old') {
+                    const gid = resolveSelectedGraveId();
+                    if (gid) payload.old_new_grave_id = gid;
+                }
+                // ▲ FIXED
                 payload.old_new_grave_code = oSource.grave_code;
             }
             if (oSource.assistance_type) {
@@ -1622,6 +1729,13 @@ const MonitorBurialModal = (() => {
         oldOccupantOriginal = null;
         newOccupantOriginal = null;
         reservation = null;
+
+        // ▼ ADDED: remove the location header on close (parity with Reserve)
+        if (locationHeaderEl && locationHeaderEl.parentNode) {
+            locationHeaderEl.parentNode.removeChild(locationHeaderEl);
+        }
+        locationHeaderEl = null;
+        // ▲ ADDED
 
         const actions = modalEl.querySelector('.paperFormActions');
         if (actions) {
