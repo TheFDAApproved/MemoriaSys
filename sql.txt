@@ -1,3 +1,82 @@
+DROP DATABASE memoria_db;
+CREATE DATABASE memoria_db;
+USE memoria_db;
+
+--  =====================================================================
+--  CEMETERY DATABASE SCHEMA
+--  =====================================================================
+--
+--  Three tables, three tenses:
+--
+--    interments          PRESENT.  What is true right now.
+--                        One row per deceased.  Stable ID.
+--
+--    reservations        FUTURE.   What is planned to become true.
+--                        Frozen after creation.  Only Confirm / Cancel.
+--
+--    placement_history   PAST.     Physical placements that happened.
+--                        Append-only.  Full snapshot before and after
+--                        each placement change.
+--
+--  Lifecycle
+--  ---------
+--    RESERVE.php
+--      Creates N (interment, status='Pending', no grave) and a reservation
+--      with reservation_state='Active'.  O's interments row is NOT touched.
+--      No placement event is written — nothing has moved yet.
+--
+--    MONITOR.php
+--      Confirm -> atomic: applies O's staged biography edits, moves O
+--                 to destination, activates N in target grave, writes
+--                 one history entry for O and one for N,
+--                 sets state='Executed'.
+--      Cancel  -> atomic: soft-deletes N, sets state='Cancelled'.
+--                 O is NEVER touched.
+--
+--    RECORDS.php (Master File)
+--      CRUD over current data.  Locks records and graves that are
+--      referenced by an Active reservation.  Co-interment (multiple
+--      Active occupants in one grave) is allowed here, never through
+--      a reservation.
+--
+--  Edits are NOT history
+--  ---------------------
+--    placement_history records PHYSICAL PLACEMENTS only:
+--      Initial  - a body arrives in a grave (NULL -> grave)
+--      Move     - a body relocates (grave -> different grave)
+--      Removal  - a body leaves its grave (grave -> NULL)
+--
+--    Pure field edits (name correction, contact update, permit added)
+--    do NOT produce history rows.  They only modify the live interments
+--    row.
+--
+--  Reservations: two homes for two kinds of data
+--  ---------------------------------------------
+--    Dedicated columns: the reservation's OWN fields — target grave,
+--      old occupant's destination and new status, permits for the move,
+--      notes, etc.  These have FK or CHECK constraints and belong in
+--      real columns.
+--
+--    old_edited_fields (JSON): staged biography edits to the OLD
+--      occupant.  A DIFF — only the fields the user actually changed.
+--      Applied to O's interments row on Confirm; discarded on Cancel.
+--      Never includes control_number, current_grave_id, status,
+--      date_buried, or lease_expiration_date (those are either locked
+--      or handled by dedicated columns above).
+--
+--  Invariants
+--  ----------
+--    * Only one Active reservation may reference a given target grave.
+--    * Only one Active reservation may reference a given old occupant.
+--    * Only one Active reservation may reference a given incoming person.
+--    * If old_interment_id is NULL, all old_new_* fields are NULL.
+--    * If old_new_status = 'Inactive', old_new_grave_id must be NULL.
+--    * old_new_grave_id must never equal target_grave_id.
+--    * A person's current_grave_id respects chk_status_grave.
+--    * placement_history is append-only: no updated_at, no deleted_at.
+--  =====================================================================
+
+
 --  ----------------------------------------------------------------------
 --  USERS (MUST BE FIRST – referenced by all other tables)
 --  ----------------------------------------------------------------------
@@ -42,6 +121,8 @@ CREATE TABLE users (
     FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
 
+INSERT INTO `users` (`user_id`, `username`, `role`, `status`, `email`, `phone_number`, `password_hash`, `name`, `session_token`, `created_at`, `updated_at`, `deleted_at`, `created_by`, `updated_by`) VALUES (NULL, 'admin', 'Administrator', 'Verified', 'admin@gmail.com', '+639111111111', '$2y$12$YtdLBOCGz5.WcnxtHGPBx.eg4yRaijZUBMOYuw9GVAxkp670BXW0y', 'Administrator', NULL, '2026-10-11 01:37:40', '2026-10-11 01:37:57', NULL, NULL, NULL);
+
 --  ----------------------------------------------------------------------
 --  BLOCKS (sections / areas)
 --  ----------------------------------------------------------------------
@@ -54,7 +135,11 @@ CREATE TABLE blocks (
         'Mass Grave', 'Cluster', 'Block'
     ) NOT NULL,
     image_link TEXT,
-    coordinates JSON, -- for mapping visuals in the UI
+    coordinates_canvas JSON, -- for mapping visuals in the UI
+    `rows` INT NOT NULL DEFAULT 0,
+    `cols` INT NOT NULL DEFAULT 0,
+    shape VARCHAR(50) DEFAULT 'rectangle',
+    custom TINYINT(1) NOT NULL DEFAULT 0,
     remarks TEXT,
 
     -- Audit columns
@@ -73,10 +158,13 @@ CREATE TABLE blocks (
     FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
 
+INSERT INTO `blocks` (`block_id`, `block_name`, `block_type`, `image_link`, `coordinates_canvas`, `rows`, `cols`, `shape`, `custom`, `remarks`, `created_at`, `updated_at`, `deleted_at`, `created_by`, `updated_by`) VALUES
+(1, 'Santa Cecelia', 'Niche', '', NULL, 5, 5, 'rectangle', 0, '', '2026-10-11 15:18:34', '2026-10-11 15:18:34', NULL, 1, 1);
+
+
 --  ----------------------------------------------------------------------
 --  GRAVES (individual slots inside a block)
---      Status is manual: 'Vacant' or 'Occupied'.
---      If a grave is not usable, set status = 'Occupied' and add a remark.
+--      Status is manual: 'Vacant', 'Occupied', or 'Other'.
 --  ----------------------------------------------------------------------
 CREATE TABLE graves (
     grave_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -84,7 +172,7 @@ CREATE TABLE graves (
     grave_code VARCHAR(50) NOT NULL,
     row_num INT,
     col_num INT,
-    status ENUM('Vacant', 'Occupied') DEFAULT 'Vacant',
+    status ENUM('Vacant', 'Occupied', 'Other') DEFAULT 'Vacant',
     remarks TEXT,
 
     -- Audit columns
@@ -95,7 +183,7 @@ CREATE TABLE graves (
     updated_by INT NULL,
 
     -- Shadow column: unique only among ACTIVE graves.
-    -- When a block is soft-deleted, its graves also get deleted_at set,
+    -- When a block is soft-deleted, its graves also get deleted_at set in PHP okay,
     -- so their grave_code becomes reusable for future graves.
     active_grave_code VARCHAR(50)
         GENERATED ALWAYS AS (CASE WHEN deleted_at IS NULL THEN grave_code ELSE NULL END) STORED,
@@ -105,15 +193,41 @@ CREATE TABLE graves (
     FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE SET NULL,
     FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
+INSERT INTO `graves` (`grave_id`, `block_id`, `grave_code`, `row_num`, `col_num`, `status`, `remarks`, `created_at`, `updated_at`, `deleted_at`, `created_by`, `updated_by`) VALUES
+(1, 1, 'Santa Cecelia-01-01', 1, 1, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 17:11:35', NULL, NULL, NULL),
+(2, 1, 'Santa Cecelia-01-02', 1, 2, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 17:11:33', NULL, NULL, NULL),
+(3, 1, 'Santa Cecelia-01-03', 1, 3, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 18:12:17', NULL, NULL, NULL),
+(4, 1, 'Santa Cecelia-01-04', 1, 4, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 17:37:01', NULL, NULL, NULL),
+(5, 1, 'Santa Cecelia-01-05', 1, 5, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 15:51:27', NULL, NULL, NULL),
+(6, 1, 'Santa Cecelia-02-01', 2, 1, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 18:44:43', NULL, NULL, NULL),
+(7, 1, 'Santa Cecelia-02-02', 2, 2, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 15:18:34', NULL, NULL, NULL),
+(8, 1, 'Santa Cecelia-02-03', 2, 3, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 17:43:28', NULL, NULL, NULL),
+(9, 1, 'Santa Cecelia-02-04', 2, 4, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 15:18:34', NULL, NULL, NULL),
+(10, 1, 'Santa Cecelia-02-05', 2, 5, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 15:22:56', NULL, NULL, NULL),
+(11, 1, 'Santa Cecelia-03-01', 3, 1, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 15:26:28', NULL, NULL, NULL),
+(12, 1, 'Santa Cecelia-03-02', 3, 2, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 18:06:37', NULL, NULL, NULL),
+(13, 1, 'Santa Cecelia-03-03', 3, 3, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 17:12:24', NULL, NULL, NULL),
+(14, 1, 'Santa Cecelia-03-04', 3, 4, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 17:55:01', NULL, NULL, NULL),
+(15, 1, 'Santa Cecelia-03-05', 3, 5, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 16:58:31', NULL, NULL, NULL),
+(16, 1, 'Santa Cecelia-04-01', 4, 1, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 16:53:02', NULL, NULL, NULL),
+(17, 1, 'Santa Cecelia-04-02', 4, 2, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 15:18:34', NULL, NULL, NULL),
+(18, 1, 'Santa Cecelia-04-03', 4, 3, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 15:29:45', NULL, NULL, NULL),
+(19, 1, 'Santa Cecelia-04-04', 4, 4, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 15:31:37', NULL, NULL, NULL),
+(20, 1, 'Santa Cecelia-04-05', 4, 5, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 15:31:13', NULL, NULL, NULL),
+(21, 1, 'Santa Cecelia-05-01', 5, 1, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 16:33:05', NULL, NULL, NULL),
+(22, 1, 'Santa Cecelia-05-02', 5, 2, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 17:36:04', NULL, NULL, NULL),
+(23, 1, 'Santa Cecelia-05-03', 5, 3, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 15:18:51', NULL, NULL, NULL),
+(24, 1, 'Santa Cecelia-05-04', 5, 4, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 16:52:47', NULL, NULL, NULL),
+(25, 1, 'Santa Cecelia-05-05', 5, 5, 'Vacant', NULL, '2026-10-11 15:18:34', '2026-10-11 17:10:43', NULL, NULL, NULL);
 
 --  ----------------------------------------------------------------------
---  INTERMENTS (burial records)
+--  INTERMENTS (PRESENT — current state)
 --      Pending  = burial is not yet executed (not physically interred yet).
 --      Active   = in the cemetery.
 --      Inactive = was interred, now removed (moved to family, exhumed, etc.).
 --
---      Reservations live in reservation_details; this table only tracks
---      where the body is *right now* via current_grave_id.
+--      Reservations live in the `reservations` table; this table only
+--      tracks where the body is *right now* via current_grave_id.
 --  ----------------------------------------------------------------------
 CREATE TABLE interments (
     interment_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -131,9 +245,10 @@ CREATE TABLE interments (
 
     -- Grave (current location)
     -- Can be null if not yet found or maybe in somewhere in the cemetery but forgotten or something
-    current_grave_id INT,
+    -- Can be status active and null, this just means its in the cemetery. Inactive really means its not in the cemetery anymore, maybe the family gets them or etc. i guess
+    current_grave_id INT NULL,
 
-    -- Contact person (stored directly)
+    -- Contact person
     contact_person_name VARCHAR(255),
     contact_person_phone_number VARCHAR(50),
     contact_person_email VARCHAR(150),
@@ -182,134 +297,195 @@ CREATE TABLE interments (
     FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL,
 
     -- If status is Pending or Inactive, current_grave_id must be NULL.
-    -- Active rows may have NULL (Common Bone Chamber / location unknown).
+    -- Active rows may have NULL (bone chamber / location unknown).
     CONSTRAINT chk_status_grave CHECK (
         status = 'Active' OR current_grave_id IS NULL
     )
 );
 
+
 --  ----------------------------------------------------------------------
---  RESERVATION_DETAILS (planned changes)
---      One row per active reservation. Describes:
---        - the Pending interment (incoming occupant),
---        - the grave it targets,
---        - which Active interment is being displaced (if any),
---        - where the displaced occupant goes when the reservation executes.
---
---      This table now supports TWO kinds of rows:
---        1. Plan-only rows (pending_interment_id IS NULL) — the old
---           occupant's future has been planned (new grave, permits, dates)
---           but no incoming occupant has been chosen yet. Written by the
---           View Detail Burial Clearance modal.
---        2. Real reservations (pending_interment_id IS NOT NULL) — an
---           incoming occupant exists and will be activated when the
---           reservation executes.
---
---      Consumed when the reservation is either executed or cancelled
---      (hard-deleted on execute, soft-deleted on cancel).
+--  RESERVATIONS (FUTURE — planned data)
 --  ----------------------------------------------------------------------
-CREATE TABLE reservation_details (
+--  A reservation is a proposal to place an incoming person (N) into a
+--  target grave (G), possibly displacing an existing occupant (O).
+--
+--  Reservation lifecycle (reservation_state):
+--    Active     Waiting for Confirm or Cancel. Frozen after creation.
+--    Executed   Movement applied. Kept forever for audit.
+--    Cancelled  N discarded, O untouched. Kept forever for audit.
+--
+--  Editability:
+--    Everything on the reservation is set once, at creation. Nothing is
+--    edited after that. To change a reservation, cancel it and create a
+--    new one.
+--
+--  Uniqueness:
+--    Only one Active reservation may target a given grave, reference a
+--    given old occupant, or reference a given incoming person. Enforced
+--    with shadow columns keyed on reservation_state = 'Active'.
+--
+--  Old-occupant fields (old_new_*):
+--    Only set when old_interment_id IS NOT NULL.
+--    old_new_grave_id = O's destination grave. NULL means "no grave"
+--      (either bone chamber with status='Active', or removed from the
+--      cemetery with status='Inactive').
+--    old_new_status   = O's new status: Active or Inactive.
+--    old_new_grave_id must never equal target_grave_id (no co-interment
+--      through a reservation).
+--
+--  old_edited_fields (JSON):
+--    Staged biography edits to O as a DIFF — only fields the user
+--    actually changed.  Applied to O's interments row on Confirm in the
+--    same UPDATE as the move.  Discarded on Cancel.
+--    Never contains control_number, current_grave_id, status,
+--    date_buried, or lease_expiration_date.
+--  ----------------------------------------------------------------------
+CREATE TABLE reservations (
     reservation_id INT AUTO_INCREMENT PRIMARY KEY,
 
-    -- The incoming occupant. NULL when this row is a *plan-only* record.
-    -- The Pending interment row, once it exists, carries the new person's
-    -- name, permits, contact info, etc.
-    pending_interment_id INT NULL,
+    -- The incoming occupant. Always set.
+    pending_interment_id INT NOT NULL,
 
-    -- The grave being reserved for the incoming occupant.
-    -- For plan-only rows this is the old occupant's current grave — the
-    -- grave the future incoming occupant will eventually occupy.
+    -- The grave N will occupy. Must be Vacant, or must hold exactly one
+    -- occupant (O) who is leaving.
     target_grave_id INT NOT NULL,
 
-    -- The Active interment being displaced.
-    -- NULL when the target grave was vacant (no one to displace).
+    -- The Active interment being displaced. NULL when target was vacant.
     old_interment_id INT NULL,
 
-    -- Where the displaced occupant goes when the reservation executes.
-    -- All NULL when old_interment_id is NULL.
-    old_new_grave_id        INT NULL,     -- NULL = Common Bone Chamber / removed
-    old_new_status          ENUM('Active','Inactive') NULL,
+    -- Where O goes when the reservation is confirmed.
+    old_new_grave_id INT NULL,
+    old_new_status ENUM('Active','Inactive') NULL,
     old_new_assistance_type ENUM('Burial','Transfer the remains of the late','Other') NULL,
-    old_new_remarks         TEXT NULL,
+    old_new_remarks TEXT NULL,
 
-    -- Permit numbers for the old occupant's move. Written by the View
-    -- Detail Burial Clearance modal and consumed when Monitor executes.
+    -- Permits for O's move.
     exhumation_permit_number VARCHAR(100) NULL,
-    transfer_permit_number   VARCHAR(100) NULL,
+    transfer_permit_number VARCHAR(100) NULL,
+
+    -- Free-text notes about the reservation itself ("why this exists").
+    reservation_notes TEXT NULL,
+
+    -- Lifecycle
+    reservation_state ENUM('Active','Executed','Cancelled') NOT NULL DEFAULT 'Active',
+    actioned_at DATETIME NULL,
+    actioned_by INT NULL,
+
+    -- Staged O biography edits (JSON DIFF).  Applied on Confirm; discarded on Cancel.
+    old_edited_fields JSON NULL,
 
     -- Audit
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    deleted_at DATETIME NULL,
     created_by INT NULL,
     updated_by INT NULL,
 
-    -- Shadow columns for soft-delete-aware uniqueness.
-    -- One active reservation per pending interment.
-    -- MySQL allows multiple NULLs in a UNIQUE index, so plan-only rows
-    -- (pending_interment_id IS NULL) coexist freely.
+    -- Shadow columns: uniqueness only among Active reservations.
+    -- Because MySQL allows multiple NULLs in a UNIQUE index, reservations
+    -- in Executed / Cancelled state do not block each other.
     active_pending_interment_id INT
-        GENERATED ALWAYS AS (
-            CASE WHEN deleted_at IS NULL THEN pending_interment_id ELSE NULL END
-        ) STORED,
-    CONSTRAINT uk_active_pending_interment UNIQUE (active_pending_interment_id),
-
-    -- One active reservation per target grave (prevents double-booking).
-    -- The generated column is NULL for plan-only rows, so a plan can
-    -- exist without blocking the grave from also having a real
-    -- reservation. Uses a shadow column so soft-deleted rows don't block
-    -- the slot.
+        GENERATED ALWAYS AS (CASE WHEN reservation_state = 'Active' THEN pending_interment_id ELSE NULL END) STORED,
     active_target_grave_id INT
-        GENERATED ALWAYS AS (
-            CASE WHEN deleted_at IS NULL AND pending_interment_id IS NOT NULL
-            THEN target_grave_id ELSE NULL END
-        ) STORED,
-    CONSTRAINT uk_active_target_grave UNIQUE (active_target_grave_id),
-
-    -- One active reservation per old interment being displaced.
+        GENERATED ALWAYS AS (CASE WHEN reservation_state = 'Active' THEN target_grave_id ELSE NULL END) STORED,
     active_old_interment_id INT
-        GENERATED ALWAYS AS (CASE WHEN deleted_at IS NULL THEN old_interment_id ELSE NULL END) STORED,
-    CONSTRAINT uk_active_old_interment UNIQUE (active_old_interment_id),
+        GENERATED ALWAYS AS (CASE WHEN reservation_state = 'Active' THEN old_interment_id ELSE NULL END) STORED,
 
+    CONSTRAINT uk_active_pending_interment UNIQUE (active_pending_interment_id),
+    CONSTRAINT uk_active_target_grave      UNIQUE (active_target_grave_id),
+    CONSTRAINT uk_active_old_interment     UNIQUE (active_old_interment_id),
+
+    -- Foreign keys
     FOREIGN KEY (pending_interment_id) REFERENCES interments(interment_id) ON DELETE RESTRICT,
     FOREIGN KEY (target_grave_id)      REFERENCES graves(grave_id)          ON DELETE RESTRICT,
     FOREIGN KEY (old_interment_id)     REFERENCES interments(interment_id)  ON DELETE RESTRICT,
     FOREIGN KEY (old_new_grave_id)     REFERENCES graves(grave_id)          ON DELETE RESTRICT,
+    FOREIGN KEY (actioned_by)          REFERENCES users(user_id)            ON DELETE SET NULL,
     FOREIGN KEY (created_by)           REFERENCES users(user_id)            ON DELETE SET NULL,
     FOREIGN KEY (updated_by)           REFERENCES users(user_id)            ON DELETE SET NULL,
 
-    -- If there is no old occupant, there must be nothing about them.
-    -- (phrased so it stays true even if the FK ever nulls old_interment_id)
+    -- If O is not set, nothing about O is set. If O is set, its new
+    -- status must be decided.
     CONSTRAINT chk_old_pairing CHECK (
-        old_interment_id IS NOT NULL
-        OR (old_new_grave_id IS NULL
+        (old_interment_id IS NULL
+            AND old_new_grave_id IS NULL
             AND old_new_status IS NULL
             AND old_new_assistance_type IS NULL)
+        OR
+        (old_interment_id IS NOT NULL AND old_new_status IS NOT NULL)
+    ),
+
+    -- An Inactive O has no grave.
+    CONSTRAINT chk_inactive_has_no_grave CHECK (
+        NOT (old_new_status = 'Inactive' AND old_new_grave_id IS NOT NULL)
+    ),
+
+    -- O's destination must differ from the target grave.
+    CONSTRAINT chk_old_new_grave_not_target CHECK (
+        old_new_grave_id IS NULL OR old_new_grave_id <> target_grave_id
     )
 );
 
--- ----------------------------------------------------------------------
--- TRANSFER LOG – Audit trail of grave movements for each interment
--- ----------------------------------------------------------------------
-CREATE TABLE transfer_log (
-    log_id INT AUTO_INCREMENT PRIMARY KEY,
+
+--  ----------------------------------------------------------------------
+--  PLACEMENT_HISTORY (PAST — append-only)
+--  ----------------------------------------------------------------------
+--  Every change of a person's physical placement produces one row here.
+--  Field edits (name correction, contact change, permit added) do NOT
+--  produce history rows — they only modify the live interments row.
+--
+--  Snapshot semantics:
+--    snapshot_before  = full JSON copy of the interment row before the
+--                       placement change.
+--    snapshot_after   = full JSON copy of the interment row after the
+--                       placement change.
+--
+--  Cross-referencing:
+--    related_interment_id  = the other person involved in the same
+--                            reservation operation (O ↔ N). NULL for
+--                            manual moves.
+--    reservation_id        = the reservation that caused the change.
+--                            NULL for manual moves.
+--
+--  Append-only: no updated_at, no updated_by, no deleted_at. Rows are
+--  never edited or removed. Corrections are made by inserting a
+--  compensating row.
+--
+--  Event types (physical placements only):
+--    Initial   from_grave_id IS NULL,     to_grave_id IS NOT NULL
+--    Move      from_grave_id IS NOT NULL, to_grave_id IS NOT NULL
+--    Removal   from_grave_id IS NOT NULL, to_grave_id IS NULL
+--  ----------------------------------------------------------------------
+CREATE TABLE placement_history (
+    history_id INT AUTO_INCREMENT PRIMARY KEY,
+
     interment_id INT NOT NULL,
-    from_grave_id INT NULL,          -- NULL if they had no previous grave (new burial)
-    to_grave_id INT NULL,            -- NULL if they were removed from the cemetery
-    transfer_date DATETIME NOT NULL, -- ⬅️ Exact date + time of the transfer
-    reason TEXT,                     -- captured from interments.remarks at time of move
+    event_type ENUM('Initial','Move','Removal') NOT NULL,
 
-    -- Audit columns (no unique keys needed)
+    from_grave_id INT NULL,
+    to_grave_id   INT NULL,
+
+    event_date DATETIME NOT NULL,
+    reason     TEXT NULL,
+
+    related_interment_id INT NULL,
+    reservation_id       INT NULL,
+
+    snapshot_before JSON NULL,
+    snapshot_after  JSON NULL,
+
+    -- Append-only audit
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    deleted_at DATETIME NULL,
     created_by INT NULL,
-    updated_by INT NULL,
 
-    FOREIGN KEY (interment_id) REFERENCES interments(interment_id) ON DELETE RESTRICT,    
-    FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE SET NULL,
-    FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
+    FOREIGN KEY (interment_id)         REFERENCES interments(interment_id)  ON DELETE RESTRICT,
+    FOREIGN KEY (from_grave_id)        REFERENCES graves(grave_id)           ON DELETE RESTRICT,
+    FOREIGN KEY (to_grave_id)          REFERENCES graves(grave_id)           ON DELETE RESTRICT,
+    FOREIGN KEY (related_interment_id) REFERENCES interments(interment_id)   ON DELETE SET NULL,
+    FOREIGN KEY (reservation_id)       REFERENCES reservations(reservation_id) ON DELETE SET NULL,
+    FOREIGN KEY (created_by)           REFERENCES users(user_id)             ON DELETE SET NULL
 );
+
 
 --  ----------------------------------------------------------------------
 --  SETTINGS
@@ -336,8 +512,35 @@ CREATE TABLE settings (
     FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
 
+INSERT INTO `settings` (`setting_id`, `setting_key`, `setting_value`, `description`, `created_at`, `updated_at`, `deleted_at`, `created_by`, `updated_by`) VALUES
+(1, 'logo_1', 'logo_1.png', 'Header Logo 1', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(2, 'logo_2', 'logo_2.png', 'Header Logo 2', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(3, 'cemetery_logo', 'cemetery_logo.png', 'Cemetery Logo', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(4, 'cemetery_mark', 'cemetery_mark.png', 'Cemetery Mark', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(5, 'cemetery_background', 'cemetery_background.png', 'Cemetery Background', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(6, 'qr_code', 'qr_code.png', 'Payment QR Code', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(7, 'dept_name', 'Patay ka diha hhuhuh', 'Main Department Name', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(8, 'cemetery_name', 'Cemetery sa PATAY HAHAHAHHAHAHAHA', 'Cemetery Name', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(9, 'cemetery_address', 'diri mandaue', 'Cemetery Physical Address', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(10, 'office_address', 'diri cebu', 'Administrative Office Address', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(11, 'cemetery_google_maps', 'ambot asa', 'Google Maps Embed URL', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(12, 'contact_phone', '09221234567', 'Contact Hotline / Phone', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(13, 'contact_email', '0922@gmail.com', 'Official Email Address', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(14, 'payment_channels_list', '[]', 'Payment Channels', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(15, 'payment_purposes_list', '[]', 'Purposes of Payment', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(31, 'main_color', '#0f172a', 'UI Primary Color', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
+(32, 'people_name_1', 'James Chao Fan', 'Report Signatory 1 Name', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
+(33, 'people_title_1', 'CORTIS Main Dancer', 'Report Signatory 1 Title', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
+(34, 'people_name_2', 'Justin De Dios', 'Report Signatory 2 Name', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
+(35, 'people_title_2', 'SB19 Visual', 'Report Signatory 2 Title', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
+(36, 'people_name_3', 'Leonardo Da Vinci', 'Report Signatory 3 Name', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
+(37, 'people_title_3', 'Monalisa Husband', 'Report Signatory 3 Title', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
+(38, 'people_name_4', 'Hibari Kyoya', 'Report Signatory 4 Name', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
+(39, 'people_title_4', '10th Vongola Cloud Guardin', 'Report Signatory 4 Title', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1);
+
+
 --  ----------------------------------------------------------------------
---  PAYMENTS – simple ledger "independent" table
+--  PAYMENTS
 --  ----------------------------------------------------------------------
 CREATE TABLE payments (
     payment_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -377,117 +580,65 @@ CREATE TABLE payments (
     FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
 
+
 --  ----------------------------------------------------------------------
---  TRIGGERS – Auto-log grave movements
+--  TABLE COMMENTS
 --  ----------------------------------------------------------------------
-DROP TRIGGER IF EXISTS log_grave_transfer;
-DROP TRIGGER IF EXISTS log_initial_interment;
+ALTER TABLE users             COMMENT = 'System users with role-based access';
+ALTER TABLE blocks            COMMENT = 'Cemetery sections/areas';
+ALTER TABLE graves            COMMENT = 'Individual burial slots inside a block';
+ALTER TABLE interments        COMMENT = 'PRESENT. One row per deceased. Current state.';
+ALTER TABLE reservations      COMMENT = 'FUTURE. Proposal to move O and place N. Frozen after creation.';
+ALTER TABLE placement_history COMMENT = 'PAST. Append-only placement history. No edits logged.';
+ALTER TABLE settings          COMMENT = 'System configuration key-value store';
+ALTER TABLE payments          COMMENT = 'Payment records with dual-approval workflow';
 
-DELIMITER //
 
--- Logs any real change of current_grave_id:
---   NULL -> grave   (initial burial)
---   grave -> grave  (transfer)
---   grave -> NULL   (removed / exhumed)
-CREATE TRIGGER log_grave_transfer
-BEFORE UPDATE ON interments
-FOR EACH ROW
-BEGIN
-    IF (OLD.current_grave_id <=> NEW.current_grave_id) = 0 THEN
-        INSERT INTO transfer_log (
-            interment_id,
-            from_grave_id,
-            to_grave_id,
-            transfer_date,
-            reason
-        ) VALUES (
-            NEW.interment_id,
-            OLD.current_grave_id,
-            NEW.current_grave_id,
-            NOW(),
-            NEW.remarks
-        );
-    END IF;
-END//
-
--- Logs initial burial if an interment is inserted directly with a grave.
--- If it is inserted as Pending with NULL and later updated, the UPDATE
--- trigger above will log it instead.
-CREATE TRIGGER log_initial_interment
-AFTER INSERT ON interments
-FOR EACH ROW
-BEGIN
-    IF NEW.current_grave_id IS NOT NULL THEN
-        INSERT INTO transfer_log (
-            interment_id,
-            from_grave_id,
-            to_grave_id,
-            transfer_date,
-            reason
-        ) VALUES (
-            NEW.interment_id,
-            NULL,
-            NEW.current_grave_id,
-            NOW(),
-            NEW.remarks
-        );
-    END IF;
-END//
-
-DELIMITER ;
-
--- ----------------------------------------------------------------------
--- Add comments to existing tables (for clarity in DB tools)
--- ----------------------------------------------------------------------
-ALTER TABLE users            COMMENT = 'System users with role-based access';
-ALTER TABLE blocks           COMMENT = 'Cemetery sections/areas (Niche, Lawn, etc.)';
-ALTER TABLE graves           COMMENT = 'Individual burial slots inside a block';
-ALTER TABLE interments       COMMENT = 'Burial/transfer records with status workflow (Pending → Active → Inactive)';
-ALTER TABLE reservation_details COMMENT = 'Planned grave changes (one row per active reservation; consumed on execute/cancel)';
-ALTER TABLE transfer_log     COMMENT = 'Audit trail of grave location changes (auto-logged by trigger)';
-ALTER TABLE settings         COMMENT = 'System configuration key-value store';
-ALTER TABLE payments         COMMENT = 'Payment records with dual-approval workflow';
-
--- ----------------------------------------------------------------------
--- INDEXES
--- ----------------------------------------------------------------------
-
--- Blocks
-CREATE INDEX idx_blocks_deleted_at ON blocks(deleted_at);
-
--- Graves
-CREATE INDEX idx_graves_block_id ON graves(block_id);
-CREATE INDEX idx_graves_status ON graves(status);
-CREATE INDEX idx_graves_block_status ON graves(block_id, status);
-CREATE INDEX idx_graves_deleted_at ON graves(deleted_at);
-
--- Interments
-CREATE INDEX idx_interments_current_grave_id ON interments(current_grave_id);
-CREATE INDEX idx_interments_status ON interments(status);
-CREATE INDEX idx_interments_deceased_name ON interments(deceased_name(100));
-CREATE INDEX idx_interments_lease_expiration ON interments(lease_expiration_date);
-CREATE INDEX idx_interments_status_grave ON interments(status, current_grave_id);
-CREATE INDEX idx_interments_date_buried ON interments(date_buried);
-CREATE INDEX idx_interments_deleted_at ON interments(deleted_at);
-
--- Reservation details
-CREATE INDEX idx_reservation_details_target_grave ON reservation_details(target_grave_id);
-CREATE INDEX idx_reservation_details_old_interment ON reservation_details(old_interment_id);
-CREATE INDEX idx_reservation_details_old_new_grave ON reservation_details(old_new_grave_id);
-CREATE INDEX idx_reservation_details_deleted_at ON reservation_details(deleted_at);
-
--- Transfer log
-CREATE INDEX idx_transfer_log_interment_id ON transfer_log(interment_id);
-CREATE INDEX idx_transfer_log_transfer_date ON transfer_log(transfer_date);
-CREATE INDEX idx_transfer_log_interment_date ON transfer_log(interment_id, transfer_date);
-CREATE INDEX idx_transfer_log_deleted_at ON transfer_log(deleted_at);
-
--- Settings
-CREATE INDEX idx_settings_deleted_at ON settings(deleted_at);
+--  ----------------------------------------------------------------------
+--  INDEXES
+--  ----------------------------------------------------------------------
 
 -- Users
-CREATE INDEX idx_users_deleted_at ON users(deleted_at);
-CREATE INDEX idx_users_session_token ON users(session_token(100)); -- For fast single-session lookup
+CREATE INDEX idx_users_deleted_at     ON users(deleted_at);
+CREATE INDEX idx_users_session_token  ON users(session_token(100));  -- For fast single-session lookup
+
+-- Blocks
+CREATE INDEX idx_blocks_deleted_at    ON blocks(deleted_at);
+
+-- Graves
+CREATE INDEX idx_graves_block_id      ON graves(block_id);
+CREATE INDEX idx_graves_status        ON graves(status);
+CREATE INDEX idx_graves_block_status  ON graves(block_id, status);
+CREATE INDEX idx_graves_deleted_at    ON graves(deleted_at);
+
+-- Interments
+CREATE INDEX idx_interments_current_grave_id  ON interments(current_grave_id);
+CREATE INDEX idx_interments_status            ON interments(status);
+CREATE INDEX idx_interments_deceased_name     ON interments(deceased_name(100));
+CREATE INDEX idx_interments_lease_expiration  ON interments(lease_expiration_date);
+CREATE INDEX idx_interments_status_grave      ON interments(status, current_grave_id);
+CREATE INDEX idx_interments_date_buried       ON interments(date_buried);
+CREATE INDEX idx_interments_deleted_at        ON interments(deleted_at);
+
+-- Reservations
+CREATE INDEX idx_reservations_state                ON reservations(reservation_state);
+CREATE INDEX idx_reservations_target_grave         ON reservations(target_grave_id);
+CREATE INDEX idx_reservations_old_interment        ON reservations(old_interment_id);
+CREATE INDEX idx_reservations_pending_interment    ON reservations(pending_interment_id);
+CREATE INDEX idx_reservations_state_target         ON reservations(reservation_state, target_grave_id);
+CREATE INDEX idx_reservations_created_at           ON reservations(created_at);
+
+-- Placement history
+CREATE INDEX idx_history_interment_id       ON placement_history(interment_id);
+CREATE INDEX idx_history_event_date         ON placement_history(event_date);
+CREATE INDEX idx_history_interment_date     ON placement_history(interment_id, event_date);
+CREATE INDEX idx_history_from_grave         ON placement_history(from_grave_id);
+CREATE INDEX idx_history_to_grave           ON placement_history(to_grave_id);
+CREATE INDEX idx_history_reservation        ON placement_history(reservation_id);
+CREATE INDEX idx_history_related_interment  ON placement_history(related_interment_id);
+
+-- Settings
+CREATE INDEX idx_settings_deleted_at        ON settings(deleted_at);
 
 -- Payments
-CREATE INDEX idx_payments_deleted_at ON payments(deleted_at);
+CREATE INDEX idx_payments_deleted_at        ON payments(deleted_at);

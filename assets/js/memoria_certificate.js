@@ -80,24 +80,24 @@ async function memoria_certificate(id) {
         .filter(Boolean)
         .join(" • ") || "—";
 
-    // 6. Optional permit rows
-    const extraPermitRows = [];
-    if (record.transfer_permit_number || record.transfer_permit_date) {
-      extraPermitRows.push(`
-        <span class="dataLabel">Transfer Permit</span>
-        <span class="dataValue">${val(record.transfer_permit_number)}</span>
-        <span class="dataLabel">Transfer Date</span>
-        <span class="dataValue">${formatDate(record.transfer_permit_date)}</span>
-      `);
-    }
-    if (record.exhumation_permit_number || record.exhumation_permit_date) {
-      extraPermitRows.push(`
-        <span class="dataLabel">Exhumation Permit</span>
-        <span class="dataValue">${val(record.exhumation_permit_number)}</span>
-        <span class="dataLabel">Exhumation Date</span>
-        <span class="dataValue">${formatDate(record.exhumation_permit_date)}</span>
-      `);
-    }
+    // 6. Permit rows — always shown, every field
+    const extraPermitRows = `
+      <span class="dataLabel">Transfer Permit No.</span>
+      <span class="dataValue">${val(record.transfer_permit_number)}</span>
+      <span class="dataLabel">Transfer Permit Date</span>
+      <span class="dataValue">${formatDate(record.transfer_permit_date)}</span>
+
+      <span class="dataLabel">Transfer Permit Issued By</span>
+      <span class="dataValue span-3">${val(record.transfer_permit_issued_by)}</span>
+
+      <span class="dataLabel">Exhumation Permit No.</span>
+      <span class="dataValue">${val(record.exhumation_permit_number)}</span>
+      <span class="dataLabel">Exhumation Permit Date</span>
+      <span class="dataValue">${formatDate(record.exhumation_permit_date)}</span>
+
+      <span class="dataLabel">Date Exhumed</span>
+      <span class="dataValue span-3">${formatDate(record.date_exhumed)}</span>
+    `;
 
     // 7. Build signatories
     const signatories = [1, 2, 3, 4]
@@ -298,8 +298,10 @@ async function memoria_certificate(id) {
 
                     <span class="dataLabel">Burial Permit No.</span>
                     <span class="dataValue">${val(record.burial_permit_number)}</span>
-                    <span class="dataLabel">Permit Date</span>
+                    <span class="dataLabel">Burial Permit Date</span>
                     <span class="dataValue">${formatDate(record.burial_permit_date)}</span>
+
+                    ${extraPermitRows}
 
                     <span class="dataLabel">Clearance Date</span>
                     <span class="dataValue">${formatDate(record.burial_clearance_date)}</span>
@@ -311,8 +313,6 @@ async function memoria_certificate(id) {
 
                     <span class="dataLabel">Remarks</span>
                     <span class="dataValue span-3">${remarksText}</span>
-
-                    ${extraPermitRows.join("")}
                   </div>
 
                   <div class="sectionTitle">Next of Kin / Contact Person</div>

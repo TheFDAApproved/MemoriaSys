@@ -423,3 +423,9 @@ body {
     border-color: #fee2e2;
     color: #dc2626;
 }
+
+#reservation tr.rowFadeOut {
+    opacity: 0;
+    transform: translateY(-4px);
+    transition: opacity .18s ease, transform .18s ease;
+}

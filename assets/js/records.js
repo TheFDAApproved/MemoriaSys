@@ -39,6 +39,14 @@
     let searchTimer = null;
     let booted = false;
 
+    // ---------- formatting helpers ----------
+
+    // Helper to strictly enforce only Active or Inactive statuses
+    const isStatusValid = (status) => {
+        const s = String(status || '').toLowerCase().trim();
+        return s === 'active' || s === 'inactive';
+    };
+
     const escapeHtml = (value) => {
         if (value === null || value === undefined) return '';
         return String(value)
@@ -66,49 +74,23 @@
         });
     };
 
-    const pick = (...values) => {
-        for (const v of values) {
-            if (v === null || v === undefined) continue;
-            const s = String(v).trim();
-            if (s !== '' && s !== 'N/A') return s;
-        }
-        return '';
-    };
-
     function notify(kind, message) {
         if (!message) return;
         const text = String(message);
 
-        if (typeof window.showAlertTOP === 'function') {
-            const type =
-                kind === 'success' ? 'success'
-                    : kind === 'error' ? 'error'
-                        : kind === 'warning' ? 'warning'
-                            : 'info';
-            window.showAlertTOP(text, type);
-            return;
-        }
+        const type =
+            kind === 'success' ? 'success'
+                : kind === 'error' ? 'error'
+                    : kind === 'warning' ? 'warning'
+                        : 'info';
 
-        const toast =
-            document.getElementById('records_toast') ||
-            document.getElementById('app_toast');
-
-        if (toast) {
-            toast.textContent = text;
-            toast.dataset.kind = kind;
-            toast.classList.add('visible');
-            clearTimeout(toast.__hideTimer);
-            toast.__hideTimer = setTimeout(() => toast.classList.remove('visible'), 4000);
-            return;
-        }
-
-        document.dispatchEvent(
-            new CustomEvent('records:notify', { detail: { kind, message: text } })
-        );
+        window.showAlertTOP(text, type);
 
         if (kind === 'error') console.error('[records.js]', text);
         else console.log('[records.js]', text);
     }
+
+    // ---------- HTTP ----------
 
     async function call(method, path = '', { body = null, query = null, signal = null } = {}) {
         const controller = new AbortController();
@@ -163,11 +145,12 @@
         let payload = null;
         const ct = response.headers.get('content-type') || '';
         try {
-            if (ct.includes('application/json')) payload = await response.json();
-            else {
+            if (ct.includes('application/json')) {
+                payload = await response.json();
+            } else {
                 const text = await response.text();
                 if (text && /^[\s]*[{[]/.test(text)) {
-                    try { payload = JSON.parse(text); } catch (_) { }
+                    try { payload = JSON.parse(text); } catch (_) { /* not JSON */ }
                 } else {
                     payload = text || null;
                 }
@@ -238,6 +221,8 @@
         init,
     };
 
+    // ---------- DOM detection ----------
+
     function autoDetect() {
         if (!els.tbody) {
             els.tbody =
@@ -245,12 +230,8 @@
                 document.getElementById('records_body') ||
                 document.querySelector('#burial_records tbody');
         }
-        if (!els.noData) {
-            els.noData = document.getElementById('burial_no_data');
-        }
-        if (!els.searchInput) {
-            els.searchInput = document.getElementById('user_search');
-        }
+        if (!els.noData) els.noData = document.getElementById('burial_no_data');
+        if (!els.searchInput) els.searchInput = document.getElementById('user_search');
         if (!els.prevBtn) els.prevBtn = document.getElementById('prev_page_btn');
         if (!els.nextBtn) els.nextBtn = document.getElementById('next_page_btn');
         if (!els.currentPageLabel) els.currentPageLabel = document.getElementById('current_page_num');
@@ -273,6 +254,8 @@
         bindEvents();
         return fetchRecords();
     }
+
+    // ---------- fetch ----------
 
     async function fetchRecords() {
         if (!els.tbody) {
@@ -306,11 +289,10 @@
             state.items = [];
             state.totalPages = 1;
             state.totalRecords = 0;
-
             state.lastError = err;
+
             renderRows();
             renderPagination();
-
             notify('error', err.message || 'Failed to load records.');
             document.dispatchEvent(new CustomEvent('records:error', { detail: { error: err } }));
             return;
@@ -319,7 +301,18 @@
         const data = result || {};
         const pagination = data.pagination || {};
 
-        state.items = Array.isArray(data.interments) ? data.interments : [];
+        // Filter both the main items and their nested history items
+        state.items = Array.isArray(data.interments) 
+        ? data.interments
+            .filter(item => isStatusValid(item.status))
+            .map(item => {
+                if (Array.isArray(item.history)) {
+                    item.history = item.history.filter(h => isStatusValid(h.status));
+                }
+                return item;
+            })
+        : [];
+        
         state.page = Number(pagination.current_page) || state.page;
         state.totalPages = Math.max(1, Number(pagination.total_pages) || 1);
         state.totalRecords = Number(pagination.total_records) || state.items.length;
@@ -346,16 +339,13 @@
     function setLoading(isLoading) {
         state.loading = isLoading;
 
-        if (els.tableWrapper) {
-            els.tableWrapper.classList.toggle('isLoading', !!isLoading);
-        } else if (els.tbody) {
-            els.tbody.classList.toggle('isLoading', !!isLoading);
-        }
+        if (els.tableWrapper) els.tableWrapper.classList.toggle('isLoading', !!isLoading);
+        else if (els.tbody) els.tbody.classList.toggle('isLoading', !!isLoading);
 
-        if (isLoading && els.noData) {
-            els.noData.style.display = 'none';
-        }
+        if (isLoading && els.noData) els.noData.style.display = 'none';
     }
+
+    // ---------- row rendering ----------
 
     function buildContactAddress(item) {
         const parts = [
@@ -369,8 +359,28 @@
         const raw = String(item.deceased_name || '').trim();
         const m = raw.match(/^\[History\s+([^\]]+)\]\s*(.*)$/i);
         if (m) return { badge: `History ${m[1]}`, name: m[2] };
-        if (item.transfer_date) return { badge: `History ${item.transfer_date}`, name: raw };
+        if (item.event_date) return { badge: `History ${item.event_date}`, name: raw };
         return { badge: '', name: raw };
+    }
+
+    function buildSmsMessage(item) {
+        const contact = String(item && item.contact_person_name ? item.contact_person_name : '').trim();
+        return contact ? `Greetings ${contact}.` : 'Greetings.';
+    }
+
+    function renderPhoneCell(item) {
+        const raw = item ? item.contact_person_phone_number : null;
+        if (raw === null || raw === undefined) return '—';
+        const s = String(raw).trim();
+        if (s === '') return '—';
+
+        return (
+            '<a href="#" class="smsPhoneLink" data-action="sms"' +
+            ' data-id="' + escapeHtml(item.interment_id) + '"' +
+            ' title="Send SMS">' +
+            escapeHtml(s) +
+            '</a>'
+        );
     }
 
     function renderMainRow(item, hasHistory) {
@@ -414,7 +424,7 @@
         <td>${dash(item.grave_code)}</td>
         <td>${formatDate(item.lease_expiration_date)}</td>
         <td>${dash(item.contact_person_name)}</td>
-        <td>${dash(item.contact_person_phone_number)}</td>
+        <td>${renderPhoneCell(item)}</td>
         <td>${escapeHtml(buildContactAddress(item))}</td>
         <td>${dash(item.status)}</td>
         <td class="remarksCell">${dash(item.remarks)}</td>
@@ -434,6 +444,9 @@
         const classes = visible ? 'historyRow visible' : 'historyRow';
         const styleAttr = visible ? '' : ' style="display:none"';
 
+        const blockName = item.from_grave ? item.from_grave.block_name : item.block_name;
+        const graveCode = item.from_grave ? item.from_grave.grave_code : item.grave_code;
+
         return `
       <tr class="${classes}" data-parent-id="${parentId}"${styleAttr}>
         <td>${badgeCell}</td>
@@ -442,8 +455,8 @@
         <td>${formatDate(item.deceased_date_of_birth)}</td>
         <td>${dash(item.last_known_address)}</td>
         <td>${formatDate(item.date_buried)}</td>
-        <td>${dash(item.block_name)}</td>
-        <td>${dash(item.grave_code)}</td>
+        <td>${dash(blockName)}</td>
+        <td>${dash(graveCode)}</td>
         <td>${formatDate(item.lease_expiration_date)}</td>
         <td>${dash(item.contact_person_name)}</td>
         <td>${dash(item.contact_person_phone_number)}</td>
@@ -454,11 +467,14 @@
       </tr>`;
     }
 
-    function defaultRenderRow(item, history = []) {
-        if (item && item.is_history && history.length === 0) {
-            return renderHistoryRow(item, item.interment_id, true);
-        }
-        return renderMainRow(item, Array.isArray(history) && history.length > 0);
+    // Sort helper — matches PHP's `event_date DESC, history_id DESC`.
+    function compareHistoryDesc(a, b) {
+        const ta = new Date(a.event_date || 0).getTime();
+        const tb = new Date(b.event_date || 0).getTime();
+        if (tb !== ta) return tb - ta;
+        const ha = Number(a.history_id) || 0;
+        const hb = Number(b.history_id) || 0;
+        return hb - ha;
     }
 
     function renderRows() {
@@ -469,62 +485,41 @@
 
         if (!state.items.length) {
             if (els.noData) {
-                if (state.loading || state.lastError) {
-                    els.noData.style.display = 'none';
-                } else {
-                    els.noData.style.display = '';
-                }
+                els.noData.style.display = (state.loading || state.lastError) ? 'none' : '';
             }
             return;
         }
 
         if (els.noData) els.noData.style.display = 'none';
 
-        const groups = [];
-        const byId = new Map();
+        const html = [];
 
         for (const item of state.items) {
+            // The list endpoint returns LIVE rows at the top level, each with
+            // a nested `history` array. If a flat history row ever slips in
+            // at the top level, skip it — it belongs under its parent.
+            if (item.is_history) continue;
+
             const id = Number(item.interment_id);
             if (!Number.isFinite(id)) continue;
 
-            if (item.is_history) {
-                const g = byId.get(id);
-                if (g) {
-                    g.history.push(item);
-                } else {
-                    groups.push({ id, main: null, history: [item] });
-                }
-            } else {
-                const g = { id, main: item, history: [] };
-                byId.set(id, g);
-                groups.push(g);
-            }
-        }
+            const history = Array.isArray(item.history)
+                ? item.history.slice().sort(compareHistoryDesc)
+                : [];
 
-        for (const g of groups) {
-            g.history.sort((a, b) => {
-                const ta = new Date(a.transfer_date || 0).getTime();
-                const tb = new Date(b.transfer_date || 0).getTime();
-                return tb - ta;
-            });
-        }
+            html.push(renderMainRow(item, history.length > 0));
 
-        const html = [];
-
-        for (const g of groups) {
-            if (g.main) {
-                html.push(renderMainRow(g.main, g.history.length > 0));
-                for (const h of g.history) html.push(renderHistoryRow(h, g.id, false));
-            } else {
-                for (const h of g.history) html.push(renderHistoryRow(h, g.id, true));
+            for (const h of history) {
+                html.push(renderHistoryRow(h, id, false));
             }
         }
 
         els.tbody.innerHTML = html.join('');
-
         els.tbody.offsetWidth;
         els.tbody.classList.add('animate');
     }
+
+    // ---------- pagination ----------
 
     function renderPagination() {
         if (els.currentPageLabel) els.currentPageLabel.textContent = state.page;
@@ -592,6 +587,8 @@
         fetchRecords();
     }
 
+    // ---------- event wiring ----------
+
     function bindEvents() {
         if (els.searchInput && !els.searchInput.__recordsBound) {
             els.searchInput.__recordsBound = true;
@@ -641,14 +638,32 @@
             .map((r) => r.control_number)
             .filter(Boolean);
 
-        if (global.BurialModal && typeof global.BurialModal.open === 'function') {
-            global.BurialModal.open('add', {}, { takenControlNos });
-        } else {
-            document.dispatchEvent(new CustomEvent('records:add'));
-        }
+        global.BurialModal.open('add', {}, { takenControlNos });
     }
 
-    function onRowActionClick(e) {
+    function handleSmsClick(link) {
+        const id = Number(link.dataset.id);
+        const item = RecordsAPI.getItem(id);
+        if (!item) return;
+
+        const phone = String(item.contact_person_phone_number || '').trim();
+        if (!phone) {
+            notify('warning', 'This record has no contact number on file.');
+            return;
+        }
+
+        global.openSmsModal(phone, buildSmsMessage(item));
+    }
+
+    async function onRowActionClick(e) {
+        // SMS link takes priority — must return before row/history toggle logic.
+        const smsLink = e.target.closest('[data-action="sms"]');
+        if (smsLink && els.tbody.contains(smsLink)) {
+            e.preventDefault();
+            handleSmsClick(smsLink);
+            return;
+        }
+
         const btn = e.target.closest('button[data-action]');
         if (btn && els.tbody.contains(btn)) {
             e.preventDefault();
@@ -660,15 +675,23 @@
             const item = RecordsAPI.getItem(id);
 
             if (action === 'view') {
-                if (item && global.BurialModal && typeof global.BurialModal.open === 'function') {
-                    global.BurialModal.open('view', mapItemToModal(item), {
-                        takenControlNos: state.items
-                            .filter((r) => Number(r.interment_id) !== Number(id))
-                            .map((r) => r.control_number),
-                    });
-                } else {
-                    document.dispatchEvent(new CustomEvent('records:view', { detail: { item, id } }));
+                // Fetch the full record so the modal sees the freshest live
+                // row (single-GET returns flat: index 0 = live, 1..n = history).
+                let fullItem = item;
+                try {
+                    const resData = await RecordsAPI.get(id);
+                    if (resData && Array.isArray(resData.interments) && resData.interments.length > 0) {
+                        fullItem = resData.interments[0];
+                    }
+                } catch (err) {
+                    console.warn('[records.js] Failed to fetch full item before viewing:', err);
                 }
+
+                global.BurialModal.open('view', fullItem, {
+                    takenControlNos: state.items
+                        .filter((r) => Number(r.interment_id) !== Number(id))
+                        .map((r) => r.control_number),
+                });
                 return;
             }
 
@@ -728,57 +751,15 @@
         }
     }
 
-    function mapItemToModal(item) {
-        return {
-            id: item.interment_id,
-            interment_id: item.interment_id,
-            control_no: item.control_number,
-            deceased_name: item.deceased_name,
-            deceased_sex: item.deceased_sex,
-            deceased_dob: item.deceased_date_of_birth,
-            deceased_bod: item.deceased_date_of_death,
-            deceased_address: item.last_known_address,
-            deceased_cert: item.death_certificate,
-
-            req_name: item.contact_person_name,
-            req_email: item.contact_person_email,
-            req_phone: item.contact_person_phone_number,
-            req_street: item.contact_person_address,
-            barangay: item.contact_person_address_barangay,
-
-            assistance: item.assistance_type,
-            permit_burial: item.burial_permit_number,
-            permit_exhumation: item.exhumation_permit_number,
-            permit_transfer: item.transfer_permit_number,
-
-            clearance_date: item.burial_clearance_date,
-            date_interment: item.date_buried,
-            expiration_date: item.lease_expiration_date,
-
-            burial_block: item.block_type,
-            block: item.block_name,
-            grave_code: item.grave_code,
-            current_grave_id: item.current_grave_id,
-            row_num: item.row_num,
-            col_num: item.col_num,
-
-            status: item.status,
-            remarks: item.remarks,
-        };
-    }
+    // ---------- delete ----------
 
     async function handleDelete(id, item) {
         if (!global.DeleteModal || typeof global.DeleteModal.open !== 'function') {
             const name = item ? item.deceased_name : `#${id}`;
-            const ok = global.confirm
-                ? global.confirm(`Delete record for "${name}"?`)
-                : true;
+            const ok = global.confirm(`Delete record for "${name}"?`);
             if (!ok) return;
 
-            try {
-                await performDelete(id, item);
-            } catch (_) {
-            }
+            try { await performDelete(id, item); } catch (_) { /* already notified */ }
             return;
         }
 
@@ -787,10 +768,7 @@
             deceasedName: item ? item.deceased_name : '',
             blockName: item ? item.block_name : '',
             graveCode: item ? item.grave_code : '',
-            onConfirm: async () => {
-                const result = await performDelete(id, item);
-                return result;
-            },
+            onConfirm: () => performDelete(id, item),
         });
     }
 
@@ -807,12 +785,27 @@
         if (result && result.grave_freed) {
             message = `Record deleted successfully. Grave ${result.grave_id} is now vacant.`;
         }
-        if (result && result.pending_on_grave) {
-            message += ' Note: a pending reservation targets the same grave.';
-        }
         notify('success', message);
 
-        await fetchRecords();
+        const idx = state.items.findIndex(r => Number(r.interment_id) === Number(id));
+        if (idx > -1) {
+            state.items.splice(idx, 1);
+            state.totalRecords--;
+            renderPagination();
+        }
+
+        const row = els.tbody.querySelector(`tr.recordRow[data-id="${id}"]`);
+        if (row) {
+            let sibling = row.nextElementSibling;
+            while (sibling && sibling.classList.contains('historyRow') && sibling.dataset.parentId == id) {
+                const next = sibling.nextElementSibling;
+                sibling.remove();
+                sibling = next;
+            }
+            row.remove();
+        }
+
+        if (state.items.length === 0 && els.noData) els.noData.style.display = '';
 
         document.dispatchEvent(
             new CustomEvent('records:deleted', { detail: { id, result } })
@@ -821,6 +814,7 @@
         return result;
     }
 
+    // ---------- save ----------
     async function handleModalSave(event) {
         const detail = event.detail || {};
         const mode = detail.mode;
@@ -836,8 +830,9 @@
             return;
         }
 
-        const status = payload.status || 'Active';
-        if (status !== 'Active') payload.current_grave_id = null;
+        if ((payload.status || 'Active') !== 'Active') {
+            payload.current_grave_id = null;
+        }
 
         const isEdit = mode === 'edit' && payload.interment_id != null;
 
@@ -861,7 +856,77 @@
             return;
         }
 
-        await fetchRecords();
+        let freshItem = null;
+        let freshHistory = null;
+
+        try {
+            const fetchId = isEdit ? payload.interment_id : result.interment_id;
+            const freshData = await RecordsAPI.get(fetchId);
+
+            if (freshData && Array.isArray(freshData.interments) && freshData.interments.length > 0) {
+                freshItem = freshData.interments[0];
+                
+                // Filter the history right when we construct the fresh record
+                freshHistory = freshData.interments
+                    .filter(x => x && x.is_history)
+                    .filter(h => isStatusValid(h.status))
+                    .sort(compareHistoryDesc);
+                freshItem.history = freshHistory;
+
+                if (isEdit) {
+                    // ---- Update state ----
+                    const idx = state.items.findIndex(
+                        r => Number(r.interment_id) === Number(fetchId) && !r.is_history
+                    );
+                    
+                    if (isStatusValid(freshItem.status)) {
+                        // Status is still good, update it
+                        if (idx > -1) state.items[idx] = freshItem;
+                    } else {
+                        // Status changed to something else (e.g. Expired). 
+                        // Reload the table so it filters it out and disappears.
+                        await fetchRecords();
+                        return; // Stop running the rest of the DOM update below
+                    }
+                    
+                    // ---- Update DOM in place, no tbody wipe, no animation ----
+                    const existingRow = els.tbody.querySelector(`tr.recordRow[data-id="${fetchId}"]`);
+                    if (existingRow) {
+                        let sib = existingRow.nextElementSibling;
+                        while (
+                            sib &&
+                            sib.classList.contains('historyRow') &&
+                            String(sib.dataset.parentId) === String(fetchId)
+                        ) {
+                            const nxt = sib.nextElementSibling;
+                            sib.remove();
+                            sib = nxt;
+                        }
+
+                        const block = [renderMainRow(freshItem, freshHistory.length > 0)];
+                        for (const h of freshHistory) {
+                            block.push(renderHistoryRow(h, fetchId, false));
+                        }
+
+                        existingRow.outerHTML = block.join('');
+                    }
+                } else {
+                    // ---- New record: history always starts empty ----
+                    if (isStatusValid(freshItem.status)) {
+                        state.items.unshift(freshItem);
+                        state.totalRecords++;
+                        els.tbody.insertAdjacentHTML('afterbegin', renderMainRow(freshItem, false));
+                        renderPagination();
+                        if (els.noData) els.noData.style.display = 'none';
+                    }
+                }
+            } else {
+                await fetchRecords();
+            }
+        } catch (err) {
+            console.warn('[records.js] Could not refresh row in place, reloading table.', err);
+            await fetchRecords();
+        }
 
         document.dispatchEvent(
             new CustomEvent('records:saved', {
@@ -870,16 +935,16 @@
         );
 
         if (onSuccess) {
-            let updatedData = payload;
-            if (isEdit) {
-                const fresh = RecordsAPI.getItem(payload.interment_id);
-                if (fresh) updatedData = mapItemToModal(fresh);
-            }
+            const updatedData = freshItem
+                || RecordsAPI.getItem(isEdit ? payload.interment_id : result.interment_id)
+                || payload;
             onSuccess(updatedData, result);
         }
     }
-
+    
     document.addEventListener('burial_modal:save', handleModalSave);
+
+    // ---------- boot ----------
 
     function boot() {
         if (booted) return;
@@ -889,10 +954,6 @@
         if (!els.tbody) {
             console.warn('[records.js] No table body found — call RecordsAPI.init({ tbody: "…" }).');
             return;
-        }
-
-        if (!global.BurialModal && els.addBtn) {
-            console.warn('[records.js] BurialModal not found — load burial_modal.js before records.js.');
         }
 
         if (els.noData) els.noData.style.display = 'none';

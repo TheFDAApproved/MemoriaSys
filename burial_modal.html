@@ -6,11 +6,11 @@
             <div class="row">
                 <div class="col">
                     <label>Date:</label>
-                    <input type="date" id="clearance_date">
+                    <input type="date" id="burial_clearance_date">
                 </div>
                 <div class="col">
                     <label>Control No.</label>
-                    <input type="text" id="control_no" placeholder="Auto-generated" readonly>
+                    <input type="text" id="control_number" readonly>
                 </div>
             </div>
 
@@ -18,15 +18,15 @@
             <div class="row">
                 <div class="col">
                     <label class="required">That I (Full Name):</label>
-                    <input type="text" id="req_name" pattern="[A-Za-zÀ-ÖØ-öø-ÿ\s'.-]+" title="Letters only, please." required>
+                    <input type="text" id="contact_person_name" pattern="[A-Za-zÀ-ÖØ-öø-ÿ\s'.-]+" title="Letters only, please." required>
                 </div>
                 <div class="col">
                     <label class="required">Purok / Zone / Street Name:</label>
-                    <input type="text" id="req_street" required>
+                    <input type="text" id="contact_person_address" required>
                 </div>
                 <div class="col">
                     <label class="required">Barangay Address:</label>
-                    <select id="requesting_barangay" required>
+                    <select id="contact_person_address_barangay" required>
                         <option value="" disabled selected>Select Barangay...</option>
                         <option value="Alang-alang">Alang-alang</option>
                         <option value="Bakilid">Bakilid</option>
@@ -61,18 +61,18 @@
             <div class="row">
                 <div class="col">
                     <label class="required">Phone Number:</label>
-                    <input type="text" id="req_phone" required>
+                    <input type="text" id="contact_person_phone_number" required>
                 </div>
                 <div class="col">
-                    <label>Email Address:</label>
-                    <input type="email" id="req_email" autocomplete="email">
+                    <label class="required">Email Address:</label>
+                    <input type="email" id="contact_person_email" autocomplete="email" required>
                 </div>
                 <div class="col">
                     <label class="required">Seeking assistance in the form of:</label>
-                    <select id="req_assistance" required>
-                        <option>Burial of the late</option>
-                        <option>Transfer the remains of the late to the bone chamber</option>
-                        <option>Other...</option>
+                    <select id="assistance_type" required>
+                        <option value="Burial">Burial of the late</option>
+                        <option value="Transfer the remains of the late">Transfer the remains of the late to the bone chamber</option>
+                        <option value="Other">Other...</option>
                     </select>
                 </div>
             </div>
@@ -89,26 +89,27 @@
                         <option value="" disabled selected>Select...</option>
                         <option value="Male">Male</option>
                         <option value="Female">Female</option>
+                        <option value="Unknown">Unknown</option>
                     </select>
                 </div>
                 <div class="col">
                     <label class="required">Date of Birth:</label>
-                    <input type="date" id="deceased_dob" required>
+                    <input type="date" id="deceased_date_of_birth" required>
                 </div>
             </div>
 
             <div class="row">
                 <div class="col">
                     <label class="required">Last Known Address:</label>
-                    <input type="text" id="deceased_address" required>
+                    <input type="text" id="last_known_address" required>
                 </div>
                 <div class="col">
                     <label class="required">Date of Death:</label>
-                    <input type="date" id="deceased_bod" required>
+                    <input type="date" id="deceased_date_of_death" required>
                 </div>
                 <div class="col">
                     <label class="required">Death Certificate No:</label>
-                    <input type="text" id="deceased_cert" required>
+                    <input type="text" id="death_certificate" required>
                 </div>
             </div>
 
@@ -116,51 +117,76 @@
             <div class="row">
                 <div class="col">
                     <label class="required">Burial Permit No.</label>
-                    <input type="text" id="permit_burial" required>
+                    <input type="text" id="burial_permit_number" required>
                 </div>
                 <div class="col">
-                    <label>Exhumation Permit No.</label>
-                    <input type="text" id="permit_exhumation">
+                    <label class="required">Burial Permit Date</label>
+                    <input type="date" id="burial_permit_date" required>
                 </div>
+            </div>
+            <div class="row">
                 <div class="col">
                     <label>Transfer Permit No.</label>
-                    <input type="text" id="permit_transfer">
+                    <input type="text" id="transfer_permit_number">
+                </div>
+                <div class="col">
+                    <label>Transfer Permit Issued By</label>
+                    <input type="text" id="transfer_permit_issued_by">
+                </div>
+                <div class="col">
+                    <label>Transfer Permit Issued On</label>
+                    <input type="date" id="transfer_permit_date">
+                </div>
+            </div>
+            <div class="row">
+                <div class="col">
+                    <label>Exhumation Permit No.</label>
+                    <input type="text" id="exhumation_permit_number">
+                </div>
+                <div class="col">
+                    <label>Exhumation Permit Date</label>
+                    <input type="date" id="exhumation_permit_date">
                 </div>
             </div>
 
             <div class="sectionTitle">LOCATION ASSIGNMENT</div>
             <div class="row">
                 <div class="col">
-                    <label class="required">Burial Type:</label>
-                    <select id="burial_block" required>
-                        <option value="" disabled selected>Select Burial Type...</option>
-                        <option>Niche Wall</option>
+                    <label>Burial Type:</label>
+                    <select id="burial_block">
+                        <option value="" selected>Select Burial Type...</option>
+                        <option>Niche</option>
                         <option>Bone Chamber</option>
-                        <option>Lawn / Grounds</option>
+                        <option>Lawn/Grounds</option>
                         <option>Unmapped Area</option>
-                        <option>Private / Owned</option>
+                        <option>Private</option>
+                        <option>Mausoleum</option>
+                        <option>Mass Grave</option>
+                        <option>Cluster</option>
+                        <option>Block</option>
                     </select>
                 </div>
                 <div class="col">
-                    <label class="required">Block:</label>
-                    <select id="block" required>
-                        <option value="" disabled selected>Select Block...</option>
+                    <label>Block:</label>
+                    <select id="block">
+                        <option value="" selected>Select Block...</option>
                     </select>
                 </div>
                 <div class="col">
-                    <label class="required">Grave Code:</label>
-                    <input type="text" id="grave_code" readonly required autocomplete="off">
+                    <label>Grave Code:</label>
+                    <input type="text" id="grave_code" readonly autocomplete="off">
+                    <input type="hidden" id="current_grave_id">
                     <small class="fieldHint" id="grave_code_hint" role="status" aria-live="polite"></small>
                 </div>
             </div>
             <div class="row">
                 <div class="col">
-                    <label class="required">Date of Interment:</label>
-                    <input type="date" id="date_interment" required>
+                    <label>Date of Interment:</label>
+                    <input type="date" id="date_buried">
                 </div>
                 <div class="col">
                     <label>Expiration Date:</label>
-                    <input type="date" id="expiration_date" readonly required>
+                    <input type="date" id="lease_expiration_date" readonly required>
                 </div>
                 <div class="col">
                     <label class="required">Status:</label>
@@ -174,7 +200,7 @@
             <div class="sectionTitle">REMARKS</div>
             <div class="row">
                 <div class="col">
-                    <input type="text" id="deceased_remarks">
+                    <input type="text" id="remarks">
                 </div>
             </div>
 

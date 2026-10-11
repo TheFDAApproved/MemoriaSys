@@ -39,6 +39,72 @@
         return;
     }
 
+    // ------------------------------------------------------------------
+    // Flatten the nested API item  {type, grave:{...}, interment:{...}|null}
+    // into the flat shape the rest of this file (and the modal) expects.
+    // ------------------------------------------------------------------
+    function flattenItem(raw) {
+        if (!raw || typeof raw !== 'object') return null;
+
+        // Detect if the API is already sending flat data
+        // (e.g., grave_id is at the root, and there is no nested 'grave' object)
+        const isFlat = raw.grave === undefined && raw.grave_id !== undefined;
+
+        // If flat, source data directly from 'raw'. Otherwise, use the nested objects.
+        const g = isFlat ? raw : (raw.grave || {});
+        const i = isFlat ? raw : (raw.interment || null);
+        
+        // Check if an interment actually exists
+        const hasI = isFlat 
+            ? (raw.interment_id != null) 
+            : !!(i && i.interment_id != null);
+
+        const pickVal = (obj, key) => (obj && obj[key] != null) ? obj[key] : null;
+
+        return {
+            type: raw.type || null,
+
+            grave_id:      pickVal(g, 'grave_id'),
+            grave_code:    pickVal(g, 'grave_code'),
+            row_num:       pickVal(g, 'row_num'),
+            col_num:       pickVal(g, 'col_num'),
+            grave_status:  pickVal(g, 'grave_status'),
+            grave_remarks: pickVal(g, 'grave_remarks'),
+            block_id:      pickVal(g, 'block_id'),
+            block_name:    pickVal(g, 'block_name'),
+            block_type:    pickVal(g, 'block_type'),
+
+            interment_id:                    hasI ? i.interment_id : null,
+            control_number:                  hasI ? i.control_number : null,
+            deceased_name:                   hasI ? i.deceased_name : null,
+            deceased_sex:                    hasI ? i.deceased_sex : null,
+            last_known_address:              hasI ? i.last_known_address : null,
+            death_certificate:               hasI ? i.death_certificate : null,
+            deceased_date_of_birth:          hasI ? i.deceased_date_of_birth : null,
+            deceased_date_of_death:          hasI ? i.deceased_date_of_death : null,
+            current_grave_id:                hasI ? i.current_grave_id : null,
+            contact_person_name:             hasI ? i.contact_person_name : null,
+            contact_person_phone_number:     hasI ? i.contact_person_phone_number : null,
+            contact_person_email:            hasI ? i.contact_person_email : null,
+            contact_person_address:          hasI ? i.contact_person_address : null,
+            contact_person_address_barangay: hasI ? i.contact_person_address_barangay : null,
+            assistance_type:                 hasI ? i.assistance_type : null,
+            burial_permit_number:            hasI ? i.burial_permit_number : null,
+            burial_permit_date:              hasI ? i.burial_permit_date : null,
+            transfer_permit_number:          hasI ? i.transfer_permit_number : null,
+            transfer_permit_issued_by:       hasI ? i.transfer_permit_issued_by : null,
+            transfer_permit_date:            hasI ? i.transfer_permit_date : null,
+            exhumation_permit_number:        hasI ? i.exhumation_permit_number : null,
+            exhumation_permit_date:          hasI ? i.exhumation_permit_date : null,
+            date_buried:                     hasI ? i.date_buried : null,
+            date_exhumed:                    hasI ? i.date_exhumed : null,
+            burial_clearance_date:           hasI ? i.burial_clearance_date : null,
+            lease_expiration_date:           hasI ? i.lease_expiration_date : null,
+            interment_status:                hasI ? (i.interment_status || i.status) : null,
+            interment_remarks:               hasI ? (i.interment_remarks || i.remarks) : null,
+        };
+    }
+
     function notify(kind, message) {
         if (!message) return;
         const text = String(message);
@@ -245,7 +311,9 @@
 
             const payload = (json && json.data) ? json.data : (json || {});
 
-            state.items = Array.isArray(payload.items) ? payload.items : [];
+            const rawItems = Array.isArray(payload.items) ? payload.items : [];
+            state.items = rawItems.map(flattenItem).filter(Boolean);
+
             const pg = payload.pagination || {};
             state.page = Number(pg.current_page) || state.page;
             state.totalPages = Math.max(1, Number(pg.total_pages) || 1);
@@ -286,7 +354,8 @@
             if (!json || json.success === false) return null;
 
             const payload = (json && json.data) ? json.data : json;
-            return (payload && payload.item) ? payload.item : null;
+            const itemData = (payload && payload.item) ? payload.item : payload;
+            return flattenItem(itemData);        
         } catch (err) {
             console.warn('[reserve.js] refetch item failed:', err);
             return null;
@@ -457,7 +526,22 @@
         const graveId = Number(btn.dataset.graveId);
         const item = state.items.find((row) => Number(row.grave_id) === graveId);
         if (!item) return;
-        openViewModal(item);
+        openEditOldOccupant(item);
+    }
+
+    async function openEditOldOccupant(item) {
+        const fresh = await refetchReserveItem(item.grave_id);
+        const payload = fresh || item;
+
+        if (typeof window.openEditOldOccupantModal === 'function') {
+            window.openEditOldOccupantModal(payload);
+            return;
+        }
+        if (typeof window.openReserveBurialModal === 'function') {
+            window.openReserveBurialModal(payload);
+            return;
+        }
+        document.dispatchEvent(new CustomEvent('reserve:edit-old', { detail: payload }));
     }
 
     function handleSmsClick(event) {
@@ -491,7 +575,7 @@
             return;
         }
         if (window.ReserveBurialModal && typeof window.ReserveBurialModal.open === 'function') {
-            window.ReserveBurialModal.open(item);
+            window.ReserveBurialModal.open('add', item);
             return;
         }
         if (typeof window.openBurialModal === 'function') {
@@ -509,69 +593,25 @@
             window.openViewBurialModal(payload);
             return;
         }
-        if (window.ReserveBurialModal && typeof window.ReserveBurialModal.view === 'function') {
-            window.ReserveBurialModal.view(payload);
+        if (window.ReserveBurialModal && typeof window.ReserveBurialModal.open === 'function') {
+            window.ReserveBurialModal.open('view', payload);
             return;
         }
         document.dispatchEvent(new CustomEvent('reserve:view', { detail: payload }));
     }
 
-    document.addEventListener('reserve_burial_modal:update', async (event) => {
-        const detail = event.detail || {};
-        const oldIntermentId = detail.old_interment_id;
-        const onSuccess = typeof detail.onSuccess === 'function' ? detail.onSuccess : null;
-        const onError = typeof detail.onError === 'function' ? detail.onError : null;
-
-        if (!oldIntermentId) {
-            console.warn('[reserve.js] reserve_burial_modal:update missing old_interment_id.');
-            if (onError) onError(new Error('Missing interment ID.'));
-            return;
-        }
-
-        const payload = {
-            old_interment_id: oldIntermentId,
-            target_grave_id: detail.target_grave_id || null,
-            block_name: detail.data?.block_name || '',
-            grave_code: detail.data?.grave_code || '',
-            burial_type: detail.data?.burial_type || '',
-            assistance_type: detail.data?.assistance_type || '',
-            remarks: detail.data?.remarks || '',
-            date_interment: detail.data?.date_interment || '',
-            expiration_date: detail.data?.expiration_date || '',
-            exhumation_permit_number: detail.data?.exhumation_permit_number || '',
-            transfer_permit_number: detail.data?.transfer_permit_number || '',
-            status: detail.data?.status || '',
-        };
-
-        try {
-            const res = await fetch(`${API_URL}?action=update_reservation_plan`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                },
-                credentials: 'same-origin',
-                body: JSON.stringify(payload),
-            });
-
-            const json = await res.json().catch(() => null);
-            if (!res.ok || (json && json.success === false)) {
-                const msg = (json && (json.message || json.error)) || `Save failed (${res.status})`;
-                throw new Error(msg);
-            }
-
-            await fetchReservations();
-
-            notify('success', 'Changes saved successfully.');
-
-            if (onSuccess) onSuccess((json && json.data) ? json.data : null);
-        } catch (err) {
-            console.error('[reserve.js] Failed to save reservation plan:', err);
-            notify('error', err.message || 'Failed to save reservation plan.');
-            if (onError) onError(err);
-        }
-    });
-
+    // ------------------------------------------------------------------
+    // CREATE RESERVATION (POST /reserve.php)
+    //
+    // The modal dispatches `reserve_burial_modal:save` with { mode, data }.
+    // `data` is the exact payload the PHP endpoint expects (N fields +
+    // either `grave_id`/`grave_code` for vacant OR `old_interment_id` +
+    // `old_new_status` for replacement).
+    //
+    // NOTE: The old `reserve_burial_modal:update` flow was removed. The
+    // new PHP treats reservations as FROZEN — to change one, cancel it in
+    // monitor.php and create a new one.
+    // ------------------------------------------------------------------
     document.addEventListener('reserve_burial_modal:save', async (event) => {
         const detail = event.detail || {};
         if (detail.mode !== 'add') return;
@@ -579,6 +619,7 @@
         const payload = detail.data || {};
         if (!payload || typeof payload !== 'object') {
             console.warn('[reserve.js] reserve_burial_modal:save missing payload.');
+            if (typeof detail.onError === 'function') detail.onError();
             return;
         }
 
@@ -600,15 +641,23 @@
             }
 
             const data = (json && json.data) ? json.data : {};
-            const pendingId = data.new_interment_id != null ? data.new_interment_id : '—';
-            console.log('[reserve.js] Pending interment created:', pendingId, data);
+            const pendingId = (data.pending_interment_id != null)
+                ? data.pending_interment_id
+                : '—';
+            console.log('[reserve.js] Reservation created. pending_interment_id =', pendingId, data);
 
             await fetchReservations();
 
-            notify('success', 'Reservation saved as PENDING.');
+            notify('success', 'Reservation created successfully.');
+
+            // CHANGED: notify the modal (it stays open — see handleSubmit).
+            if (typeof detail.onSuccess === 'function') detail.onSuccess(data);
         } catch (err) {
             console.error('[reserve.js] Failed to create reservation:', err);
             notify('error', err.message || 'Failed to create reservation.');
+
+            // CHANGED: let the modal re-enable its Save button.
+            if (typeof detail.onError === 'function') detail.onError(err);
         }
     });
 

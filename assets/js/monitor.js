@@ -1,633 +1,696 @@
-document.addEventListener('DOMContentLoaded', function () {
+(() => {
+    'use strict';
+
     const API_URL = 'api/monitor.php';
-    const PER_PAGE = 100;
-    const MAX_PAGE_BUTTONS = 5;
+    const DEFAULT_LIMIT = 100;
+    const MIN_SEARCH_LENGTH = 3;
+    const SEARCH_DEBOUNCE_MS = 350;
+    const PAGINATION_WINDOW = 5;
 
     const state = {
-        items: [],
         page: 1,
+        limit: DEFAULT_LIMIT,
+        search: '',
         totalPages: 1,
         totalRecords: 0,
-        appliedSearch: '',
-        requestId: 0,
-        lastRenderKey: '',
+        items: [],
         loading: false,
+        controller: null,
+        requestId: 0,
+        silentNextRender: false,
     };
 
     const els = {
-        searchBox: document.querySelector('.searchBox'),
-        searchInput: document.getElementById('user_search'),
-        tableBody: document.getElementById('reservation'),
+        tbody: document.getElementById('reservation'),
         noData: document.getElementById('monitor_no_data'),
-        currentPageNum: document.getElementById('current_page_num'),
-        totalPagesNum: document.getElementById('total_pages_num'),
+        searchInput: document.getElementById('user_search'),
+        currentPageLabel: document.getElementById('current_page_num'),
+        totalPagesLabel: document.getElementById('total_pages_num'),
         prevBtn: document.getElementById('prev_page_btn'),
         nextBtn: document.getElementById('next_page_btn'),
         carouselTrack: document.getElementById('carousel_track'),
         carouselViewport: document.getElementById('carousel_viewport'),
-        tableWrapper: document.querySelector('.tableWrapper')
     };
 
-    const closeBtn = document.createElement('button');
-    closeBtn.type = 'button';
-    closeBtn.className = 'searchClearBtn';
-    closeBtn.setAttribute('aria-label', 'Clear search');
-    closeBtn.innerHTML = '<i class="fas fa-times"></i>';
-    if (els.searchBox) els.searchBox.appendChild(closeBtn);
-
-    function escapeHtml(str) {
-        return String(str).replace(/[&<>"']/g, function (c) {
-            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
-        });
+    if (!els.tbody) {
+        console.error('[monitor.js] Target tbody #reservation not found.');
+        return;
     }
 
-    function displayVal(v) {
+    // ------------------------------------------------------------------
+    // utilities
+    // ------------------------------------------------------------------
+    function notify(kind, message) {
+        if (!message) return;
+        if (typeof window.showAlertTOP === 'function') {
+            const type = kind === 'success' ? 'success'
+                : kind === 'error' ? 'error'
+                    : kind === 'warning' ? 'warning'
+                        : 'info';
+            window.showAlertTOP(String(message), type);
+            return;
+        }
+        if (kind === 'error') console.error('[monitor.js]', message);
+        else console.log('[monitor.js]', message);
+    }
+
+    const escapeHtml = (v) => {
+        if (v === null || v === undefined) return '';
+        return String(v)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    };
+
+    const displayVal = (v) => {
         const s = (v === null || v === undefined) ? '' : String(v).trim();
         return s === '' ? '-' : s;
+    };
+
+    function formatSmsDate(v) {
+        if (!v) return '';
+        const d = new Date(v);
+        if (Number.isNaN(d.getTime())) return String(v);
+        return d.getFullYear() + '-' +
+            String(d.getMonth() + 1).padStart(2, '0') + '-' +
+            String(d.getDate()).padStart(2, '0');
     }
 
-    function formatSmsDate(value) {
-        if (!value) return '';
-        const d = new Date(value);
-        if (Number.isNaN(d.getTime())) return String(value);
-        const y = d.getFullYear();
-        const m = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        return y + '-' + m + '-' + day;
-    }
-
-    function buildSmsMessage(occupant) {
-        const contact = (occupant && occupant.contact_person_name)
-            ? String(occupant.contact_person_name).trim()
-            : '';
-        const deceased = (occupant && occupant.deceased_name)
-            ? String(occupant.deceased_name).trim()
-            : '';
-
+    function buildSmsMessage(o) {
+        const contact = o && o.contact_person_name ? String(o.contact_person_name).trim() : '';
+        const deceased = o && o.deceased_name ? String(o.deceased_name).trim() : '';
         let msg = 'Hello ' + (contact || 'Sir/Ma\'am') + ', this is an official notice.';
-
-        const expiry = formatSmsDate(occupant && occupant.lease_expiration_date);
+        const expiry = formatSmsDate(o && o.lease_expiration_date);
         const subject = deceased || 'the deceased';
-
-        if (expiry) {
-            msg += ' The lease for ' + subject + ' expires on ' + expiry + '.';
-        } else {
-            msg += ' This is regarding the lease for ' + subject + '.';
-        }
-
+        if (expiry) msg += ' The lease for ' + subject + ' expires on ' + expiry + '.';
+        else msg += ' This is regarding the lease for ' + subject + '.';
         return msg;
     }
 
-    function renderPhoneLink(occupant) {
-        if (!occupant) return '-';
-        const raw = occupant.contact_person_phone_number;
+    function renderPhoneLink(occ) {
+        if (!occ) return '-';
+        const raw = occ.contact_person_phone_number;
         if (raw === null || raw === undefined) return '-';
         const s = String(raw).trim();
         if (s === '') return '-';
-
-        const contactName = String(occupant.contact_person_name || '').trim();
-        const deceasedName = String(occupant.deceased_name || '').trim();
-        const expiryRaw = occupant.lease_expiration_date || '';
-
         return (
             '<a href="#" class="smsPhoneLink" data-action="sms"' +
             ' data-phone="' + escapeHtml(s) + '"' +
-            ' data-contact="' + escapeHtml(contactName) + '"' +
-            ' data-deceased="' + escapeHtml(deceasedName) + '"' +
-            ' data-expiry="' + escapeHtml(expiryRaw) + '"' +
-            ' title="Send SMS">' +
-            escapeHtml(s) +
-            '</a>'
+            ' data-contact="' + escapeHtml(occ.contact_person_name || '') + '"' +
+            ' data-deceased="' + escapeHtml(occ.deceased_name || '') + '"' +
+            ' data-expiry="' + escapeHtml(occ.lease_expiration_date || '') + '"' +
+            ' title="Send SMS">' + escapeHtml(s) + '</a>'
         );
     }
 
     function handleSmsClick(event) {
         const link = event.target.closest('[data-action="sms"]');
-        if (!link || !els.tableBody.contains(link)) return;
+        if (!link || !els.tbody.contains(link)) return;
         event.preventDefault();
-
         const phone = String(link.dataset.phone || '').trim();
-        if (!phone) {
-            if (typeof window.showAlertTOP === 'function') {
-                window.showAlertTOP('This occupant has no contact number on file.', 'warning');
-            }
-            return;
-        }
-
+        if (!phone) { notify('warning', 'This occupant has no contact number on file.'); return; }
         if (typeof window.openSmsModal !== 'function') {
-            console.warn('[monitor] openSmsModal is not available — load sms_notification.js.');
+            console.warn('[monitor.js] openSmsModal not available — load sms_notification.js.');
+            notify('error', 'SMS feature is not available right now.');
             return;
         }
-
-        const message = buildSmsMessage({
+        window.openSmsModal(phone, buildSmsMessage({
             contact_person_name: link.dataset.contact || '',
             deceased_name: link.dataset.deceased || '',
-            lease_expiration_date: link.dataset.expiry || ''
+            lease_expiration_date: link.dataset.expiry || '',
+        }));
+    }
+
+    // ------------------------------------------------------------------
+    // search clear button
+    // ------------------------------------------------------------------
+    let searchClearBtn = null;
+    (function mountSearchClearBtn() {
+        if (!els.searchInput) return;
+        const box = els.searchInput.closest('.searchBox');
+        if (!box) return;
+        searchClearBtn = document.createElement('button');
+        searchClearBtn.type = 'button';
+        searchClearBtn.className = 'searchClearBtn';
+        searchClearBtn.setAttribute('aria-label', 'Clear search');
+        searchClearBtn.title = 'Clear';
+        searchClearBtn.innerHTML = '<i class="fas fa-times"></i>';
+        box.appendChild(searchClearBtn);
+        searchClearBtn.addEventListener('click', () => {
+            els.searchInput.value = '';
+            searchClearBtn.classList.remove('is-visible');
+            els.searchInput.focus();
+            if (state.search !== '') {
+                state.search = '';
+                state.page = 1;
+                fetchReservations();
+            }
         });
+        toggleSearchClear(els.searchInput.value);
+    })();
 
-        window.openSmsModal(phone, message);
+    function toggleSearchClear(value) {
+        if (!searchClearBtn) return;
+        searchClearBtn.classList.toggle('is-visible', String(value || '').length > 0);
     }
 
-    function isApiFailure(res, json) {
-        if (!res.ok) return true;
-        if (!json || typeof json !== 'object') return true;
-        if (json.success === false) return true;
-        if (json.status === 'error' || json.status === 'fail') return true;
-        if (json.error) return true;
-        return false;
+    // ------------------------------------------------------------------
+    // loading / errors
+    // ------------------------------------------------------------------
+    const setLoading = (isLoading) => {
+        state.loading = isLoading;
+        const wrapper = els.tbody.closest('.tableWrapper');
+        if (wrapper) wrapper.classList.toggle('isLoading', isLoading);
+        if (isLoading && els.noData) els.noData.style.display = 'none';
+        if (els.prevBtn) els.prevBtn.disabled = isLoading || state.page <= 1;
+        if (els.nextBtn) els.nextBtn.disabled = isLoading || state.page >= state.totalPages;
+    };
+
+    function showEmptyState() {
+        if (!els.noData) return;
+        els.noData.innerHTML = '<i class="fas fa-inbox"></i> No data found';
+        els.noData.style.display = '';
     }
 
-    function extractApiMessage(json, fallback) {
-        if (json && typeof json === 'object') {
-            if (json.message) return json.message;
-            if (json.error) return json.error;
-        }
-        return fallback;
+    function showError(message) {
+        if (!els.noData) return;
+        els.noData.innerHTML = `<i class="fas fa-triangle-exclamation"></i> ${escapeHtml(message)}`;
+        els.noData.style.display = '';
     }
 
-    function graveLabel(grave) {
-        if (!grave) return '-';
-        const b = grave.block_name || '-';
-        const g = grave.grave_code || '-';
-        return b + ' / ' + g;
-    }
+    // ------------------------------------------------------------------
+    // fetch
+    // ------------------------------------------------------------------
+    async function fetchReservations() {
+        if (state.controller) state.controller.abort();
+        state.controller = new AbortController();
 
-    function confirmDialog(opts) {
-        if (typeof window.showConfirmModal === 'function') {
-            return window.showConfirmModal(opts);
-        }
-        const plain = [opts.title, opts.message].filter(Boolean).join('\n\n');
-        return Promise.resolve(window.confirm(plain));
-    }
-
-    async function fetchMonitor() {
         const params = new URLSearchParams();
-        params.set('page', state.page);
-        params.set('limit', PER_PAGE);
+        params.set('page', String(state.page));
+        params.set('limit', String(state.limit));
+        if (state.search) params.set('search_term', state.search);
 
-        const searchVal = state.appliedSearch.trim();
-        if (searchVal.length >= 3) params.set('search_term', searchVal);
-
-        const res = await fetch(API_URL + '?' + params.toString());
-        const text = await res.text();
-
-        let json = null;
-        try { json = JSON.parse(text); }
-        catch (_) { throw new Error('Non-JSON response: ' + text.slice(0, 200)); }
-
-        if (isApiFailure(res, json)) {
-            throw new Error(extractApiMessage(json, 'HTTP ' + res.status));
-        }
-
-        return (json && json.data) ? json.data : json;
-    }
-
-    async function refetchTransfer(pendingId) {
-        if (!pendingId) return null;
+        const reqId = ++state.requestId;
+        setLoading(true);
+        let loadError = null;
 
         try {
-            const res = await fetch(`${API_URL}/${encodeURIComponent(pendingId)}`, {
+            const response = await fetch(`${API_URL}?${params.toString()}`, {
+                method: 'GET',
                 headers: { Accept: 'application/json' },
                 credentials: 'same-origin',
-                cache: 'no-store',
+                signal: state.controller.signal,
             });
-            if (!res.ok) return null;
 
-            const json = await res.json().catch(() => null);
-            if (!json || json.success === false) return null;
-
-            const payload = (json && json.data) ? json.data : json;
-            return (payload && payload.transfer) ? payload.transfer : null;
-        } catch (_) {
-            return null;
-        }
-    }
-
-    function setLoading(isLoading) {
-        state.loading = isLoading;
-
-        if (els.tableWrapper) {
-            els.tableWrapper.classList.toggle('isLoading', !!isLoading);
-        }
-
-        if (isLoading && els.noData) {
-            els.noData.style.display = 'none';
-        }
-
-        if (els.prevBtn) {
-            els.prevBtn.disabled = isLoading || state.page <= 1;
-        }
-        if (els.nextBtn) {
-            els.nextBtn.disabled = isLoading || state.page >= state.totalPages;
-        }
-    }
-
-    async function loadMonitor() {
-        const reqId = ++state.requestId;
-
-        setLoading(true);
-
-        try {
-            const data = await fetchMonitor();
             if (reqId !== state.requestId) return;
+            const json = await response.json().catch(() => null);
+            if (!response.ok) {
+                const msg = (json && (json.message || json.error)) || `Request failed (${response.status})`;
+                throw new Error(msg);
+            }
+            if (json && json.success === false) throw new Error(json.message || 'Request failed.');
 
-            state.items = Array.isArray(data.transfers) ? data.transfers : [];
-            const pag = data.pagination || {};
-            state.totalPages = Math.max(1, parseInt(pag.total_pages, 10) || 1);
-            state.totalRecords = parseInt(pag.total_records, 10) || 0;
-
-            if (state.page > state.totalPages) state.page = state.totalPages;
-        } catch (e) {
+            const payload = (json && json.data) ? json.data : (json || {});
+            state.items = Array.isArray(payload.reservations) ? payload.reservations : [];
+            const pg = payload.pagination || {};
+            state.page = Number(pg.current_page) || state.page;
+            state.totalPages = Math.max(1, Number(pg.total_pages) || 1);
+            state.totalRecords = Number(pg.total_records) || state.items.length;
+        } catch (err) {
+            if (err.name === 'AbortError') return;
             if (reqId !== state.requestId) return;
-            console.warn('[monitor] fetch failed:', e);
-            state.items = [];
-            state.totalPages = 1;
-            state.totalRecords = 0;
+            loadError = err;
         }
 
         if (reqId !== state.requestId) return;
 
         setLoading(false);
-        renderTable();
+
+        if (loadError) {
+            state.items = [];
+            state.totalPages = 1;
+            state.totalRecords = 0;
+            render();
+            showError(loadError.message || 'Failed to load reservations.');
+        } else {
+            render();
+        }
+    }
+
+    // Silent refresh — same data, no row animation, no scroll jump.
+    function silentRefresh() {
+        state.silentNextRender = true;
+        return fetchReservations();
+    }
+
+    async function refetchReservation(reservationId) {
+        if (!reservationId) return null;
+        try {
+            const res = await fetch(`${API_URL}/${encodeURIComponent(reservationId)}`, {
+                headers: { Accept: 'application/json' },
+                credentials: 'same-origin',
+                cache: 'no-store',
+            });
+            if (!res.ok) return null;
+            const json = await res.json().catch(() => null);
+            if (!json || json.success === false) return null;
+            const payload = (json && json.data) ? json.data : json;
+            return (payload && payload.reservation) ? payload.reservation : null;
+        } catch (err) {
+            console.warn('[monitor.js] refetch reservation failed:', err);
+            return null;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // render
+    // ------------------------------------------------------------------
+    function render() {
+        renderRows();
         renderPagination();
     }
 
-    function buildRenderKey() {
-        if (!state.items.length) return 'empty:' + state.page;
-
-        return state.items.map(function (t) {
-            const n = t.new_occupant || {};
-            const o = t.old_occupant || {};
-            const g = t.target_grave || {};
-            return [
-                t.type,
-                n.interment_id, n.deceased_name, n.control_number,
-                o.interment_id, o.deceased_name, o.control_number,
-                g.grave_id, g.grave_code, g.block_name
-            ].join('|');
-        }).join(',') + ':' + state.page;
-    }
-
-    function buildRowHtml(transfer) {
-        const newOcc = transfer.new_occupant || {};
-        const oldOcc = transfer.old_occupant || null;
-        const grave = transfer.target_grave || {};
-
-        const oldName = oldOcc ? displayVal(oldOcc.deceased_name) : '-';
-        const oldExpiration = oldOcc ? displayVal(oldOcc.lease_expiration_date) : '-';
-        const oldContactName = oldOcc ? displayVal(oldOcc.contact_person_name) : '-';
-        const oldContactPhoneCell = renderPhoneLink(oldOcc);
-
-        const blockName = displayVal(grave.block_name);
-        const graveCode = displayVal(grave.grave_code);
-        const locationCell = (blockName !== '-' && graveCode !== '-')
-            ? `${escapeHtml(blockName)} <span style="color:#94a3b8">/</span> ${escapeHtml(graveCode)}`
-            : escapeHtml(blockName !== '-' ? blockName : graveCode);
-
-        const newName = displayVal(newOcc.deceased_name);
-        const newAddress = displayVal(newOcc.last_known_address);
-        const newContactName = displayVal(newOcc.contact_person_name);
-        const newContactPhoneCell = renderPhoneLink(newOcc);
-        const newContactAddress = displayVal(newOcc.contact_person_address);
-        const remarks = displayVal(newOcc.remarks || (oldOcc && oldOcc.remarks));
-
-        const pendingId = newOcc.interment_id || '';
-
-        const viewOldBtn = oldOcc
-            ? '<button type="button" class="viewBtn"   data-action="view-old" title="View Old Occupant"><i class="fas fa-user-clock"></i></button>'
-            : '';
-
-        const actionsHtml =
-            viewOldBtn +
-            '<button type="button" class="viewBtn"   data-action="view-new" title="View New Occupant"><i class="fas fa-user-plus"></i></button>' +
-            '<button type="button" class="checkBtn"  data-action="check"    title="Confirm Transfer"><i class="fas fa-check"></i></button>' +
-            '<button type="button" class="cancelBtn" data-action="cancel"   title="Cancel"><i class="fas fa-times"></i></button>';
-
-        return (
-            '<tr data-id="' + escapeHtml(pendingId) + '"' +
-            ' data-type="' + escapeHtml(transfer.type || '') + '">' +
-            '<td>' + escapeHtml(oldName) + '</td>' +
-            '<td>' + locationCell + '</td>' +
-            '<td>' + escapeHtml(oldExpiration) + '</td>' +
-            '<td>' + escapeHtml(oldContactName) + '</td>' +
-            '<td>' + oldContactPhoneCell + '</td>' +
-            '<td>' + escapeHtml(newName) + '</td>' +
-            '<td>' + escapeHtml(newAddress) + '</td>' +
-            '<td>' + escapeHtml(newContactName) + '</td>' +
-            '<td>' + newContactPhoneCell + '</td>' +
-            '<td>' + escapeHtml(newContactAddress) + '</td>' +
-            '<td>' + escapeHtml(remarks) + '</td>' +
-            '<td><div class="actions">' + actionsHtml + '</div></td>' +
-            '</tr>'
-        );
-    }
-
-    function renderTable() {
-        const key = buildRenderKey();
-        const changed = key !== state.lastRenderKey;
-        state.lastRenderKey = key;
+    function renderRows() {
+        els.tbody.innerHTML = '';
 
         if (!state.items.length) {
-            els.tableBody.innerHTML = '';
             if (els.noData) {
-                els.noData.style.display = state.loading ? 'none' : 'flex';
+                if (state.loading) els.noData.style.display = 'none';
+                else showEmptyState();
             }
+            state.silentNextRender = false;
             return;
         }
-
         if (els.noData) els.noData.style.display = 'none';
-        els.tableBody.innerHTML = state.items.map(buildRowHtml).join('');
 
-        if (changed) {
-            els.tableBody.classList.remove('animate');
-            void els.tableBody.offsetWidth;
-            els.tableBody.classList.add('animate');
+        const fragment = document.createDocumentFragment();
+
+        state.items.forEach((res) => {
+            const old = res.old_interment || null;
+            const neu = res.pending_interment || {};
+            const grave = res.target_grave || {};
+
+            const tr = document.createElement('tr');
+            tr.dataset.reservationId = res.reservation_id;
+            tr.dataset.type = old ? 'replace' : 'vacant';
+            tr.classList.add('monitorRow', `type-${old ? 'replace' : 'vacant'}`);
+
+            const oldName = old ? displayVal(old.deceased_name) : '-';
+            const oldExpiration = old ? displayVal(old.lease_expiration_date) : '-';
+            const oldContact = old ? displayVal(old.contact_person_name) : '-';
+            const oldPhoneCell = renderPhoneLink(old);
+
+            const blockName = displayVal(grave.block_name);
+            const graveCode = displayVal(grave.grave_code);
+            const locationCell = (blockName !== '-' && graveCode !== '-')
+                ? `${escapeHtml(blockName)} <span style="color:#94a3b8">/</span> ${escapeHtml(graveCode)}`
+                : escapeHtml(blockName !== '-' ? blockName : graveCode);
+
+            const newName = displayVal(neu.deceased_name);
+            const newAddress = displayVal(neu.last_known_address);
+            const newContact = displayVal(neu.contact_person_name);
+            const newPhoneCell = renderPhoneLink(neu);
+            const newContactAddress = displayVal(neu.contact_person_address);
+            const remarks = displayVal(neu.remarks || (old && old.remarks));
+
+            let actionButtons = '';
+            if (old) {
+                actionButtons += `<button type="button" class="viewBtn monitorActionBtn" data-action="view-old" title="View Old Occupant" aria-label="View Old Occupant"><i class="fas fa-user-clock"></i></button>`;
+            }
+            actionButtons += `<button type="button" class="viewBtn monitorActionBtn" data-action="view-new" title="View New Occupant" aria-label="View New Occupant"><i class="fas fa-user-plus"></i></button>`;
+            actionButtons += `<button type="button" class="checkBtn monitorActionBtn" data-action="check" title="Confirm Reservation" aria-label="Confirm Reservation"><i class="fas fa-check"></i></button>`;
+            actionButtons += `<button type="button" class="cancelBtn monitorActionBtn" data-action="cancel" title="Cancel Reservation" aria-label="Cancel Reservation"><i class="fas fa-times"></i></button>`;
+
+            tr.innerHTML = `
+                <td>${escapeHtml(oldName)}</td>
+                <td>${locationCell}</td>
+                <td>${escapeHtml(oldExpiration)}</td>
+                <td>${escapeHtml(oldContact)}</td>
+                <td>${oldPhoneCell}</td>
+                <td>${escapeHtml(newName)}</td>
+                <td>${escapeHtml(newAddress)}</td>
+                <td>${escapeHtml(newContact)}</td>
+                <td>${newPhoneCell}</td>
+                <td>${escapeHtml(newContactAddress)}</td>
+                <td class="remarksCell">${escapeHtml(remarks)}</td>
+                <td class="actionCell"><div class="actions">${actionButtons}</div></td>
+            `;
+            fragment.appendChild(tr);
+        });
+
+        els.tbody.appendChild(fragment);
+
+        els.tbody.querySelectorAll('.monitorActionBtn').forEach((btn) => {
+            btn.addEventListener('click', handleActionClick);
+        });
+
+        // Row-enter animation — skipped on silent refresh.
+        if (!state.silentNextRender) {
+            els.tbody.classList.remove('animate');
+            void els.tbody.offsetWidth;
+            els.tbody.classList.add('animate');
         }
+        state.silentNextRender = false;
     }
 
     function renderPagination() {
-        const total = state.totalPages;
-        if (els.currentPageNum) els.currentPageNum.textContent = state.page;
-        if (els.totalPagesNum) els.totalPagesNum.textContent = total;
+        if (els.currentPageLabel) els.currentPageLabel.textContent = state.page;
+        if (els.totalPagesLabel) els.totalPagesLabel.textContent = state.totalPages;
+        if (els.prevBtn) els.prevBtn.disabled = state.loading || state.page <= 1;
+        if (els.nextBtn) els.nextBtn.disabled = state.loading || state.page >= state.totalPages;
 
-        els.prevBtn.disabled = state.loading || state.page <= 1;
-        els.nextBtn.disabled = state.loading || state.page >= total;
-
-        let startPage, endPage;
-
-        if (total <= MAX_PAGE_BUTTONS) {
-            startPage = 1;
-            endPage = total;
-        } else {
-            const half = Math.floor(MAX_PAGE_BUTTONS / 2);
-            startPage = state.page - half;
-            endPage = startPage + MAX_PAGE_BUTTONS - 1;
-            if (startPage < 1) { startPage = 1; endPage = MAX_PAGE_BUTTONS; }
-            if (endPage > total) { endPage = total; startPage = total - MAX_PAGE_BUTTONS + 1; }
-        }
-
-        const existing = els.carouselTrack.querySelectorAll('button');
-        const existingValues = Array.prototype.map.call(existing, b => b.textContent);
-        const newValues = [];
-        for (let i = startPage; i <= endPage; i++) newValues.push(String(i));
-
-        const sameSet = existingValues.length === newValues.length &&
-            existingValues.every((v, i) => v === newValues[i]);
-
-        if (sameSet) {
-            Array.prototype.forEach.call(existing, function (btn, i) {
-                const pageNum = startPage + i;
-                btn.classList.toggle('active', pageNum === state.page);
-            });
-            centerActivePage();
-            return;
-        }
-
+        if (!els.carouselTrack) return;
         els.carouselTrack.innerHTML = '';
-        for (let i = startPage; i <= endPage; i++) {
-            const btn = document.createElement('button');
-            btn.type = 'button';
-            btn.textContent = i;
-            if (i === state.page) btn.classList.add('active');
-            btn.addEventListener('click', (function (pageNum) {
-                return function () { goToPage(pageNum); };
-            })(i));
-            els.carouselTrack.appendChild(btn);
-        }
 
-        centerActivePage();
+        const total = state.totalPages;
+        if (total < 1) return;
+
+        const windowSize = PAGINATION_WINDOW;
+        let start = Math.max(1, state.page - Math.floor(windowSize / 2));
+        let end = Math.min(total, start + windowSize - 1);
+        start = Math.max(1, end - windowSize + 1);
+
+        if (start > 1) {
+            els.carouselTrack.appendChild(makePageBtn(1));
+            if (start > 2) els.carouselTrack.appendChild(makeEllipsis());
+        }
+        for (let p = start; p <= end; p++) els.carouselTrack.appendChild(makePageBtn(p));
+        if (end < total) {
+            if (end < total - 1) els.carouselTrack.appendChild(makeEllipsis());
+            els.carouselTrack.appendChild(makePageBtn(total));
+        }
     }
 
-    function centerActivePage() {
-        const active = els.carouselTrack.querySelector('button.active');
-        if (!active) { els.carouselTrack.style.transform = 'translateX(0)'; return; }
+    function makePageBtn(pageNum) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'pageNumBtn' + (pageNum === state.page ? ' active' : '');
+        btn.textContent = String(pageNum);
+        btn.dataset.page = String(pageNum);
+        if (pageNum === state.page) btn.setAttribute('aria-current', 'page');
+        btn.addEventListener('click', () => goToPage(pageNum));
+        return btn;
+    }
 
-        const vw = els.carouselViewport.clientWidth;
-        const tw = els.carouselTrack.scrollWidth;
-        if (tw <= vw) { els.carouselTrack.style.transform = 'translateX(0)'; return; }
-
-        const center = active.offsetLeft + active.offsetWidth / 2;
-        let t = center - vw / 2;
-        const max = tw - vw;
-        if (t < 0) t = 0;
-        if (t > max) t = max;
-        els.carouselTrack.style.transform = 'translateX(' + (-t) + 'px)';
+    function makeEllipsis() {
+        const span = document.createElement('span');
+        span.className = 'pageEllipsis';
+        span.textContent = '…';
+        span.setAttribute('aria-hidden', 'true');
+        return span;
     }
 
     function goToPage(page) {
-        if (page < 1 || page > state.totalPages) return;
-        if (page === state.page) return;
-        if (state.loading) return;
-
-        state.page = page;
-        state.lastRenderKey = '';
-        loadMonitor();
-        if (els.tableWrapper) els.tableWrapper.scrollTop = 0;
+        const target = Math.min(Math.max(1, page), state.totalPages);
+        if (target === state.page || state.loading) return;
+        state.page = target;
+        fetchReservations();
     }
 
-    function updateCloseButton() {
-        const hasText = els.searchInput.value.length > 0;
-        closeBtn.classList.toggle('is-visible', hasText);
-        els.searchInput.style.paddingRight = hasText ? '36px' : '';
-    }
+    // ------------------------------------------------------------------
+    // payload builder for the table's ✓ button
+    // (uses the reservation's currently stored values — no edits)
+    // ------------------------------------------------------------------
+    function buildPayloadFromReservation(res) {
+        const n = res.pending_interment || {};
+        const o = res.old_interment || null;
 
-    let searchTimer = null;
-    els.searchInput.addEventListener('input', function () {
-        updateCloseButton();
-        clearTimeout(searchTimer);
+        const payload = {
+            control_number: n.control_number || '',
+            deceased_name: n.deceased_name || '',
+            deceased_sex: n.deceased_sex || '',
+            deceased_date_of_birth: n.deceased_date_of_birth || null,
+            deceased_date_of_death: n.deceased_date_of_death || null,
+            last_known_address: n.last_known_address || '',
+            death_certificate: n.death_certificate || '',
+            contact_person_name: n.contact_person_name || '',
+            contact_person_phone_number: n.contact_person_phone_number || '',
+            contact_person_email: n.contact_person_email || '',
+            contact_person_address: n.contact_person_address || '',
+            contact_person_address_barangay: n.contact_person_address_barangay || '',
+            assistance_type: n.assistance_type || 'Other',
+            burial_permit_number: n.burial_permit_number || '',
+            burial_permit_date: n.burial_permit_date || null,
+            transfer_permit_number: n.transfer_permit_number || '',
+            transfer_permit_issued_by: n.transfer_permit_issued_by || '',
+            transfer_permit_date: n.transfer_permit_date || null,
+            exhumation_permit_number: n.exhumation_permit_number || '',
+            exhumation_permit_date: n.exhumation_permit_date || null,
+            date_buried: n.date_buried || null,
+            date_exhumed: n.date_exhumed || null,
+            burial_clearance_date: n.burial_clearance_date || null,
+            lease_expiration_date: n.lease_expiration_date || null,
+            remarks: n.remarks || '',
+            reservation_notes: res.reservation_notes || '',
+        };
 
-        searchTimer = setTimeout(function () {
-            const val = els.searchInput.value.trim();
-            const prev = state.appliedSearch;
-
-            state.appliedSearch = val.length >= 3 ? val : '';
-            state.page = 1;
-            state.lastRenderKey = '';
-
-            if (val.length > 0 && val.length < 3) {
-                if (prev.length >= 3) loadMonitor();
-                return;
+        if (o) {
+            payload.old_new_status = res.old_new_status || 'Inactive';
+            if (res.old_new_grave && res.old_new_grave.grave_id) {
+                payload.old_new_grave_id = res.old_new_grave.grave_id;
+                payload.old_new_grave_code = res.old_new_grave.grave_code || '';
             }
-            loadMonitor();
-        }, 300);
-    });
+            if (res.old_new_assistance_type) payload.old_new_assistance_type = res.old_new_assistance_type;
+            if (res.old_new_remarks) payload.old_new_remarks = res.old_new_remarks;
+            if (res.exhumation_permit_number) payload.exhumation_permit_number = res.exhumation_permit_number;
+            if (res.transfer_permit_number) payload.transfer_permit_number = res.transfer_permit_number;
+            if (res.old_edited_fields) payload.old_edited_fields = res.old_edited_fields;
+        }
 
-    els.searchInput.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') e.preventDefault();
-    });
-
-    els.searchBox.addEventListener('click', function (e) {
-        if (e.target === closeBtn || closeBtn.contains(e.target)) return;
-        els.searchInput.focus();
-    });
-
-    closeBtn.addEventListener('click', function (e) {
-        e.stopPropagation();
-        els.searchInput.value = '';
-        state.appliedSearch = '';
-        updateCloseButton();
-        state.page = 1;
-        state.lastRenderKey = '';
-        loadMonitor();
-        els.searchInput.focus();
-    });
-
-    function findTransferByPendingId(id) {
-        return state.items.find(function (t) {
-            const n = t.new_occupant || {};
-            return String(n.interment_id) === String(id);
-        });
+        return payload;
     }
 
-    async function viewOldOccupant(transfer) {
-        if (!transfer.old_occupant) return;
+    function confirmDialog(opts) {
+        if (typeof window.showConfirmModal === 'function') return window.showConfirmModal(opts);
+        const plain = [opts.title, opts.message].filter(Boolean).join('\n\n');
+        return Promise.resolve(window.confirm(plain));
+    }
 
-        const pendingId = (transfer.new_occupant || {}).interment_id;
-        const fresh = await refetchTransfer(pendingId);
-        const payload = fresh || transfer;
+    // ------------------------------------------------------------------
+    // actions
+    // ------------------------------------------------------------------
+    function findReservationById(id) {
+        return state.items.find(r => String(r.reservation_id) === String(id)) || null;
+    }
 
+    // Silent row removal — no re-render, no animation beyond a small fade.
+    function removeRowLocally(reservationId) {
+        state.items = state.items.filter(
+            r => String(r.reservation_id) !== String(reservationId)
+        );
+        const row = els.tbody.querySelector(
+            `tr[data-reservation-id="${CSS.escape(String(reservationId))}"]`
+        );
+        if (row) {
+            row.classList.add('rowFadeOut');
+            setTimeout(() => {
+                row.remove();
+                if (!state.items.length && els.noData) showEmptyState();
+            }, 180);
+        }
+        state.totalRecords = Math.max(0, state.totalRecords - 1);
+    }
+
+    async function handleActionClick(event) {
+        const btn = event.currentTarget;
+        const row = btn.closest('tr');
+        if (!row) return;
+        const reservation = findReservationById(row.dataset.reservationId);
+        if (!reservation) return;
+
+        const action = btn.dataset.action;
+        if (action === 'view-old') await openOldOccupant(reservation);
+        else if (action === 'view-new') await openNewOccupant(reservation);
+        else if (action === 'check') await confirmReservation(reservation);
+        else if (action === 'cancel') await cancelReservation(reservation);
+    }
+
+    async function openOldOccupant(reservation) {
+        const fresh = await refetchReservation(reservation.reservation_id);
+        const payload = fresh || reservation;
         if (typeof window.openMonitorOldOccupant === 'function') {
             window.openMonitorOldOccupant(payload);
             return;
         }
-        console.warn('[monitor] monitor_burial_modal.js is not loaded.');
+        document.dispatchEvent(new CustomEvent('monitor:view-old', { detail: payload }));
     }
 
-    async function viewNewOccupant(transfer) {
-        const pendingId = (transfer.new_occupant || {}).interment_id;
-        const fresh = await refetchTransfer(pendingId);
-        const payload = fresh || transfer;
-
+    async function openNewOccupant(reservation) {
+        const fresh = await refetchReservation(reservation.reservation_id);
+        const payload = fresh || reservation;
         if (typeof window.openMonitorNewOccupant === 'function') {
             window.openMonitorNewOccupant(payload);
             return;
         }
-        console.warn('[monitor] monitor_burial_modal.js is not loaded.');
+        document.dispatchEvent(new CustomEvent('monitor:view-new', { detail: payload }));
     }
 
-    async function confirmTransfer(pendingId, transfer) {
-        const oldOcc = transfer.old_occupant || null;
-        const newOcc = transfer.new_occupant || {};
-        const grave = transfer.target_grave || {};
+    // Table ✓ = execute with current reservation values.
+    async function confirmReservation(reservation) {
+        const old = reservation.old_interment || null;
+        const neu = reservation.pending_interment || {};
+        const grave = reservation.target_grave || {};
 
         const rows = [];
-        if (oldOcc) {
-            rows.push({ label: 'Old Occupant', value: oldOcc.deceased_name || '' });
-        }
-        rows.push({ label: 'New Occupant', value: newOcc.deceased_name || '' });
+        if (old) rows.push({ label: 'Old Occupant', value: old.deceased_name || '' });
+        rows.push({ label: 'New Occupant', value: neu.deceased_name || '' });
         rows.push({ label: 'Block', value: grave.block_name || '' });
         rows.push({ label: 'Grave Code', value: grave.grave_code || '' });
 
         const ok = await confirmDialog({
-            title: oldOcc ? 'Confirm Reservation' : 'Confirm Interment',
+            title: old ? 'Confirm Reservation' : 'Confirm Interment',
             message: 'Do you really want to confirm this reservation?',
             variant: 'primary',
-            confirmText: oldOcc ? 'Confirm Transfer' : 'Confirm',
+            confirmText: old ? 'Confirm Transfer' : 'Confirm',
             cancelText: 'Cancel',
-            rows: rows,
+            rows,
             onConfirm: async function () {
-                const res = await fetch(API_URL + '/' + encodeURIComponent(pendingId), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pending_interment_id: pendingId })
-                });
-
-                let json = null;
-                try { json = await res.json(); } catch (_) { }
-
-                if (isApiFailure(res, json)) {
-                    throw new Error(extractApiMessage(json, 'HTTP ' + res.status));
+                const payload = buildPayloadFromReservation(reservation);
+                const res = await fetch(
+                    `${API_URL}/${encodeURIComponent(reservation.reservation_id)}`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                        },
+                        credentials: 'same-origin',
+                        body: JSON.stringify(payload),
+                    }
+                );
+                const json = await res.json().catch(() => null);
+                if (!res.ok || (json && json.success === false)) {
+                    throw new Error((json && (json.message || json.error)) || `HTTP ${res.status}`);
                 }
-            }
+            },
         });
 
         if (!ok) return;
-
-        loadMonitor();
-        if (typeof window.showAlertTOP === 'function') {
-            window.showAlertTOP('Changes saved successfully.', 'success');
-        }
+        removeRowLocally(reservation.reservation_id);
+        notify('success', 'Reservation confirmed.');
     }
 
-    async function cancelTransfer(pendingId, transfer) {
-        const newOcc = transfer.new_occupant || {};
-        const oldOcc = transfer.old_occupant || null;
-        const grave = transfer.target_grave || {};
+    async function cancelReservation(reservation) {
+        const neu = reservation.pending_interment || {};
+        const old = reservation.old_interment || null;
+        const grave = reservation.target_grave || {};
 
         const rows = [
-            { label: 'Name', value: newOcc.deceased_name || '' },
+            { label: 'Name', value: neu.deceased_name || '' },
             { label: 'Block', value: grave.block_name || '' },
-            { label: 'Grave Code', value: grave.grave_code || '' }
+            { label: 'Grave Code', value: grave.grave_code || '' },
         ];
 
         const ok = await confirmDialog({
             title: 'Cancel Reservation',
-            message: oldOcc
+            message: old
                 ? 'Do you really want to cancel this pending reservation? The Old Occupant will return to Reserve unchanged.'
                 : 'Do you really want to cancel this pending reservation?',
             variant: 'danger',
             confirmText: 'Yes, Cancel',
             cancelText: 'Keep',
-            rows: rows,
+            rows,
             onConfirm: async function () {
-                const res = await fetch(API_URL + '/' + encodeURIComponent(pendingId), {
-                    method: 'DELETE',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ pending_interment_id: pendingId })
-                });
-
-                let json = null;
-                try { json = await res.json(); } catch (_) { }
-
-                if (isApiFailure(res, json)) {
-                    throw new Error(extractApiMessage(json, 'HTTP ' + res.status));
+                const res = await fetch(
+                    `${API_URL}/${encodeURIComponent(reservation.reservation_id)}`,
+                    {
+                        method: 'DELETE',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Accept': 'application/json',
+                        },
+                        credentials: 'same-origin',
+                        body: JSON.stringify({}),
+                    }
+                );
+                const json = await res.json().catch(() => null);
+                if (!res.ok || (json && json.success === false)) {
+                    throw new Error((json && (json.message || json.error)) || `HTTP ${res.status}`);
                 }
-            }
+            },
         });
 
         if (!ok) return;
-
-        loadMonitor();
-        if (typeof window.showAlertTOP === 'function') {
-            window.showAlertTOP('Record deleted successfully.', 'success');
-        }
+        removeRowLocally(reservation.reservation_id);
+        notify('success', 'Reservation cancelled.');
     }
 
-    els.tableBody.addEventListener('click', function (e) {
-        const btn = e.target.closest('button[data-action]');
-        if (!btn) return;
+    // ------------------------------------------------------------------
+    // wire-up
+    // ------------------------------------------------------------------
+    let searchTimer = null;
+    if (els.searchInput) {
+        els.searchInput.addEventListener('input', () => {
+            toggleSearchClear(els.searchInput.value);
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => {
+                const value = els.searchInput.value.trim();
+                if (value.length === 0) {
+                    if (state.search !== '') {
+                        state.search = '';
+                        state.page = 1;
+                        fetchReservations();
+                    }
+                    return;
+                }
+                if (value.length < MIN_SEARCH_LENGTH) return;
+                if (value === state.search) return;
+                state.search = value;
+                state.page = 1;
+                fetchReservations();
+            }, SEARCH_DEBOUNCE_MS);
+        });
 
-        const row = btn.closest('tr');
-        if (!row) return;
+        els.searchInput.addEventListener('keydown', (event) => {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            clearTimeout(searchTimer);
+            const value = els.searchInput.value.trim();
+            if (value.length > 0 && value.length < MIN_SEARCH_LENGTH) return;
+            state.search = value;
+            state.page = 1;
+            fetchReservations();
+        });
+    }
 
-        const transfer = findTransferByPendingId(row.dataset.id);
-        if (!transfer) return;
+    if (els.prevBtn) els.prevBtn.addEventListener('click', () => goToPage(state.page - 1));
+    if (els.nextBtn) els.nextBtn.addEventListener('click', () => goToPage(state.page + 1));
+    els.tbody.addEventListener('click', handleSmsClick);
 
-        const pendingId = (transfer.new_occupant || {}).interment_id;
-        if (!pendingId) return;
-
-        const action = btn.dataset.action;
-
-        if (action === 'view-old') viewOldOccupant(transfer);
-        if (action === 'view-new') viewNewOccupant(transfer);
-        if (action === 'check') confirmTransfer(pendingId, transfer);
-        if (action === 'cancel') cancelTransfer(pendingId, transfer);
+    // Modal events: silent refresh (no animation).
+    document.addEventListener('monitor_burial_modal:saved', () => { silentRefresh(); });
+    document.addEventListener('monitor_burial_modal:executed', (e) => {
+        const id = e.detail && e.detail.reservationId;
+        if (id) removeRowLocally(id);
+        else silentRefresh();
     });
 
-    els.tableBody.addEventListener('click', handleSmsClick);
+    // ------------------------------------------------------------------
+    // public API
+    // ------------------------------------------------------------------
+    window.MonitorTable = {
+        refresh: () => fetchReservations(),
+        silentRefresh,
+        reload: () => fetchReservations(),
+        setSearch(term) {
+            state.search = String(term || '').trim();
+            if (els.searchInput) els.searchInput.value = state.search;
+            toggleSearchClear(state.search);
+            state.page = 1;
+            return fetchReservations();
+        },
+        goToPage,
+        getItem(reservationId) {
+            return state.items.find(r => Number(r.reservation_id) === Number(reservationId)) || null;
+        },
+        getState() { return { ...state }; },
+    };
 
-    els.prevBtn.addEventListener('click', () => goToPage(state.page - 1));
-    els.nextBtn.addEventListener('click', () => goToPage(state.page + 1));
-
-    window.addEventListener('resize', centerActivePage);
-
-    updateCloseButton();
-
+    if (els.searchInput && els.searchInput.value) {
+        const v = els.searchInput.value.trim();
+        if (v.length === 0 || v.length >= MIN_SEARCH_LENGTH) state.search = v;
+        toggleSearchClear(v);
+    }
     if (els.noData) els.noData.style.display = 'none';
 
-    loadMonitor();
-
-    document.addEventListener('monitor_burial_modal:saved', function () {
-        loadMonitor();
-    });
-});
+    fetchReservations();
+})();

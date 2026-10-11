@@ -264,7 +264,32 @@ html.smsNotification--open body {
     text-decoration-color: transparent;
     text-underline-offset: 3px;
     cursor: pointer;
-    transition: text-decoration-color .12s ease;
+
+    transition:
+        text-decoration-color .15s ease,
+        opacity .15s ease;
+
+    animation: smsLinkPulse 2.2s ease-in-out infinite;
+}
+
+.smsPhoneLink:hover {
+    text-decoration-color: currentColor;
+    opacity: .85;
+}
+
+.smsPhoneLink:focus-visible {
+    outline: 2px solid var(--mainColor);
+    outline-offset: 3px;
+    border-radius: 4px;
+}
+
+@keyframes smsLinkPulse {
+    0%, 100% {
+        opacity: 1;
+    }
+    50% {
+        opacity: .65;
+    }
 }
 
 .smsPhoneLink:hover {
@@ -475,7 +500,7 @@ html.smsNotification--open body {
                 if (typeof global.sendSms === 'function') {
                     await global.sendSms(phoneVal, finalMessage, includeNm);
                 } else {
-                    const response = await fetch('api/sendsms', {
+                    const response = await fetch('api/sms', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         credentials: 'same-origin',
