@@ -222,13 +222,12 @@ class ImageManager
         // Try to get exclusive lock
         if (!flock($fp, LOCK_EX)) {
             fclose($fp);
-            @unlink($lockFile);
             return false;
         }
 
         // Return both the file pointer and the lock file path as an array
         return [
-            'handle' => $fp,
+            'handle'    => $fp,
             'lock_file' => $lockFile
         ];
     }
@@ -241,14 +240,12 @@ class ImageManager
         }
 
         $lockHandle = $lock['handle'];
-        $lockFile = $lock['lock_file'];
 
         flock($lockHandle, LOCK_UN);
         fclose($lockHandle);
 
-        if ($lockFile && file_exists($lockFile)) {
-            @unlink($lockFile);
-        }
+        // Do NOT unlink the lock file here — deleting it while another
+        // process is waiting on it breaks flock() exclusivity.
     }
 
     public function getAllImages($page = 1, $limit = 20, $search = '')
