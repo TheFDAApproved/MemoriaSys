@@ -553,12 +553,13 @@
                       </li>
                       <li>
                         If you include <code>block_name</code> and
-                        <code>grave_code</code>, they must already exist in the
-                        system.
+                        <code>grave_code</code>, they must both be filled and
+                        the grave must already exist in the system.
                       </li>
                       <li>
                         <code>status</code> can only be <code>Active</code> or
-                        <code>Inactive</code>.
+                        <code>Inactive</code>. <code>Pending</code> rows are
+                        created through Reserve, not through CSV.
                       </li>
                       <li>
                         <code>assistance_type</code> can only be
@@ -576,7 +577,13 @@
                       </li>
                       <li>
                         If a <code>control_number</code> already exists, that
-                        row will update the old record.
+                        row <strong>updates</strong> the existing record. Only
+                        the cells you fill in are applied — empty cells keep the
+                        current value.
+                      </li>
+                      <li>
+                        <code>row_num</code> and <code>col_num</code> are shown
+                        for reference only and are ignored on import.
                       </li>
                       <li>
                         Leave cells empty if you do not have the information.
@@ -586,7 +593,7 @@
                       Exact header row for the CSV file:
                     </p>
                     <pre class="infoHeaderRow">
-control_number,deceased_name,last_known_address,death_certificate,deceased_date_of_birth,deceased_date_of_death,deceased_sex,block_name,grave_code,row_num,col_num,contact_person_name,contact_person_phone_number,contact_person_email,contact_person_address,assistance_type,burial_permit_number,burial_permit_date,transfer_permit_number,transfer_permit_issued_by,transfer_permit_date,exhumation_permit_number,exhumation_permit_date,date_buried,date_exhumed,burial_clearance_date,lease_expiration_date,status,remarks</pre
+control_number,deceased_name,last_known_address,death_certificate,deceased_date_of_birth,deceased_date_of_death,deceased_sex,block_name,grave_code,row_num,col_num,contact_person_name,contact_person_phone_number,contact_person_email,contact_person_address_barangay,contact_person_address,assistance_type,burial_permit_number,burial_permit_date,transfer_permit_number,transfer_permit_issued_by,transfer_permit_date,exhumation_permit_number,exhumation_permit_date,date_buried,date_exhumed,burial_clearance_date,lease_expiration_date,status,remarks</pre
                     >
                   </div>
                 </div>
@@ -695,12 +702,31 @@ control_number,deceased_name,last_known_address,death_certificate,deceased_date_
     <script src="assets/js/settings.js"></script>
     <script src="assets/js/infowrap.js"></script>
     <script>
-      var xyz = document.getElementById("main_color_1");
-      if (xyz.textContent === "") {
-        xyz.textContent = "#0f172a";
-        document.getElementById("main_color").value = "#0f172a";
-        window.main_mainColor = "#0f172a";
-      }
+      /*
+        Fallback only — never clobber the color that was just read
+        from --mainColor above. Reads the CSS variable directly so it
+        reflects whatever the server (rootcolors.php) actually served.
+      */
+      (function () {
+        var FALLBACK = "#0f172a";
+        var cssColor = getComputedStyle(document.documentElement)
+          .getPropertyValue("--mainColor")
+          .trim();
+        var initial = /^#[0-9a-fA-F]{6}$/.test(cssColor) ? cssColor : FALLBACK;
+
+        var label = document.getElementById("main_color_1");
+        var input = document.getElementById("main_color");
+
+        if (label && label.textContent.trim() === "") {
+          label.textContent = initial;
+        }
+        if (input && (!input.value || input.value === "#000000")) {
+          input.value = initial;
+        }
+
+        // Keep window.main_mainColor authoritative: the saved color.
+        window.main_mainColor = initial;
+      })();
     </script>
   </body>
 </html>
