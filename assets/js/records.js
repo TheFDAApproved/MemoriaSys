@@ -37,6 +37,8 @@
     };
 
     let searchTimer = null;
+    // NEW: ref to the injected "clear search" (X) button.
+    let searchClearBtn = null;
     let booted = false;
 
     // ---------- formatting helpers ----------
@@ -88,6 +90,68 @@
 
         if (kind === 'error') console.error('[records.js]', text);
         else console.log('[records.js]', text);
+    }
+
+    // Single source of truth for the "search term is too short" warning.
+    // Routed through notify() so it shows up via showAlertTOP(text, 'warning').
+    function warnSearchTooShort(value) {
+        const min = CONFIG.MIN_SEARCH_LENGTH;
+        const len = String(value || '').trim().length;
+        notify(
+            'warning',
+            `Please enter at least ${min} characters to search — ` +
+            `you've only typed ${len}.`
+        );
+    }
+
+    // ---------- search clear (X) button ----------
+
+    // NEW: inject the "clear search" button inside the search box, matching
+    // the behaviour of reserve.js. Idempotent — calling it twice is safe.
+    function mountSearchClearBtn() {
+        if (!els.searchInput) return;
+
+        // Prefer the .searchBox wrapper if present, otherwise fall back to the
+        // input's direct parent so this still works on simpler layouts.
+        const box = els.searchInput.closest('.searchBox') || els.searchInput.parentElement;
+        if (!box) return;
+
+        // Don't mount twice.
+        const existing = box.querySelector('.searchClearBtn');
+        if (existing) {
+            searchClearBtn = existing;
+            toggleSearchClear(els.searchInput.value);
+            return;
+        }
+
+        searchClearBtn = document.createElement('button');
+        searchClearBtn.type = 'button';
+        searchClearBtn.className = 'searchClearBtn';
+        searchClearBtn.setAttribute('aria-label', 'Clear search');
+        searchClearBtn.title = 'Clear';
+        searchClearBtn.innerHTML = '<i class="fas fa-times"></i>';
+
+        box.appendChild(searchClearBtn);
+
+        searchClearBtn.addEventListener('click', () => {
+            els.searchInput.value = '';
+            searchClearBtn.classList.remove('is-visible');
+            els.searchInput.focus();
+
+            if (state.search !== '') {
+                state.search = '';
+                state.page = 1;
+                fetchRecords();
+            }
+        });
+
+        toggleSearchClear(els.searchInput.value);
+    }
+
+    // NEW: show/hide the X based on whether the field has content.
+    function toggleSearchClear(value) {
+        if (!searchClearBtn) return;
+        searchClearBtn.classList.toggle('is-visible', String(value || '').length > 0);
     }
 
     // ---------- HTTP ----------
@@ -584,6 +648,8 @@
         state.search = value;
         state.page = 1;
         if (els.searchInput) els.searchInput.value = value;
+        // NEW: keep the X button in sync when search is set programmatically.
+        toggleSearchClear(value);
         fetchRecords();
     }
 
@@ -592,7 +658,17 @@
     function bindEvents() {
         if (els.searchInput && !els.searchInput.__recordsBound) {
             els.searchInput.__recordsBound = true;
+
+            // NEW: inject the "clear search" X button into the search box.
+            mountSearchClearBtn();
+
+            // Typing: still debounced auto-search (unchanged), but NO warning
+            // here — short terms are silently ignored until the user hits Enter.
             els.searchInput.addEventListener('input', () => {
+                // NEW: reflect field content on the X button immediately,
+                // not on the debounce tick, so it feels responsive.
+                toggleSearchClear(els.searchInput.value);
+
                 clearTimeout(searchTimer);
                 const value = els.searchInput.value.trim();
                 searchTimer = setTimeout(() => {
@@ -601,12 +677,27 @@
                     setSearch(value);
                 }, CONFIG.SEARCH_DEBOUNCE_MS);
             });
+
+            // Enter: explicit search submission. If the term is non-empty but
+            // too short, warn the user via showAlertTOP instead of silently
+            // doing nothing.
             els.searchInput.addEventListener('keydown', (e) => {
                 if (e.key !== 'Enter') return;
                 e.preventDefault();
                 clearTimeout(searchTimer);
+
                 const value = els.searchInput.value.trim();
-                if (value.length > 0 && value.length < CONFIG.MIN_SEARCH_LENGTH) return;
+
+                if (value.length === 0) {
+                    setSearch('');
+                    return;
+                }
+
+                if (value.length < CONFIG.MIN_SEARCH_LENGTH) {
+                    warnSearchTooShort(value);
+                    return;
+                }
+
                 setSearch(value);
             });
         }
