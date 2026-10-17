@@ -123,6 +123,18 @@
         else console.log('[reserve.js]', text);
     }
 
+    // NEW: single source of truth for the "search term is too short" warning.
+    // Routed through notify() so it shows up via showAlertTOP(text, 'warning').
+    function warnSearchTooShort(value) {
+        const min = MIN_SEARCH_LENGTH;
+        const len = String(value || '').trim().length;
+        notify(
+            'warning',
+            `Please enter at least ${min} characters to search — ` +
+            `you've only typed ${len}.`
+        );
+    }
+
     let searchClearBtn = null;
 
     (function mountSearchClearBtn() {
@@ -604,7 +616,7 @@
     // CREATE RESERVATION (POST /reserve.php)
     //
     // The modal dispatches `reserve_burial_modal:save` with { mode, data }.
-    // `data` is the exact payload the PHP endpoint expects (N fields +
+    // `data` is the exact payload the PHP endpoint expects (N fields + 
     // either `grave_id`/`grave_code` for vacant OR `old_interment_id` +
     // `old_new_status` for replacement).
     //
@@ -695,7 +707,13 @@
             clearTimeout(searchTimer);
 
             const value = els.searchInput.value.trim();
-            if (value.length > 0 && value.length < MIN_SEARCH_LENGTH) return;
+
+            // NEW: Enter is an explicit action. If the term is non-empty but
+            // too short, warn via showAlertTOP instead of silently doing nothing.
+            if (value.length > 0 && value.length < MIN_SEARCH_LENGTH) {
+                warnSearchTooShort(value);
+                return;
+            }
 
             state.search = value;
             state.page = 1;

@@ -54,6 +54,18 @@
         else console.log('[monitor.js]', message);
     }
 
+    // NEW: single source of truth for the "search term is too short" warning.
+    // Routed through notify() so it shows up via showAlertTOP(text, 'warning').
+    function warnSearchTooShort(value) {
+        const min = MIN_SEARCH_LENGTH;
+        const len = String(value || '').trim().length;
+        notify(
+            'warning',
+            `Please enter at least ${min} characters to search — ` +
+            `you've only typed ${len}.`
+        );
+    }
+
     const escapeHtml = (v) => {
         if (v === null || v === undefined) return '';
         return String(v)
@@ -644,8 +656,16 @@
             if (event.key !== 'Enter') return;
             event.preventDefault();
             clearTimeout(searchTimer);
+
             const value = els.searchInput.value.trim();
-            if (value.length > 0 && value.length < MIN_SEARCH_LENGTH) return;
+
+            // NEW: Enter is an explicit action. If the term is non-empty but
+            // too short, warn via showAlertTOP instead of silently doing nothing.
+            if (value.length > 0 && value.length < MIN_SEARCH_LENGTH) {
+                warnSearchTooShort(value);
+                return;
+            }
+
             state.search = value;
             state.page = 1;
             fetchReservations();
