@@ -21,6 +21,10 @@ body {
     gap: 28px;
     overflow: hidden;
 
+    .statsGrid.grid3 {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
     /* Stats Card */
     .statsGrid {
         display: grid;
