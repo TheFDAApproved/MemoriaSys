@@ -364,7 +364,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   });
 
-  const LOGIN_URL = "login.html";
+  const LOGIN_URL = new URL("login.html", window.location.href).href;
 
   updatePasswordBtn?.addEventListener("click", () => {
     if (!validateProfileFields()) return;
@@ -398,7 +398,19 @@ document.addEventListener("DOMContentLoaded", () => {
 
         showAlertTOP("Password updated, please log-in again", "success");
         setTimeout(() => {
-          window.location.href = LOGIN_URL;
+          try {
+            if (window.top.location.origin === window.location.origin) {
+              window.top.location.replace(LOGIN_URL);
+              return;
+            }
+          } catch {
+            /* cross-origin */
+          }
+
+          window.top.postMessage(
+            { type: "auth:redirect", url: LOGIN_URL },
+            "*",
+          );
         }, 3500);
         // Never resolve — keeps the modal in its "Changing…" state
         // while the browser navigates away.
