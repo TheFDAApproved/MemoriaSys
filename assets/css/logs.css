@@ -66,7 +66,7 @@
 .logsData {
     width: 100%;
     max-width: 100%;
-    table-layout: fixed;
+    /* Removed table-layout: fixed to allow content-based sizing */
     border-collapse: collapse;
     font-size: 13.5px;
 }
@@ -88,16 +88,23 @@
     user-select: none;
 }
 
-/* Column widths — Timestamp / User ID / Event Type get fixed widths,
-   the Activity Description column absorbs the remaining space. */
+/* 
+  Column widths — Timestamp / User ID / Event Type shrink to fit their content,
+  the Activity Description column absorbs the remaining space. 
+*/
 .logsData thead th:nth-child(1),
-.logsData tbody td:nth-child(1) { width: 180px; }   /* Timestamp */
-
+.logsData tbody td:nth-child(1),
 .logsData thead th:nth-child(2),
-.logsData tbody td:nth-child(2) { width: 160px; }   /* User ID */
-
+.logsData tbody td:nth-child(2),
 .logsData thead th:nth-child(3),
-.logsData tbody td:nth-child(3) { width: 140px; }   /* Event Type */
+.logsData tbody td:nth-child(3) { 
+    width: 1%; 
+}
+
+.logsData thead th:nth-child(4),
+.logsData tbody td:nth-child(4) {
+    width: auto; 
+}
 
 .logsData tbody td {
     padding: 12px 16px;
@@ -238,13 +245,7 @@
 /* ---------- Responsive tweaks ----------------------------------------- */
 @media (max-width: 900px) {
     .logsContent { padding: 16px; }
-
-    .logsData thead th:nth-child(1),
-    .logsData tbody td:nth-child(1) { width: 140px; }
-    .logsData thead th:nth-child(2),
-    .logsData tbody td:nth-child(2) { width: 120px; }
-    .logsData thead th:nth-child(3),
-    .logsData tbody td:nth-child(3) { width: 110px; }
+    /* Removed hardcoded column widths so auto-layout dynamically sizes columns based on content */
 }
 
 @media (max-width: 600px) {

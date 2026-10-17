@@ -4,9 +4,11 @@ body {
   margin: 0;
   padding: 0;
 }
+
 .settingsContent [hidden] {
   display: none !important;
 }
+
 .settingsContent {
   display: flex;
   flex-direction: column;
@@ -18,6 +20,7 @@ body {
     content: " *";
     color: #dc2626;
   }
+
   /* ============================================================
      INPUT ERROR ANIMATION (reusable)
      ============================================================ */
@@ -25,18 +28,23 @@ body {
     0% {
       transform: translateX(0);
     }
+
     20% {
       transform: translateX(-6px);
     }
+
     40% {
       transform: translateX(6px);
     }
+
     60% {
       transform: translateX(-4px);
     }
+
     80% {
       transform: translateX(4px);
     }
+
     100% {
       transform: translateX(0);
     }
@@ -51,8 +59,8 @@ body {
   }
 
   /* Optional: turn the field's label red while the error is active */
-  .formGroup:has(.inputError) > label,
-  .systemItem:has(.inputError) > label,
+  .formGroup:has(.inputError)>label,
+  .systemItem:has(.inputError)>label,
   .systemItem:has(.inputError) .labelRow label {
     color: #dc2626;
     transition: color 0.2s ease;
@@ -109,7 +117,7 @@ body {
     color: #111827;
   }
 
-  .cardTop > div > p {
+  .cardTop>div>p {
     margin: 6px 0 0;
     font-size: 14px;
     color: #6b7280;
@@ -149,7 +157,7 @@ body {
     display: none;
   }
 
-  .importPreview > i {
+  .importPreview>i {
     flex: 0 0 auto;
     font-size: 18px;
     color: #10b981;
@@ -170,6 +178,7 @@ body {
     flex: 0 0 auto;
     padding: 8px 10px;
   }
+
   .selectWrapper {
     position: relative;
     flex: 1 1 280px;
@@ -324,7 +333,7 @@ body {
       align-items: stretch;
     }
 
-    .cardTop > .btn {
+    .cardTop>.btn {
       width: 100%;
     }
 
@@ -333,8 +342,8 @@ body {
       max-width: none;
     }
 
-    .cardControls > .btn,
-    .cardControls > label.btn {
+    .cardControls>.btn,
+    .cardControls>label.btn {
       flex: 1 1 0;
       min-width: 0;
     }
@@ -524,7 +533,7 @@ body {
       flex-direction: column;
       gap: 8px;
 
-      > label,
+      >label,
       .labelRow label {
         font-size: 14px;
         font-weight: 500;
@@ -592,7 +601,7 @@ body {
             gap: 8px;
           }
 
-          > span {
+          >span {
             font-size: 12px;
             color: #9ca3af;
           }
@@ -614,6 +623,7 @@ body {
         flex-direction: column;
         gap: 8px;
       }
+
       .signatureBox {
         background-color: rgb(245 241 241);
         padding: 10px;
