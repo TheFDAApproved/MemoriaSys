@@ -14,7 +14,9 @@ document.addEventListener('DOMContentLoaded', function () {
         appliedRole: 'all',
         editingId: null,
         requestId: 0,
-        lastRenderKey: ''
+        lastRenderKey: '',
+        isLoading: false,
+        pendingAction: null   // { type: 'save' | 'delete', userId: number } | null
     };
 
     const els = {
@@ -34,6 +36,24 @@ document.addEventListener('DOMContentLoaded', function () {
         tableScrollWrapper: document.querySelector('.tableScrollWrapper')
     };
 
+    /* -------- injected styles (self-contained) -------- */
+    (function injectStyles() {
+        const css = [
+            '.actionBtn.is-loading { pointer-events: none; opacity: 0.9; }',
+            '.actionBtn.is-loading .fa-spinner { color: #0d6efd; }',
+            '.actionBtn[disabled] { cursor: not-allowed; opacity: 0.6; }',
+            'tr.is-pending { opacity: 0.75; }',
+            'tr.is-pending td { background: rgba(13,110,253,0.03); }',
+            'tr.loadingRow td { text-align: center; padding: 24px; color: #666; }',
+            'tr.loadingRow .fa-spinner { margin-right: 8px; color: #0d6efd; }'
+        ].join('\n');
+        const s = document.createElement('style');
+        s.id = 'accountsLoadingStyles';
+        s.textContent = css;
+        document.head.appendChild(s);
+    })();
+
+    /* -------- clear-search button -------- */
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.className = 'searchClearBtn';
@@ -41,6 +61,38 @@ document.addEventListener('DOMContentLoaded', function () {
     closeBtn.innerHTML = '<i class="fas fa-times"></i>';
     els.searchBox.appendChild(closeBtn);
 
+    /* -------- alert helper (always forwards the type) -------- */
+    function notify(message, type) {
+        const t = type || 'success';
+        if (typeof showAlertTOP === 'function') {
+            showAlertTOP(message, t);
+            return;
+        }
+        if (t === 'error') console.error('[accounts] ' + message);
+        else console.log('[accounts][' + t + '] ' + message);
+    }
+
+    /* -------- pending-action helpers -------- */
+    function setPending(type, userId) {
+        state.pendingAction = { type: type, userId: Number(userId) };
+        state.lastRenderKey = '';
+    }
+    function clearPending() {
+        state.pendingAction = null;
+        state.lastRenderKey = '';
+    }
+    function isPending() { return !!state.pendingAction; }
+    function rowIsPending(userId) {
+        return !!state.pendingAction &&
+            Number(state.pendingAction.userId) === Number(userId);
+    }
+    function pendingKey() {
+        return state.pendingAction
+            ? state.pendingAction.type + ':' + state.pendingAction.userId
+            : '';
+    }
+
+    /* -------- role helpers -------- */
     function toDisplayRole(dbRole) {
         return dbRole === 'Grounds Staff' ? 'Ground Staff' : dbRole;
     }
@@ -48,53 +100,39 @@ document.addEventListener('DOMContentLoaded', function () {
         return displayRole === 'Ground Staff' ? 'Grounds Staff' : displayRole;
     }
 
+    /* -------- phone helpers -------- */
     function formatPhoneDisplay(phone) {
         if (!phone) return '';
         var digits = String(phone).replace(/\D/g, '');
-
-        if (digits.length >= 12 && digits.slice(0, 2) === '63') {
-            digits = digits.slice(2);
-        } else if (digits.length === 11 && digits.charAt(0) === '0') {
-            digits = digits.slice(1);
-        }
-
+        if (digits.length >= 12 && digits.slice(0, 2) === '63') digits = digits.slice(2);
+        else if (digits.length === 11 && digits.charAt(0) === '0') digits = digits.slice(1);
         digits = digits.slice(0, 10);
         if (digits.length === 0) return '';
-
         var out = '+63';
         if (digits.length > 0) out += ' ' + digits.slice(0, 3);
         if (digits.length > 3) out += ' ' + digits.slice(3, 6);
         if (digits.length > 6) out += ' ' + digits.slice(6, 10);
         return out;
     }
-
     function formatPhoneInput(value) {
         var raw = String(value).replace(/^\+63\s*/, '');
         var digits = raw.replace(/\D/g, '');
-        digits = digits.replace(/^0/, '').replace(/^63/, '');
-        digits = digits.slice(0, 10);
-
+        digits = digits.replace(/^0/, '').replace(/^63/, '').slice(0, 10);
         var formatted = '+63';
         if (digits.length > 0) formatted += ' ' + digits.slice(0, 3);
         if (digits.length > 3) formatted += ' ' + digits.slice(3, 6);
         if (digits.length > 6) formatted += ' ' + digits.slice(6, 10);
         return formatted;
     }
-
     function formatPhoneForDb(displayValue) {
         var digits = String(displayValue).replace(/\D/g, '');
-        if (digits.length === 12 && digits.slice(0, 2) === '63') {
-            return '+' + digits;
-        }
-        if (digits.length === 11 && digits.charAt(0) === '0') {
-            return '+63' + digits.slice(1);
-        }
-        if (digits.length === 10) {
-            return '+63' + digits;
-        }
+        if (digits.length === 12 && digits.slice(0, 2) === '63') return '+' + digits;
+        if (digits.length === 11 && digits.charAt(0) === '0') return '+63' + digits.slice(1);
+        if (digits.length === 10) return '+63' + digits;
         return null;
     }
 
+    /* -------- fetch -------- */
     async function fetchAllMatchingUsers() {
         const all = [];
         let serverPage = 1;
@@ -109,17 +147,12 @@ document.addEventListener('DOMContentLoaded', function () {
 
             const res = await fetch(API_URL + '?' + params.toString());
             const text = await res.text();
-
             let data;
-            try {
-                data = JSON.parse(text);
-            } catch (parseErr) {
+            try { data = JSON.parse(text); }
+            catch (parseErr) {
                 throw new Error('Server returned non-JSON (status ' + res.status + '): ' + text.slice(0, 300));
             }
-
-            if (!res.ok) {
-                throw new Error(data.message || data.error || ('HTTP ' + res.status));
-            }
+            if (!res.ok) throw new Error(data.message || data.error || ('HTTP ' + res.status));
 
             const payload = data.data || data;
             const users = Array.isArray(payload.users) ? payload.users : [];
@@ -129,7 +162,6 @@ document.addEventListener('DOMContentLoaded', function () {
             totalServerPages = Math.max(1, parseInt(pagination.total_pages, 10) || 1);
             serverPage++;
         }
-
         return all;
     }
 
@@ -155,6 +187,11 @@ document.addEventListener('DOMContentLoaded', function () {
         const silent = !!(opts && opts.silent);
         const reqId = ++state.requestId;
 
+        state.isLoading = true;
+
+        // Only paint the in-table loading row when there's nothing to show yet.
+        if (state.allUsers.length === 0) renderTable(silent);
+
         try {
             const raw = await fetchAllMatchingUsers();
             if (reqId !== state.requestId) return;
@@ -171,21 +208,27 @@ document.addEventListener('DOMContentLoaded', function () {
                 };
             }));
 
+            state.isLoading = false;
+            state.lastRenderKey = '';
             applyPage();
             renderTable(silent);
             renderPagination(silent);
         } catch (e) {
             if (reqId !== state.requestId) return;
+            state.isLoading = false;
+            state.lastRenderKey = '';
             console.error('[accounts] failed to load accounts:', e);
+            renderTable(false);
+            notify('Failed to load accounts. Please try again.', 'error');
         }
     }
 
+    /* -------- utils -------- */
     function escapeHtml(str) {
         return String(str).replace(/[&<>"']/g, function (c) {
             return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
         });
     }
-
     function buildOptions(options, selected) {
         return options.map(function (opt) {
             return '<option value="' + escapeHtml(opt) + '"' +
@@ -198,17 +241,59 @@ document.addEventListener('DOMContentLoaded', function () {
     const STATUS_OPTIONS = ['Verified', 'Unverified'];
 
     function buildRenderKey() {
-        if (state.data.length === 0) return 'empty:' + state.editingId + ':' + state.page;
+        const pk = pendingKey();
+        if (state.data.length === 0) {
+            return 'empty:' + state.editingId + ':' + state.page + ':' + pk;
+        }
         return state.data.map(function (u) {
             return u.user_id + '|' + u.role + '|' + u.status + '|' + (u.phone_number || '');
-        }).join(',') + ':' + state.editingId + ':' + state.page;
+        }).join(',') + ':' + state.editingId + ':' + state.page + ':' + pk;
+    }
+
+    function renderLoadingRow(message) {
+        els.noData.style.display = 'none';
+        els.tableBody.innerHTML =
+            '<tr class="loadingRow"><td colspan="8">' +
+                '<i class="fas fa-spinner fa-spin"></i>' +
+                escapeHtml(message || 'Loading…') +
+            '</td></tr>';
+        state.lastRenderKey = 'loading';
+    }
+
+    function renderActions(user, isEditing, rowPending) {
+        // save pending → save spinner, other two disabled
+        if (rowPending && state.pendingAction.type === 'save') {
+            return '<button type="button" class="actionBtn save-action is-loading" disabled title="Verifying via SMS…"><i class="fas fa-spinner fa-spin"></i></button>' +
+                   '<button type="button" class="actionBtn cancel-action" disabled title="Please wait"><i class="fas fa-times"></i></button>' +
+                   '<button type="button" class="actionBtn delete-action" disabled title="Please wait"><i class="fas fa-trash"></i></button>';
+        }
+        // delete pending → delete spinner, edit disabled
+        if (rowPending && state.pendingAction.type === 'delete') {
+            return '<button type="button" class="actionBtn edit-action" disabled><i class="fas fa-pen"></i></button>' +
+                   '<button type="button" class="actionBtn delete-action is-loading" disabled title="Deleting…"><i class="fas fa-spinner fa-spin"></i></button>';
+        }
+        // normal edit row
+        if (isEditing) {
+            return '<button type="button" class="actionBtn save-action" data-action="save" title="Save"><i class="fas fa-check"></i></button>' +
+                   '<button type="button" class="actionBtn cancel-action" data-action="cancel" title="Cancel"><i class="fas fa-times"></i></button>' +
+                   '<button type="button" class="actionBtn delete-action" data-action="delete" title="Delete"><i class="fas fa-trash"></i></button>';
+        }
+        // normal view row
+        return '<button type="button" class="actionBtn edit-action" data-action="edit" title="Edit"><i class="fas fa-pen"></i></button>' +
+               '<button type="button" class="actionBtn delete-action" data-action="delete" title="Delete"><i class="fas fa-trash"></i></button>';
     }
 
     function renderTable(silent) {
+        // first load with no data → loading row
+        if (state.isLoading && state.allUsers.length === 0) {
+            if (state.lastRenderKey !== 'loading') renderLoadingRow('Loading accounts…');
+            return;
+        }
+
         const rows = state.data;
 
         if (rows.length === 0) {
-            const emptyKey = 'empty:' + state.editingId + ':' + state.page;
+            const emptyKey = 'empty:' + state.editingId + ':' + state.page + ':' + pendingKey();
             if (state.lastRenderKey !== emptyKey) {
                 els.tableBody.innerHTML = '';
                 state.lastRenderKey = emptyKey;
@@ -227,25 +312,22 @@ document.addEventListener('DOMContentLoaded', function () {
 
         els.tableBody.innerHTML = rows.map(function (user) {
             const isEditing = state.editingId === user.user_id;
+            const rowPending = rowIsPending(user.user_id);
+            const disableSelects = rowPending ? ' disabled' : '';
 
             const roleCell = isEditing
-                ? '<select class="cellSelect" data-field="role">' + buildOptions(ROLE_OPTIONS, user.role) + '</select>'
+                ? '<select class="cellSelect" data-field="role"' + disableSelects + '>' + buildOptions(ROLE_OPTIONS, user.role) + '</select>'
                 : escapeHtml(user.role);
 
             const statusCell = isEditing
-                ? '<select class="cellSelect" data-field="status">' + buildOptions(STATUS_OPTIONS, user.status) + '</select>'
+                ? '<select class="cellSelect" data-field="status"' + disableSelects + '>' + buildOptions(STATUS_OPTIONS, user.status) + '</select>'
                 : escapeHtml(user.status);
 
             const phoneCell = escapeHtml(formatPhoneDisplay(user.phone_number));
+            const actions = renderActions(user, isEditing, rowPending);
 
-            const actions = isEditing
-                ? '<button type="button" class="actionBtn save-action" data-action="save" title="Save"><i class="fas fa-check"></i></button>' +
-                '<button type="button" class="actionBtn cancel-action" data-action="cancel" title="Cancel"><i class="fas fa-times"></i></button>' +
-                '<button type="button" class="actionBtn delete-action" data-action="delete" title="Delete"><i class="fas fa-trash"></i></button>'
-                : '<button type="button" class="actionBtn edit-action" data-action="edit" title="Edit"><i class="fas fa-pen"></i></button>' +
-                '<button type="button" class="actionBtn delete-action" data-action="delete" title="Delete"><i class="fas fa-trash"></i></button>';
-
-            return '<tr data-user-id="' + escapeHtml(user.user_id) + '">' +
+            return '<tr data-user-id="' + escapeHtml(user.user_id) + '"' +
+                    (rowPending ? ' class="is-pending"' : '') + '>' +
                 '<td>' + escapeHtml(user.name) + '</td>' +
                 '<td>' + escapeHtml(user.username) + '</td>' +
                 '<td>' + escapeHtml(user.email) + '</td>' +
@@ -264,31 +346,20 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function renderPagination(silent) {
         const total = state.totalPages;
-
         els.currentPageNum.textContent = state.page;
         els.totalPagesNum.textContent = total;
-
-        els.prevBtn.disabled = state.page <= 1;
-        els.nextBtn.disabled = state.page >= total;
+        els.prevBtn.disabled = state.page <= 1 || isPending();
+        els.nextBtn.disabled = state.page >= total || isPending();
 
         let startPage, endPage;
-
         if (total <= MAX_PAGE_BUTTONS) {
-            startPage = 1;
-            endPage = total;
+            startPage = 1; endPage = total;
         } else {
             const half = Math.floor(MAX_PAGE_BUTTONS / 2);
             startPage = state.page - half;
             endPage = startPage + MAX_PAGE_BUTTONS - 1;
-
-            if (startPage < 1) {
-                startPage = 1;
-                endPage = MAX_PAGE_BUTTONS;
-            }
-            if (endPage > total) {
-                endPage = total;
-                startPage = total - MAX_PAGE_BUTTONS + 1;
-            }
+            if (startPage < 1) { startPage = 1; endPage = MAX_PAGE_BUTTONS; }
+            if (endPage > total) { endPage = total; startPage = total - MAX_PAGE_BUTTONS + 1; }
         }
 
         const existingButtons = els.carouselTrack.querySelectorAll('button');
@@ -303,6 +374,7 @@ document.addEventListener('DOMContentLoaded', function () {
             Array.prototype.forEach.call(existingButtons, function (btn, i) {
                 const pageNum = startPage + i;
                 btn.classList.toggle('active', pageNum === state.page);
+                btn.disabled = isPending();
             });
             centerActivePage();
             return;
@@ -314,29 +386,21 @@ document.addEventListener('DOMContentLoaded', function () {
             btn.type = 'button';
             btn.textContent = i;
             if (i === state.page) btn.classList.add('active');
+            btn.disabled = isPending();
             btn.addEventListener('click', (function (pageNum) {
                 return function () { goToPage(pageNum); };
             })(i));
             els.carouselTrack.appendChild(btn);
         }
-
         centerActivePage();
     }
 
     function centerActivePage() {
         const active = els.carouselTrack.querySelector('button.active');
-        if (!active) {
-            els.carouselTrack.style.transform = 'translateX(0)';
-            return;
-        }
-
+        if (!active) { els.carouselTrack.style.transform = 'translateX(0)'; return; }
         const vw = els.carouselViewport.clientWidth;
         const tw = els.carouselTrack.scrollWidth;
-        if (tw <= vw) {
-            els.carouselTrack.style.transform = 'translateX(0)';
-            return;
-        }
-
+        if (tw <= vw) { els.carouselTrack.style.transform = 'translateX(0)'; return; }
         const center = active.offsetLeft + active.offsetWidth / 2;
         let t = center - vw / 2;
         const max = tw - vw;
@@ -346,17 +410,16 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function goToPage(page) {
+        if (isPending()) return;
         if (page < 1 || page > state.totalPages) return;
         if (page === state.page) return;
 
         state.page = page;
         state.editingId = null;
         state.lastRenderKey = '';
-
         applyPage();
         renderTable(false);
         renderPagination(false);
-
         if (els.tableScrollWrapper) els.tableScrollWrapper.scrollTop = 0;
     }
 
@@ -368,25 +431,51 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function cancelEdit() {
         if (state.editingId === null) return;
+        if (isPending()) return;
         state.editingId = null;
         state.lastRenderKey = '';
         renderTable(false);
     }
 
+    /* -------- local state helpers -------- */
+    function findLocalUser(userId) {
+        for (let i = 0; i < state.allUsers.length; i++) {
+            if (Number(state.allUsers[i].user_id) === Number(userId)) return state.allUsers[i];
+        }
+        return null;
+    }
+    function matchesActiveFilters(user) {
+        if (!user) return false;
+        if (state.appliedStatus && state.appliedStatus !== 'all' && user.status !== state.appliedStatus) return false;
+        if (state.appliedRole && state.appliedRole !== 'all') {
+            const filter = String(state.appliedRole);
+            if (user.role !== filter && toDbRole(user.role) !== filter) return false;
+        }
+        return true;
+    }
+    function refreshFromLocalState() {
+        state.lastRenderKey = '';
+        applyPage();
+        renderTable(false);
+        renderPagination(false);
+    }
+
+    /* -------- outside-click cancels edit (not while pending) -------- */
     document.addEventListener('mousedown', function (e) {
         if (state.editingId === null) return;
-
+        if (isPending()) return;
         if (e.target.closest('button[data-action]')) return;
-
         const editingRow = els.tableBody.querySelector(
             'tr[data-user-id="' + state.editingId + '"]'
         );
         if (editingRow && editingRow.contains(e.target)) return;
-
         cancelEdit();
     });
 
+    /* -------- row actions -------- */
     els.tableBody.addEventListener('click', async function (e) {
+        if (isPending()) return;
+
         const btn = e.target.closest('button[data-action]');
         if (!btn) return;
 
@@ -407,40 +496,72 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        if (action === 'cancel') {
-            cancelEdit();
-            return;
-        }
+        if (action === 'cancel') { cancelEdit(); return; }
 
         if (action === 'save') {
             const roleSel = row.querySelector('select[data-field="role"]');
             const statusSel = row.querySelector('select[data-field="status"]');
             if (!roleSel || !statusSel) return;
 
-            const body = {
-                role: toDbRole(roleSel.value),
-                status: statusSel.value
-            };
+            const newRole = roleSel.value;      // display value
+            const newStatus = statusSel.value;
+            const original = findLocalUser(userId);
 
-            btn.disabled = true;
+            const oldRole = original ? original.role : null;
+            const oldStatus = original ? original.status : null;
+
+            if (original && original.role === newRole && original.status === newStatus) {
+                state.editingId = null;
+                refreshFromLocalState();
+                notify('No changes were made.', 'warning');
+                return;
+            }
+
+            // Optimistic local update so the pending re-render keeps the
+            // user's selection visible in the disabled selects.
+            if (original) {
+                original.role = newRole;
+                original.status = newStatus;
+            }
+
+            setPending('save', userId);
+            renderTable(false);   // paints spinner + disabled selects
 
             try {
                 const res = await fetch(API_URL + '/' + userId, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(body)
+                    body: JSON.stringify({ role: toDbRole(newRole), status: newStatus })
                 });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.message || data.error || 'Update failed');
 
                 state.editingId = null;
-                state.lastRenderKey = '';
 
-                await loadUsers();
+                const serverMsg = (data && (data.message || data.msg)) || null;
+
+                if (original && !matchesActiveFilters(original)) {
+                    state.allUsers = state.allUsers.filter(function (u) {
+                        return Number(u.user_id) !== userId;
+                    });
+                    clearPending();
+                    refreshFromLocalState();
+                    notify(serverMsg || 'Account updated. It no longer matches the current filters.', 'warning');
+                } else {
+                    clearPending();
+                    refreshFromLocalState();
+                    notify(serverMsg || 'Account updated successfully.', 'success');
+                }
             } catch (err) {
+                // revert optimistic update
+                if (original) {
+                    original.role = oldRole;
+                    original.status = oldStatus;
+                }
+                clearPending();
+                renderTable(false);
                 console.error('[accounts] update failed:', err);
-                alert(err.message || 'Update failed');
-                btn.disabled = false;
+                notify(err.message || 'Update failed', 'error');
             }
             return;
         }
@@ -448,24 +569,34 @@ document.addEventListener('DOMContentLoaded', function () {
         if (action === 'delete') {
             if (!confirm('Delete this account? This action can be undone by restoring from database.')) return;
 
-            btn.disabled = true;
+            setPending('delete', userId);
+            renderTable(false);   // paints spinner on delete button
+
             try {
                 const res = await fetch(API_URL + '/' + userId, { method: 'DELETE' });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.message || data.error || 'Delete failed');
 
+                state.allUsers = state.allUsers.filter(function (u) {
+                    return Number(u.user_id) !== userId;
+                });
                 if (state.editingId === userId) state.editingId = null;
-                state.lastRenderKey = '';
-                await loadUsers();
+
+                clearPending();
+                refreshFromLocalState();
+                notify((data && (data.message || data.msg)) || 'Account deleted successfully.', 'success');
             } catch (err) {
+                clearPending();
+                renderTable(false);
                 console.error('[accounts] delete failed:', err);
-                alert(err.message || 'Delete failed');
-                btn.disabled = false;
+                notify(err.message || 'Delete failed', 'error');
             }
         }
     });
 
+    /* -------- search / filters -------- */
     els.searchInput.addEventListener('input', function () {
+        if (isPending()) return;
         updateCloseButton();
 
         els.statusFilter.value = 'all';
@@ -487,11 +618,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
     els.searchBox.addEventListener('click', function (e) {
         if (e.target === closeBtn || closeBtn.contains(e.target)) return;
+        if (isPending()) return;
         els.searchInput.focus();
     });
 
     closeBtn.addEventListener('click', function (e) {
         e.stopPropagation();
+        if (isPending()) return;
         els.searchInput.value = '';
         state.appliedSearch = '';
         updateCloseButton();
@@ -501,6 +634,7 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     els.filterBtn.addEventListener('click', function () {
+        if (isPending()) return;
         state.appliedStatus = els.statusFilter.value;
         state.appliedRole = els.roleFilter.value;
         state.appliedSearch = els.searchInput.value;
