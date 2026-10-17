@@ -3,7 +3,22 @@
 
     var LOGIN_PAGE = 'login.html';
 
-    var PUBLIC_PAGES = [
+    /* =================================================================
+       AUTH PAGES
+       -------------------------------------------------------------
+       Pages that are safe to view without being logged in.
+
+       NOTE: this is no longer a "skip the auth check" list. The check
+       runs on every page — this list only controls what we do when
+       the user IS already authenticated:
+
+         - on an auth page + logged in  → redirect to their dashboard
+         - on an auth page + logged out → let them stay (form visible)
+
+       Same page names as the old PUBLIC_PAGES list.
+       ================================================================= */
+
+    var AUTH_PAGES = [
         'login.html',
         'signup.html',
         'forgot_password.html'
@@ -58,9 +73,6 @@
        ================================================================= */
 
     function resolveUrl(page) {
-        // Resolve against THIS document's URL, not the parent's, so
-        // "login.html" lands next to the current page even when the
-        // shell lives at a different path.
         try {
             return new URL(page, window.location.href).href;
         } catch (e) {
@@ -91,11 +103,6 @@
         }
 
         // ---- 3. Safety net -------------------------------------------
-        // If the top hasn't navigated away within 500 ms, the parent
-        // probably has no listener. Navigate *this* frame so the user
-        // at least sees the login form instead of a blank panel.
-        // If the top DOES navigate, this iframe is torn down first and
-        // the timer never fires — no double navigation.
         setTimeout(function () {
             try {
                 window.location.replace(absolute);
@@ -107,32 +114,23 @@
 
     /* =================================================================
        FIGURE OUT WHERE WE ARE
-       -------------------------------------------------------------
-       Strip trailing slashes so:
-         /app/settings/    → "settings"
-         /app/settings.html → "settings.html"
-         /                  → ""
-       The old code promoted "" to "login.html" and then matched it
-       against PUBLIC_PAGES — which silently allowed any trailing-slash
-       URL. We deliberately do NOT promote it any more: an empty page
-       name falls through to the auth check, which is the safe default.
        ================================================================= */
 
     var current = (
         location.pathname.replace(/\/+$/, '').split('/').pop() || ''
     ).toLowerCase();
 
-    // Public pages: no auth check, nothing to hide. The old code relied
-    // on documentElement never having been set to visibility:hidden for
-    // these pages — keep it that way.
-    if (PUBLIC_PAGES.indexOf(current) !== -1) return;
-
-    // Unknown pages (including "" for the root) get requiredRole = null,
-    // meaning "any authenticated user is fine". If you want to lock down
-    // unknown pages, change this to deny() instead of allow() below.
+    var isAuthPage   = AUTH_PAGES.indexOf(current) !== -1;
     var requiredRole = PAGE_ROLE[current] || null;
 
-    document.documentElement.style.visibility = 'hidden';
+    /* Hide protected pages while the auth check is in flight so we
+       never flash dashboard content to a user who's about to be
+       bounced to login. Auth pages are left visible — showing the
+       login form for ~100 ms before a redirect is far less jarring
+       than a blank white page. */
+    if (!isAuthPage) {
+        document.documentElement.style.visibility = 'hidden';
+    }
 
     function allow() {
         document.documentElement.style.visibility = '';
@@ -149,21 +147,52 @@
         })
         .then(function (body) {
             var payload = (body && body.data) ? body.data : body;
-            var role = payload && payload.role;
+            var role    = payload && payload.role;
 
+            /* ---------- 1. Not authenticated ---------- */
             if (!payload || !role) {
-                deny(LOGIN_PAGE);
+                if (isAuthPage) {
+                    allow();          // stay on login / signup / forgot
+                } else {
+                    deny(LOGIN_PAGE); // protected page → login
+                }
                 return;
             }
 
+            /* ---------- 2. Authenticated ---------- */
+            // Where should this role go? May be null if the server
+            // returned a role we don't have a page for.
+            var homePage = ROLE_PAGE[role];
+
+            if (isAuthPage) {
+                /* Already logged in — send them to their dashboard.
+                   If we don't know where that is (unknown role), leave
+                   them on the auth page instead of bouncing them to
+                   login.html, which would just bounce them back here. */
+                if (homePage) {
+                    deny(homePage);
+                } else {
+                    allow();
+                }
+                return;
+            }
+
+            /* On a protected page. If this page is role-locked and
+               they don't match, send them to their own dashboard. */
             if (requiredRole && role !== requiredRole) {
-                deny(ROLE_PAGE[role] || LOGIN_PAGE);
+                deny(homePage || LOGIN_PAGE);
                 return;
             }
 
             allow();
         })
         .catch(function () {
-            deny(LOGIN_PAGE);
+            /* Auth endpoint failed — fail closed, treat as logged out.
+               Auth pages stay visible; protected pages bounce to login. */
+            if (isAuthPage) {
+                allow();
+            } else {
+                deny(LOGIN_PAGE);
+            }
         });
 })();
