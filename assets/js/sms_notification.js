@@ -4,7 +4,6 @@
     const STYLE_ID = 'smsNotificationStyles';
     const SCROLL_LOCK_CLASS = 'smsNotification--open';
     const ID_PREFIX = 'sms_';
-    const FALLBACK_CEMETERY_NAME = 'Memoria Cemetery';
 
     let activeInstance = null;
 
@@ -128,8 +127,8 @@ html.smsNotification--open body {
     color: #9ca3af;
 }
 
-.smsModal__input:hover:not([readonly]),
-.smsModal__textarea:hover {
+.smsModal__input:hover:not([readonly]):not(:disabled),
+.smsModal__textarea:hover:not(:disabled) {
     border-color: #d1d5db;
 }
 
@@ -155,6 +154,13 @@ html.smsNotification--open body {
     resize: vertical;
 }
 
+.smsModal__textarea:disabled {
+    background: #f9fafb;
+    color: #6b7280;
+    cursor: not-allowed;
+    resize: none;
+}
+
 .smsModal__checkboxRow {
     margin-top: 14px;
     display: flex;
@@ -173,6 +179,11 @@ html.smsNotification--open body {
     flex: 0 0 auto;
     accent-color: var(--mainColor);
     cursor: pointer;
+}
+
+.smsModal__checkboxRow input[type="checkbox"]:disabled {
+    cursor: not-allowed;
+    opacity: .6;
 }
 
 .smsModal__actions {
@@ -322,18 +333,6 @@ html.smsNotification--open body {
         else console.log('[sms]', message);
     }
 
-    function buildFinalMessage(rawMessage, includeCemeteryName) {
-        const msg = String(rawMessage || '').trim();
-        if (!msg) return '';
-        if (!includeCemeteryName) return msg;
-
-        const name = String(global.CEMETERY_NAME || FALLBACK_CEMETERY_NAME).trim();
-        if (!name) return msg;
-
-        if (msg.toLowerCase().indexOf(name.toLowerCase()) !== -1) return msg;
-        return msg + '\n\n\u2014 ' + name;
-    }
-
     function destroyInstance(instance) {
         if (!instance || instance.destroyed) return;
         instance.destroyed = true;
@@ -455,22 +454,28 @@ html.smsNotification--open body {
             onKey: null,
             closeTimer: null,
             destroyed: false,
+            sending: false,      // busy lock: modal cannot close while true
         };
         activeInstance = instance;
 
         const onKey = (e) => {
-            if (e.key === 'Escape') closeModal(instance);
+            if (e.key === 'Escape' && !instance.sending) closeModal(instance);
         };
         instance.onKey = onKey;
         document.addEventListener('keydown', onKey, true);
 
         modal.addEventListener('click', (e) => {
-            if (e.target === modal) closeModal(instance);
+            if (e.target === modal && !instance.sending) closeModal(instance);
         });
 
-        cancelBtn.addEventListener('click', () => closeModal(instance));
+        cancelBtn.addEventListener('click', () => {
+            if (instance.sending) return;
+            closeModal(instance);
+        });
 
         sendBtn.addEventListener('click', async () => {
+            if (instance.sending) return;      // guard against double-click
+
             const phoneVal  = phoneInput.value.trim();
             const rawMsg    = messageInput.value.trim();
             const includeNm = includeBox.checked;
@@ -486,19 +491,25 @@ html.smsNotification--open body {
                 return;
             }
 
-            const finalMessage = buildFinalMessage(rawMsg, includeNm);
+            // The textarea content is sent verbatim.
+            // Whether the cemetery name is appended is decided by the
+            // backend/API, using the include_cemetery_name flag.
             const originalHtml = sendBtn.innerHTML;
 
+            instance.sending = true;           // lock: no close until resolved
+            card.setAttribute('aria-busy', 'true');
             sendBtn.innerHTML =
                 '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i>' +
                 '<span>Sending...</span>';
             sendBtn.disabled = true;
             sendBtn.classList.add('is-loading');
             cancelBtn.disabled = true;
+            includeBox.disabled = true;
+            messageInput.disabled = true;
 
             try {
                 if (typeof global.sendSms === 'function') {
-                    await global.sendSms(phoneVal, finalMessage, includeNm);
+                    await global.sendSms(phoneVal, rawMsg, includeNm);
                 } else {
                     const response = await fetch('api/sms', {
                         method: 'POST',
@@ -506,7 +517,7 @@ html.smsNotification--open body {
                         credentials: 'same-origin',
                         body: JSON.stringify({
                             phone_number: phoneVal,
-                            message: finalMessage,
+                            message: rawMsg,
                             include_cemetery_name: includeNm,
                         }),
                     });
@@ -521,9 +532,18 @@ html.smsNotification--open body {
                     }
                 }
 
+                instance.sending = false;
+                card.setAttribute('aria-busy', 'false');
                 notify('SMS sent successfully!', 'success');
                 closeModal(instance);
             } catch (err) {
+                instance.sending = false;
+
+                // Instance may have been torn down (e.g. page unloading)
+                // while the request was in flight — don't touch dead DOM.
+                if (instance.destroyed) return;
+
+                card.setAttribute('aria-busy', 'false');
                 console.error('[sms] send failed:', err);
                 notify(
                     (err && err.message) || 'An error occurred while sending the SMS.',
@@ -534,6 +554,8 @@ html.smsNotification--open body {
                 sendBtn.disabled = false;
                 sendBtn.classList.remove('is-loading');
                 cancelBtn.disabled = false;
+                includeBox.disabled = false;
+                messageInput.disabled = false;
             }
         });
 

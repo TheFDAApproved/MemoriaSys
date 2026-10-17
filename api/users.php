@@ -33,7 +33,6 @@ if ($method === 'GET') {
         ");
         $stmt->execute([':id' => $userData['user_id']]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
-        systemLog("{$userData['name']} ({$userData['username']}) retrieved their own profile", $userData['user_id']);
         Response::success("Your profile retrieved", $user);
     }
 
@@ -55,7 +54,6 @@ if ($method === 'GET') {
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($user) {
-            systemLog("{$userData['name']} ({$userData['username']}) retrieved profile of user ID {$resourceId}", $userData['user_id']);
             Response::success("User retrieved successfully", $user);
         }
         Response::error("User not found", 404);
@@ -178,14 +176,6 @@ if ($method === 'GET') {
         $stmt->execute($params);
         $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // ---- Log ----
-        $logParts = [];
-        if ($searchTerm !== '')      $logParts[] = "search='$searchTerm'";
-        if (!empty($wantedRoles))    $logParts[] = 'role=' . implode(',', $wantedRoles);
-        if (!empty($wantedStatuses)) $logParts[] = 'status=' . implode(',', $wantedStatuses);
-        $logSuffix = $logParts ? ' (' . implode(', ', $logParts) . ')' : '';
-        systemLog("{$userData['name']} ({$userData['username']}) retrieved user list (Page $page)$logSuffix", $userData['user_id']);
-
         // ---- Response ----
         $payload = [
             'users' => $users,
@@ -251,7 +241,6 @@ if ($method === 'POST') {
         Response::error("Password must be at least 6 characters and includes an uppercase, lowercase, and a number.", 400);
     }
 
-    systemLog("Public POST request to " . ($resourceId ?? 'users.php') . " with email: $email and username: $username", null);
     $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 
     // SCENARIO A: POST /users.php/forgot-password
@@ -331,7 +320,7 @@ if ($method === 'DELETE') {
     if (!is_numeric($resourceId) || $resourceId <= 0) {
         Response::error("Bad Request: Invalid or missing user ID in URL path", 400);
     }
-    if ($userData['user_id'] === (int)$resourceId) {
+    if ((int)$userData['user_id'] === (int)$resourceId) {
         Response::error("Forbidden: You cannot delete your own account.", 403);
     }
 
@@ -355,6 +344,7 @@ if ($method === 'DELETE') {
         }
         Response::error("Not Found: User does not exist or already deleted", 404);
     } catch (PDOException $e) {
+        systemlog($e->getMessage(), null);
         error_log($e->getMessage());
         Response::error("Database error: Could not delete user. " . $e->getMessage(), 500);
     }

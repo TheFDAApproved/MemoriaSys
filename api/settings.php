@@ -87,11 +87,6 @@ try {
                     }
                     $setting['setting_value'] = decryptCredential($setting['setting_value']);
                 }
-
-                systemLog(
-                    "{$userData['name']} ({$userData['username']}) retrieved setting ID: {$resourceId}.",
-                    $userData['user_id']
-                );
                 Response::success("System setting retrieved", $setting);
             } else {
                 // Get all settings (only active ones)
@@ -112,11 +107,6 @@ try {
                 unset($setting);
 
                 $settings = array_values(array_filter($settings, fn($s) => $s !== null));
-
-                systemLog(
-                    "{$userData['name']} ({$userData['username']}) retrieved all system settings.",
-                    $userData['user_id']
-                );
                 Response::success("System settings retrieved", $settings);
             }
             break;
@@ -142,10 +132,17 @@ try {
 
             $pdo->beginTransaction();
             $uploadedFiles = [];
+
+            // Collected during the bulk loop, saved as a pair AFTER commit
+            // via saveTextBeeCredentials(). Null means "not submitted".
+            $textbeeApiKey   = null;
+            $textbeeDeviceId = null;
+            $bulkSucceeded   = false;
+            $changes         = "";
+
             if (isset($rawData['bulk_settings']) && is_array($rawData['bulk_settings'])) {
 
                 try {
-                    $changes = "";
                     // Per-key target dimensions for uploaded images.
                     // Anything not listed here is saved at its original size.
                     $imageDimensions = [
@@ -161,9 +158,30 @@ try {
                         if (empty($sKey) || empty($sDesc)) {
                             throw new Exception("Setting key and description are strictly required for all entries.");
                         }
-                        // if (empty($sValue) && !$hasImage) {
-                        //     throw new Exception("Setting value is required for '{$sKey}' if no image is uploaded.");
-                        // }
+
+                        // ----------------------------------------------------------
+                        // TextBee credentials are saved as a PAIR, after this
+                        // transaction commits, via saveTextBeeCredentials().
+                        //
+                        // Why: the pair (api_key + device_id) must land together
+                        // or not at all. saveTextBeeCredentials() wraps both
+                        // upserts in its own transaction. Doing that inside our
+                        // own open transaction would nest, which PDO doesn't
+                        // support. So we capture the plain values here, skip
+                        // the normal upsert for these keys, and call the
+                        // helper after we commit.
+                        //
+                        // The helper also hardcodes the description, so we
+                        // don't need the submitted description for these keys.
+                        // ----------------------------------------------------------
+                        if ($sKey === 'textbee_api_key') {
+                            $textbeeApiKey = $sValue;
+                            continue;
+                        }
+                        if ($sKey === 'textbee_device_id') {
+                            $textbeeDeviceId = $sValue;
+                            continue;
+                        }
 
                         if ($hasImage) {
                             $tmpName = $_FILES['bulk_images']['tmp_name'][$index];
@@ -239,10 +257,18 @@ try {
                     }
 
                     $pdo->commit();
-                    systemLog("{$userData['name']} ({$userData['username']}) saved settings. " . $changes, $userData['user_id']);
-                    Response::success("Settings saved successfully. [Changes] " . $changes);
+                    $bulkSucceeded = true;
+
+                    // Fires as soon as the settings save succeeds, regardless
+                    // of what happens with TextBee below. Keeps the settings
+                    // audit trail deterministic: one entry per successful save,
+                    // every time — no dependency on the TextBee outcome.
+                    systemLog(
+                        "{$userData['name']} ({$userData['username']}) saved settings. " . $changes,
+                        $userData['user_id']
+                    );
                 } catch (Exception $e) {
-                    $pdo->rollBack();
+                    if ($pdo->inTransaction()) $pdo->rollBack();
 
                     foreach ($uploadedFiles as $file) {
                         $cleanupResult = $manager->deleteImage($file);
@@ -255,6 +281,67 @@ try {
                     systemLog("Bulk Update Error: " . $e->getMessage(), $userData['user_id']);
                     Response::error($e->getMessage(), 400);
                 }
+
+                // ------------------------------------------------------------------
+                // TextBee pair (if submitted) — runs AFTER the bulk commit.
+                //
+                // Placed outside the try/catch above so that:
+                //   * A TextBee failure does NOT roll back the already-committed
+                //     bulk settings (they're a different logical change).
+                //   * A TextBee failure does NOT trigger the uploaded-image
+                //     cleanup (those files are already referenced by the
+                //     committed settings and must not be deleted).
+                // ------------------------------------------------------------------
+                if ($bulkSucceeded && ($textbeeApiKey !== null || $textbeeDeviceId !== null)) {
+
+                    // saveTextBeeCredentials needs BOTH values. If only one
+                    // was submitted, pull the current value of the other
+                    // from the DB so the pair stays consistent.
+                    if ($textbeeApiKey === null || $textbeeDeviceId === null) {
+                        $fetch = $pdo->prepare("
+                            SELECT setting_key, setting_value
+                            FROM settings
+                            WHERE setting_key IN ('textbee_api_key', 'textbee_device_id')
+                              AND deleted_at IS NULL
+                        ");
+                        $fetch->execute();
+                        foreach ($fetch->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                            $plain = decryptCredential($row['setting_value']);
+                            if ($row['setting_key'] === 'textbee_api_key' && $textbeeApiKey === null) {
+                                $textbeeApiKey = $plain;
+                            } elseif ($row['setting_key'] === 'textbee_device_id' && $textbeeDeviceId === null) {
+                                $textbeeDeviceId = $plain;
+                            }
+                        }
+                    }
+
+                    if ($textbeeApiKey === null || $textbeeDeviceId === null) {
+                        systemLog(
+                            "TextBee save skipped: incomplete pair (settings saved, TextBee not touched).",
+                            $userData['user_id']
+                        );
+                        Response::error(
+                            "Settings saved. Except: TextBee was not updated because it needs both an API Key and a Device ID — the missing half wasn't found in the database.",
+                            400
+                        );
+                    }
+
+                    $tb = saveTextBeeCredentials($textbeeApiKey, $textbeeDeviceId, $userData['user_id']);
+                    if (!$tb['success']) {
+                        systemLog(
+                            "TextBee save failed after settings update: " . ($tb['error'] ?? 'unknown error'),
+                            $userData['user_id']
+                        );
+                        Response::error(
+                            "Settings saved, but TextBee credentials failed: " . ($tb['error'] ?? 'unknown error'),
+                            500
+                        );
+                    }
+
+                    $changes .= 'TextBee credentials updated (api_key + device_id). ';
+                }
+
+                Response::success("Settings saved successfully. [Changes] " . $changes);
             } else Response::error("setting_key, setting_value, description are required.", 400);
 
             break;

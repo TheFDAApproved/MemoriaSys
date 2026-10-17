@@ -82,29 +82,30 @@ function getGraveId($pdo, $blockName, $graveCode)
 /**
  * Keep graves.status in sync based on whether any Active interment
  * currently uses that grave. Active usage => 'Occupied', otherwise 'Vacant'.
+ *
+ * Single-statement version: the read and the write happen atomically.
+ * The previous two-statement version (SELECT COUNT then UPDATE) could be
+ * interleaved by a concurrent import and leave graves.status stale.
  */
 function syncGraveStatus($pdo, $graveId)
 {
     if (empty($graveId)) return;
 
-    $stmt = $pdo->prepare("
-        SELECT COUNT(*)
-        FROM interments
-        WHERE current_grave_id = :gid
-          AND status = 'Active'
-          AND deleted_at IS NULL
-    ");
-    $stmt->execute(['gid' => $graveId]);
-    $isOccupied = ((int)$stmt->fetchColumn()) > 0;
-
     $pdo->prepare("
-        UPDATE graves
-        SET status = :s
-        WHERE grave_id = :gid AND deleted_at IS NULL
-    ")->execute([
-        's'   => $isOccupied ? 'Occupied' : 'Vacant',
-        'gid' => $graveId,
-    ]);
+        UPDATE graves g
+        SET g.status = CASE
+            WHEN EXISTS (
+                SELECT 1
+                FROM interments i
+                WHERE i.current_grave_id = g.grave_id
+                  AND i.status = 'Active'
+                  AND i.deleted_at IS NULL
+            ) THEN 'Occupied'
+            ELSE 'Vacant'
+        END
+        WHERE g.grave_id = :gid
+          AND g.deleted_at IS NULL
+    ")->execute(['gid' => $graveId]);
 }
 
 // ------------------------------------------------------------------
@@ -128,6 +129,7 @@ function exportInterments($pdo, $filename = 'interments_export.csv')
             i.contact_person_name,
             i.contact_person_phone_number,
             i.contact_person_email,
+            i.contact_person_address_barangay,
             i.contact_person_address,
             i.assistance_type,
             i.burial_permit_number,
@@ -142,10 +144,7 @@ function exportInterments($pdo, $filename = 'interments_export.csv')
             i.burial_clearance_date,
             i.lease_expiration_date,
             i.status,
-            i.remarks,
-            i.created_at,
-            i.updated_at,
-            i.deleted_at
+            i.remarks
         FROM interments i
         LEFT JOIN graves g ON i.current_grave_id = g.grave_id AND g.deleted_at IS NULL
         LEFT JOIN blocks b ON g.block_id = b.block_id AND b.deleted_at IS NULL
@@ -154,7 +153,9 @@ function exportInterments($pdo, $filename = 'interments_export.csv')
     ");
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    if ($stmt->rowCount() === 0) {
+    // rowCount() on a SELECT is not portable across drivers/modes;
+    // count() of the fetched array is the reliable check.
+    if (count($rows) === 0) {
         Response::success("Looks like the database is empty.");
         exit;
     }
@@ -211,6 +212,10 @@ function importInterments($pdo, $filePath, $userId)
     }
     $header = array_map('trim', $header);
 
+    // NOTE: row_num and col_num are accepted for informational purposes but
+    // are ignored on import — they are grave fields, not interment fields.
+    // They appear in the export so an admin can see where each grave sits;
+    // changing them here does nothing to the grave's row/col in the DB.
     $expected = [
         'control_number',
         'deceased_name',
@@ -226,6 +231,7 @@ function importInterments($pdo, $filePath, $userId)
         'contact_person_name',
         'contact_person_phone_number',
         'contact_person_email',
+        'contact_person_address_barangay',
         'contact_person_address',
         'assistance_type',
         'burial_permit_number',
@@ -257,6 +263,30 @@ function importInterments($pdo, $filePath, $userId)
     try {
         $pdo->beginTransaction();
 
+        // Snapshot which interments are referenced by an Active reservation.
+        // One query for the whole import. Used to warn (not block) when a
+        // CSV row would overwrite an interment a live reservation depends on.
+        $reservedInterments = [];
+        $resStmt = $pdo->query("
+            SELECT reservation_id, pending_interment_id, old_interment_id
+            FROM reservations
+            WHERE reservation_state = 'Active'
+        ");
+        while ($r = $resStmt->fetch(PDO::FETCH_ASSOC)) {
+            if (!empty($r['pending_interment_id'])) {
+                $reservedInterments[(int)$r['pending_interment_id']] = [
+                    'reservation_id' => (int)$r['reservation_id'],
+                    'role'           => 'incoming person',
+                ];
+            }
+            if (!empty($r['old_interment_id'])) {
+                $reservedInterments[(int)$r['old_interment_id']] = [
+                    'reservation_id' => (int)$r['reservation_id'],
+                    'role'           => 'old occupant',
+                ];
+            }
+        }
+
         while (($row = fgetcsv($handle, 0, ',', '"', '\\')) !== false) {
             // Skip fully empty rows
             if (!is_array($row) || empty(array_filter($row, fn($v) => trim((string)$v) !== ''))) {
@@ -264,7 +294,7 @@ function importInterments($pdo, $filePath, $userId)
             }
 
             $rowCount++;
-            $lineNum = $rowCount + 1; // +1 because line 1 is the header in the file
+            $lineNum = $rowCount;
 
             // Normalize row length and trim values
             $row = array_map(fn($v) => is_string($v) ? trim($v) : $v, $row);
@@ -300,21 +330,28 @@ function importInterments($pdo, $filePath, $userId)
                 }
 
                 // ---- Grave lookup -----------------------------------------
-                $graveId   = null;
-                $blockName = trim((string)($data['block_name'] ?? ''));
-                $graveCode = trim((string)($data['grave_code'] ?? ''));
+                // $graveProvided        = both block_name and grave_code given
+                // $graveProvidedPartial = only one of them given
+                // $graveResolved        = we found a matching grave row
+                $graveId              = null;
+                $blockName            = trim((string)($data['block_name'] ?? ''));
+                $graveCode            = trim((string)($data['grave_code'] ?? ''));
+                $graveProvided        = ($blockName !== '' && $graveCode !== '');
+                $graveProvidedPartial = ($blockName !== '' || $graveCode !== '');
 
-                if ($blockName !== '' && $graveCode !== '') {
+                if ($graveProvided) {
                     $graveId = getGraveId($pdo, $blockName, $graveCode);
                     if (!$graveId) {
                         $warnings[] = "Line $lineNum: grave not found for block " .
                             "'$blockName' and code '$graveCode'. " .
                             "Saved without a grave.";
                     }
-                } elseif ($blockName !== '' || $graveCode !== '') {
+                } elseif ($graveProvidedPartial) {
                     $warnings[] = "Line $lineNum: block_name and grave_code must " .
                         "both be filled to link a grave. Saved without a grave.";
                 }
+
+                $graveResolved = ($graveId !== null);
 
                 // ---- Dates (each error names the offending column) --------
                 $parseCol = function ($value, $column) {
@@ -335,10 +372,19 @@ function importInterments($pdo, $filePath, $userId)
                 $burialClearance      = $parseCol($data['burial_clearance_date'] ?? '', 'burial_clearance_date');
                 $leaseExpiration      = $parseCol($data['lease_expiration_date'] ?? '', 'lease_expiration_date');
 
-                // ---- Enums (empty string falls back to default) -----------
-                $status         = trim((string)($data['status'] ?? '')) ?: 'Pending';
-                $assistanceType = trim((string)($data['assistance_type'] ?? '')) ?: 'Burial';
-                $sex            = trim((string)($data['deceased_sex'] ?? '')) ?: 'Unknown';
+                // ---- Enums -------------------------------------------------
+                // Keep the raw cells so the UPDATE merge can tell "user left
+                // it blank" (skip the column) from "user typed a value"
+                // (apply it). Validation runs against the resolved values
+                // ($status / $sex / $assistanceType), which default to the
+                // enum default when the cell is empty.
+                $statusCell     = trim((string)($data['status'] ?? ''));
+                $sexCell        = trim((string)($data['deceased_sex'] ?? ''));
+                $assistanceCell = trim((string)($data['assistance_type'] ?? ''));
+
+                $status         = $statusCell ?: 'Pending';
+                $sex            = $sexCell ?: 'Unknown';
+                $assistanceType = $assistanceCell ?: 'Burial';
 
                 if (!in_array($status, $validStatuses, true)) {
                     throw new Exception(
@@ -378,7 +424,8 @@ function importInterments($pdo, $filePath, $userId)
                 if ($status !== 'Active' && $graveId !== null) {
                     $warnings[] = "Line $lineNum: status '$status' cannot have a grave; " .
                         "ignored block '$blockName' / code '$graveCode'.";
-                    $graveId = null;
+                    $graveId       = null;
+                    $graveResolved = false;
                 }
 
                 // ---- Grave conflict warning -------------------------------
@@ -402,95 +449,181 @@ function importInterments($pdo, $filePath, $userId)
                     }
                 }
 
-                // ---- Params -----------------------------------------------
-                $params = [
-                    'control_number'              => $controlNumber,
-                    'deceased_name'               => $deceasedName,
-                    'last_known_address'          => nonEmpty($data['last_known_address'] ?? null),
-                    'death_certificate'           => nonEmpty($data['death_certificate'] ?? null),
-                    'deceased_date_of_birth'      => $deceasedDob,
-                    'deceased_date_of_death'      => $deceasedDod,
-                    'deceased_sex'                => $sex,
-                    'current_grave_id'            => $graveId,
-                    'contact_person_name'         => nonEmpty($data['contact_person_name'] ?? null),
-                    'contact_person_phone_number' => nonEmpty($data['contact_person_phone_number'] ?? null),
-                    'contact_person_email'        => nonEmpty($data['contact_person_email'] ?? null),
-                    'contact_person_address'      => nonEmpty($data['contact_person_address'] ?? null),
-                    'assistance_type'             => $assistanceType,
-                    'burial_permit_number'        => nonEmpty($data['burial_permit_number'] ?? null),
-                    'burial_permit_date'          => $burialPermitDate,
-                    'transfer_permit_number'      => nonEmpty($data['transfer_permit_number'] ?? null),
-                    'transfer_permit_issued_by'   => nonEmpty($data['transfer_permit_issued_by'] ?? null),
-                    'transfer_permit_date'        => $transferPermitDate,
-                    'exhumation_permit_number'    => nonEmpty($data['exhumation_permit_number'] ?? null),
-                    'exhumation_permit_date'      => $exhumationPermitDate,
-                    'date_buried'                 => $dateBuried,
-                    'date_exhumed'                => $dateExhumed,
-                    'burial_clearance_date'       => $burialClearance,
-                    'lease_expiration_date'       => $leaseExpiration,
-                    'status'                      => $status,
-                    'remarks'                     => nonEmpty($data['remarks'] ?? null),
+                // ---- Params for INSERT ------------------------------------
+                // Also used as the source of values for the merge-update
+                // below. Null entries mean "CSV cell was empty" — the merge
+                // skips those columns so the existing DB value is kept.
+                $insertParams = [
+                    'control_number'                  => $controlNumber,
+                    'deceased_name'                   => $deceasedName,
+                    'last_known_address'              => nonEmpty($data['last_known_address'] ?? null),
+                    'death_certificate'               => nonEmpty($data['death_certificate'] ?? null),
+                    'deceased_date_of_birth'          => $deceasedDob,
+                    'deceased_date_of_death'          => $deceasedDod,
+                    'deceased_sex'                    => $sex,
+                    'current_grave_id'                => $graveId,
+                    'contact_person_name'             => nonEmpty($data['contact_person_name'] ?? null),
+                    'contact_person_phone_number'     => nonEmpty($data['contact_person_phone_number'] ?? null),
+                    'contact_person_email'            => nonEmpty($data['contact_person_email'] ?? null),
+                    'contact_person_address_barangay' => nonEmpty($data['contact_person_address_barangay'] ?? null),
+                    'contact_person_address'          => nonEmpty($data['contact_person_address'] ?? null),
+                    'assistance_type'                 => $assistanceType,
+                    'burial_permit_number'            => nonEmpty($data['burial_permit_number'] ?? null),
+                    'burial_permit_date'              => $burialPermitDate,
+                    'transfer_permit_number'          => nonEmpty($data['transfer_permit_number'] ?? null),
+                    'transfer_permit_issued_by'       => nonEmpty($data['transfer_permit_issued_by'] ?? null),
+                    'transfer_permit_date'            => $transferPermitDate,
+                    'exhumation_permit_number'        => nonEmpty($data['exhumation_permit_number'] ?? null),
+                    'exhumation_permit_date'          => $exhumationPermitDate,
+                    'date_buried'                     => $dateBuried,
+                    'date_exhumed'                    => $dateExhumed,
+                    'burial_clearance_date'           => $burialClearance,
+                    'lease_expiration_date'           => $leaseExpiration,
+                    'status'                          => $status,
+                    'remarks'                         => nonEmpty($data['remarks'] ?? null),
                 ];
 
                 // ---- Existing? --------------------------------------------
+                // ORDER BY (deleted_at IS NULL) DESC ensures the active row
+                // wins when both an active and a soft-deleted row share the
+                // same control_number. Without this, LIMIT 1 could pick the
+                // soft-deleted row and the UPDATE would try to un-delete it,
+                // colliding with the unique constraint on the active row.
                 $checkStmt = $pdo->prepare("
                     SELECT interment_id, current_grave_id, status, deleted_at
                     FROM interments
                     WHERE control_number = :cn
+                    ORDER BY (deleted_at IS NULL) DESC, interment_id ASC
                     LIMIT 1
                 ");
                 $checkStmt->execute(['cn' => $controlNumber]);
                 $existing = $checkStmt->fetch(PDO::FETCH_ASSOC);
 
                 if ($existing) {
+                    // ----------------------------------------------------------
+                    // MERGE UPDATE
+                    // ----------------------------------------------------------
+                    // Empty CSV cells keep the existing DB value. Non-empty
+                    // cells overwrite. Required fields (deceased_name, status)
+                    // are always applied. Grave handled specially below.
+                    //
+                    // Soft-deleted rows are restored (deleted_at = NULL) and
+                    // then merged with the CSV using the same rules — fields
+                    // the CSV leaves blank retain whatever value the row had
+                    // when it was soft-deleted.
                     if (!empty($existing['deleted_at'])) {
                         $warnings[] = "Line $lineNum: control_number '$controlNumber' " .
                             "was soft-deleted and has been restored.";
                     }
 
-                    $updateParams = $params;
-                    $updateParams['updated_by'] = $userId;
+                    // Warn (not block) if this interment is tied to an Active
+                    // reservation. A silent full-replace can invalidate the
+                    // reservation's assumptions when Confirm runs.
+                    $existingId = (int)$existing['interment_id'];
+                    if (isset($reservedInterments[$existingId])) {
+                        $r = $reservedInterments[$existingId];
+                        $warnings[] = "Line $lineNum: this interment is referenced by " .
+                            "Active reservation #{$r['reservation_id']} as the {$r['role']}. " .
+                            "Updating it may conflict with the reservation when confirmed.";
+                    }
 
-                    $pdo->prepare("
-                        UPDATE interments SET
-                            deceased_name = :deceased_name,
-                            last_known_address = :last_known_address,
-                            death_certificate = :death_certificate,
-                            deceased_date_of_birth = :deceased_date_of_birth,
-                            deceased_date_of_death = :deceased_date_of_death,
-                            deceased_sex = :deceased_sex,
-                            current_grave_id = :current_grave_id,
-                            contact_person_name = :contact_person_name,
-                            contact_person_phone_number = :contact_person_phone_number,
-                            contact_person_email = :contact_person_email,
-                            contact_person_address = :contact_person_address,
-                            assistance_type = :assistance_type,
-                            burial_permit_number = :burial_permit_number,
-                            burial_permit_date = :burial_permit_date,
-                            transfer_permit_number = :transfer_permit_number,
-                            transfer_permit_issued_by = :transfer_permit_issued_by,
-                            transfer_permit_date = :transfer_permit_date,
-                            exhumation_permit_number = :exhumation_permit_number,
-                            exhumation_permit_date = :exhumation_permit_date,
-                            date_buried = :date_buried,
-                            date_exhumed = :date_exhumed,
-                            burial_clearance_date = :burial_clearance_date,
-                            lease_expiration_date = :lease_expiration_date,
-                            status = :status,
-                            remarks = :remarks,
-                            updated_at = NOW(),
-                            updated_by = :updated_by,
-                            deleted_at = NULL
-                        WHERE control_number = :control_number
-                    ")->execute($updateParams);
+                    // Always-applied columns
+                    $setClauses = [
+                        'deceased_name = :deceased_name',
+                        'status = :status',
+                        'updated_at = NOW()',
+                        'updated_by = :updated_by',
+                        'deleted_at = NULL',
+                    ];
+                    $mergeParams = [
+                        'control_number' => $controlNumber,
+                        'deceased_name'  => $deceasedName,
+                        'status'         => $status,
+                        'updated_by'     => $userId,
+                    ];
 
-                    // Sync both old and new graves
+                    // Plain-text fields: null (from nonEmpty) means "CSV cell
+                    // was empty" -> skip. Non-null means apply.
+                    $textMergeFields = [
+                        'last_known_address',
+                        'death_certificate',
+                        'contact_person_name',
+                        'contact_person_phone_number',
+                        'contact_person_email',
+                        'contact_person_address_barangay',
+                        'contact_person_address',
+                        'burial_permit_number',
+                        'transfer_permit_number',
+                        'transfer_permit_issued_by',
+                        'exhumation_permit_number',
+                        'remarks',
+                    ];
+                    foreach ($textMergeFields as $field) {
+                        $value = $insertParams[$field];
+                        if ($value !== null) {
+                            $setClauses[] = "$field = :$field";
+                            $mergeParams[$field] = $value;
+                        }
+                    }
+
+                    // Date fields: null (from parseDate) means "CSV cell was
+                    // empty or literally 'null'" -> skip.
+                    $dateMergeFields = [
+                        'deceased_date_of_birth',
+                        'deceased_date_of_death',
+                        'burial_permit_date',
+                        'transfer_permit_date',
+                        'exhumation_permit_date',
+                        'date_buried',
+                        'date_exhumed',
+                        'burial_clearance_date',
+                        'lease_expiration_date',
+                    ];
+                    foreach ($dateMergeFields as $field) {
+                        $value = $insertParams[$field];
+                        if ($value !== null) {
+                            $setClauses[] = "$field = :$field";
+                            $mergeParams[$field] = $value;
+                        }
+                    }
+
+                    // Enum fields: use raw cells. Empty -> keep existing.
+                    if ($sexCell !== '') {
+                        $setClauses[] = "deceased_sex = :deceased_sex";
+                        $mergeParams['deceased_sex'] = $sexCell;
+                    }
+                    if ($assistanceCell !== '') {
+                        $setClauses[] = "assistance_type = :assistance_type";
+                        $mergeParams['assistance_type'] = $assistanceCell;
+                    }
+
+                    // Grave: handled specially because of the CHECK constraint.
+                    //   - Non-Active status: force NULL. Required by chk_status_grave.
+                    //   - Active with a resolved grave: apply the new grave.
+                    //   - Active with no grave provided (or provided but not
+                    //     found): leave current_grave_id untouched.
+                    if ($status !== 'Active') {
+                        $setClauses[] = "current_grave_id = :current_grave_id";
+                        $mergeParams['current_grave_id'] = null;
+                    } elseif ($graveResolved) {
+                        $setClauses[] = "current_grave_id = :current_grave_id";
+                        $mergeParams['current_grave_id'] = $graveId;
+                    }
+
+                    $sql = "UPDATE interments SET "
+                        . implode(', ', $setClauses)
+                        . " WHERE control_number = :control_number";
+                    $pdo->prepare($sql)->execute($mergeParams);
+
+                    // Sync both old and new graves (either may be null)
                     syncGraveStatus($pdo, $existing['current_grave_id']);
                     syncGraveStatus($pdo, $graveId);
 
                     $updated++;
                 } else {
-                    $insertParams = $params;
+                    // ----------------------------------------------------------
+                    // INSERT
+                    // ----------------------------------------------------------
                     $insertParams['created_by'] = $userId;
                     $insertParams['updated_by'] = $userId;
 
@@ -500,8 +633,8 @@ function importInterments($pdo, $filePath, $userId)
                             death_certificate, deceased_date_of_birth, deceased_date_of_death,
                             deceased_sex, current_grave_id, contact_person_name,
                             contact_person_phone_number, contact_person_email,
-                            contact_person_address, assistance_type,
-                            burial_permit_number, burial_permit_date,
+                            contact_person_address_barangay, contact_person_address,
+                            assistance_type, burial_permit_number, burial_permit_date,
                             transfer_permit_number, transfer_permit_issued_by,
                             transfer_permit_date, exhumation_permit_number,
                             exhumation_permit_date, date_buried, date_exhumed,
@@ -512,8 +645,8 @@ function importInterments($pdo, $filePath, $userId)
                             :death_certificate, :deceased_date_of_birth, :deceased_date_of_death,
                             :deceased_sex, :current_grave_id, :contact_person_name,
                             :contact_person_phone_number, :contact_person_email,
-                            :contact_person_address, :assistance_type,
-                            :burial_permit_number, :burial_permit_date,
+                            :contact_person_address_barangay, :contact_person_address,
+                            :assistance_type, :burial_permit_number, :burial_permit_date,
                             :transfer_permit_number, :transfer_permit_issued_by,
                             :transfer_permit_date, :exhumation_permit_number,
                             :exhumation_permit_date, :date_buried, :date_exhumed,
@@ -624,7 +757,21 @@ if ($method === 'POST') {
         exit;
     }
 
-    // 5. Run the import
+    // 5. Only one import at a time. GET_LOCK is server-wide (not per PHP
+    // worker), so it works even if the app is later deployed behind multiple
+    // servers. Auto-released on connection close, so a crashed PHP cannot
+    // leave it stuck. Timeout 30s: a second request waits briefly, then
+    // gets a clean 409 instead of hanging forever.
+    $lockAcquired = (int) $pdo->query("SELECT GET_LOCK('csv_import', 30)")->fetchColumn();
+    if ($lockAcquired !== 1) {
+        Response::error(
+            "Another CSV import is already in progress. Please try again in a moment.",
+            409
+        );
+        exit;
+    }
+
+    // 6. Run the import
     try {
         $result = importInterments($pdo, $tmpPath, $userData['user_id']);
 
@@ -657,6 +804,10 @@ if ($method === 'POST') {
     } catch (Exception $e) {
         systemLog("CSV import error: " . $e->getMessage(), $userData['user_id']);
         Response::error("Import error: " . $e->getMessage(), 500);
+    } finally {
+        // Always release the import lock. Runs on success, on caught
+        // exceptions, and on any Throwable that bypasses the catch.
+        $pdo->query("SELECT RELEASE_LOCK('csv_import')");
     }
     exit;
 }

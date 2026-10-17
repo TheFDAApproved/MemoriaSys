@@ -30,6 +30,32 @@ declare(strict_types=1);
  * Nothing here relies on PHP's global date.timezone matching MySQL's.
  *
  * -----------------------------------------------------------------------------
+ * Concurrency policy
+ * -----------------------------------------------------------------------------
+ * Backup creation and database restore are destructive, non-atomic operations.
+ * A single exclusive lock (`.operation.lock`) serializes them: at most one
+ * POST/PUT runs at a time. A second request gets an immediate 409 instead of
+ * corrupting an in-flight dump or fighting over TRUNCATE statements.
+ *
+ * The lock is best-effort within one server. If this app is ever deployed
+ * behind multiple PHP workers on different machines, replace flock() with
+ * MySQL GET_LOCK() or a row lock in a `locks` table.
+ *
+ * -----------------------------------------------------------------------------
+ * Consistency policy
+ * -----------------------------------------------------------------------------
+ * createBackup() reads every table inside one REPEATABLE READ transaction that
+ * was opened with WITH CONSISTENT SNAPSHOT. This means every SELECT sees the
+ * same MVCC view of the database — the dump reflects one instant, not a
+ * sequence of instants as the live app writes between tables. Writes from the
+ * live app are NOT blocked; they simply aren't visible to the backup.
+ *
+ * restoreBackup() is still not atomic. TRUNCATE is DDL and forces an implicit
+ * commit, so the restore cannot be wrapped in a transaction. Instead, the PUT
+ * handler takes a safety backup immediately before running the restore; if the
+ * restore fails midway, the admin has a known-good file to roll back to.
+ *
+ * -----------------------------------------------------------------------------
  * Security note
  * -----------------------------------------------------------------------------
  * The backups/ directory MUST NOT be reachable as a static directory through
@@ -220,15 +246,70 @@ function sqlIdentifier(string $identifier): string
 }
 
 /**
+ * Try to acquire the exclusive backup/restore operation lock.
+ *
+ * Returns the lock handle (a stream resource) on success, or null if another
+ * operation is already running (or the lock file can't be opened).
+ *
+ * Uses LOCK_NB so a second request fails immediately with a 409 instead of
+ * hanging until the first one finishes.
+ *
+ * The lock file lives inside $backupDir but is named ".operation.lock" so
+ * that glob('*.sql') and pruneBackups() never touch it. Like the locks in
+ * ImageManager, this file is intentionally never unlinked — removing it while
+ * another process is waiting would break flock() exclusivity.
+ */
+function acquireOperationLock(string $backupDir)
+{
+    $lockPath = $backupDir . '.operation.lock';
+    $fp = fopen($lockPath, 'c+');
+    if (!$fp) {
+        return null;
+    }
+
+    if (!flock($fp, LOCK_EX | LOCK_NB)) {
+        fclose($fp);
+        return null;    // someone else holds it
+    }
+
+    // Optional diagnostics: record who holds the lock. Truncated on each
+    // acquisition so the file doesn't grow across operations.
+    ftruncate($fp, 0);
+    rewind($fp);
+    fwrite($fp, json_encode([
+        'pid' => getmypid(),
+        'at'  => date('c'),
+    ]));
+    fflush($fp);
+
+    return $fp;
+}
+
+/**
+ * Release the operation lock. Safe to call with null.
+ */
+function releaseOperationLock($fp): void
+{
+    if (!is_resource($fp)) {
+        return;
+    }
+    flock($fp, LOCK_UN);
+    fclose($fp);
+    // Do NOT unlink the lock file — same reason as in ImageManager.
+}
+
+/**
  * Stream a data-only dump of every table to disk.
  *
  * Generated (shadow) columns are intentionally skipped — MySQL refuses
  * explicit values for them and recomputes them from `deleted_at`.
+ *
+ * All reads happen inside a single REPEATABLE READ transaction opened with
+ * WITH CONSISTENT SNAPSHOT, so the dump reflects one point in time. Writes
+ * from the live app are not blocked; they are simply not visible to us.
  */
 function createBackup(PDO $pdo, string $backupDir): string
 {
-    $tables = $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN) ?: [];
-
     // Filename uses MySQL's own clock, not PHP's. Because the session timezone
     // is pinned via PDO::MYSQL_ATTR_INIT_COMMAND, NOW() reflects the DB wall
     // clock — the same clock every created_at / transfer_date in the dump uses.
@@ -252,67 +333,96 @@ function createBackup(PDO $pdo, string $backupDir): string
     );
 
     try {
-        // Capture the live session timezone and bake it into the dump so the
-        // restore runs in the same zone. @@session.time_zone returns either a
-        // name ('Asia/Manila'), an offset ('+08:00'), or the literal 'SYSTEM';
-        // all three are valid inputs to SET time_zone.
+        // ------------------------------------------------------------------
+        // Open one consistent snapshot for the whole dump.
         //
-        // Why it matters: the log_grave_transfer trigger uses NOW() for
-        // transfer_date. Without a SET time_zone in the dump, a restore runs in
-        // whatever timezone the restoring connection happens to have, silently
-        // shifting any transfer_log rows the trigger writes during the restore.
-        $sessionTz = (string) $pdo->query('SELECT @@session.time_zone')->fetchColumn();
+        // REPEATABLE READ + WITH CONSISTENT SNAPSHOT makes every SELECT
+        // below see the same MVCC view — the database as of the moment this
+        // statement ran. Without this, each table is read at a slightly
+        // different instant and the dump can contain a state that never
+        // actually existed (e.g. a user row present in `users` but absent
+        // from `orders`, because the user was deleted between the two reads).
+        //
+        // The live app is not blocked. It keeps writing; we just don't see
+        // those writes. That's the point of MVCC.
+        //
+        // Must be set BEFORE starting the transaction, so it runs outside
+        // the inner try/finally that owns the COMMIT.
+        // ------------------------------------------------------------------
+        $pdo->exec("SET SESSION TRANSACTION ISOLATION LEVEL REPEATABLE READ");
+        $pdo->exec("START TRANSACTION WITH CONSISTENT SNAPSHOT");
 
-        // Header timestamp is formatted explicitly in the DB timezone — never
-        // via PHP's date(), which reads an unrelated php.ini setting.
-        $headerTime = (new DateTimeImmutable('now', dbTimezone($pdo)))->format('Y-m-d H:i:s');
+        try {
+            // Capture the live session timezone and bake it into the dump so
+            // the restore runs in the same zone. @@session.time_zone returns
+            // either a name ('Asia/Manila'), an offset ('+08:00'), or the
+            // literal 'SYSTEM'; all three are valid inputs to SET time_zone.
+            //
+            // Why it matters: the log_grave_transfer trigger uses NOW() for
+            // transfer_date. Without a SET time_zone in the dump, a restore
+            // runs in whatever timezone the restoring connection happens to
+            // have, silently shifting any transfer_log rows the trigger
+            // writes during the restore.
+            $sessionTz = (string) $pdo->query('SELECT @@session.time_zone')->fetchColumn();
 
-        fwrite($handle, "-- Data-only backup generated {$headerTime} (timezone: {$sessionTz})\n");
-        fwrite($handle, "SET FOREIGN_KEY_CHECKS=0;\n");
-        fwrite($handle, "SET NAMES utf8mb4;\n");
-        fwrite($handle, "SET time_zone = " . $pdo->quote($sessionTz) . ";\n\n");
+            // Header timestamp is formatted explicitly in the DB timezone —
+            // never via PHP's date(), which reads an unrelated php.ini
+            // setting.
+            $headerTime = (new DateTimeImmutable('now', dbTimezone($pdo)))->format('Y-m-d H:i:s');
 
-        foreach ($tables as $table) {
-            $quotedTable = sqlIdentifier((string) $table);
+            fwrite($handle, "-- Data-only backup generated {$headerTime} (timezone: {$sessionTz})\n");
+            fwrite($handle, "SET FOREIGN_KEY_CHECKS=0;\n");
+            fwrite($handle, "SET NAMES utf8mb4;\n");
+            fwrite($handle, "SET time_zone = " . $pdo->quote($sessionTz) . ";\n\n");
 
-            // Which columns must we skip for this table?
-            $genStmt->execute([':table' => $table]);
-            $generated = $genStmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
-            $skip      = array_flip($generated); // fast isset() lookup
+            $tables = $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN) ?: [];
 
-            fwrite($handle, "TRUNCATE TABLE {$quotedTable};\n");
+            foreach ($tables as $table) {
+                $quotedTable = sqlIdentifier((string) $table);
 
-            $stmt = $pdo->query("SELECT * FROM {$quotedTable}");
+                // Which columns must we skip for this table?
+                $genStmt->execute([':table' => $table]);
+                $generated = $genStmt->fetchAll(PDO::FETCH_COLUMN) ?: [];
+                $skip      = array_flip($generated); // fast isset() lookup
 
-            while (($row = $stmt->fetch(PDO::FETCH_ASSOC)) !== false) {
-                // Drop generated columns from this row before writing it.
-                $row = array_filter(
-                    $row,
-                    static fn(string $col): bool => !isset($skip[$col]),
-                    ARRAY_FILTER_USE_KEY
-                );
+                fwrite($handle, "TRUNCATE TABLE {$quotedTable};\n");
 
-                if ($row === []) {
-                    continue; // row was nothing but generated columns
+                $stmt = $pdo->query("SELECT * FROM {$quotedTable}");
+
+                while (($row = $stmt->fetch(PDO::FETCH_ASSOC)) !== false) {
+                    // Drop generated columns from this row before writing it.
+                    $row = array_filter(
+                        $row,
+                        static fn(string $col): bool => !isset($skip[$col]),
+                        ARRAY_FILTER_USE_KEY
+                    );
+
+                    if ($row === []) {
+                        continue; // row was nothing but generated columns
+                    }
+
+                    $columns = implode(', ', array_map(
+                        static fn(string $c): string => sqlIdentifier($c),
+                        array_keys($row)
+                    ));
+
+                    $values = implode(', ', array_map(
+                        static fn(mixed $v): string => sqlLiteral($pdo, $v),
+                        array_values($row)
+                    ));
+
+                    fwrite($handle, "INSERT INTO {$quotedTable} ({$columns}) VALUES ({$values});\n");
                 }
 
-                $columns = implode(', ', array_map(
-                    static fn(string $c): string => sqlIdentifier($c),
-                    array_keys($row)
-                ));
-
-                $values = implode(', ', array_map(
-                    static fn(mixed $v): string => sqlLiteral($pdo, $v),
-                    array_values($row)
-                ));
-
-                fwrite($handle, "INSERT INTO {$quotedTable} ({$columns}) VALUES ({$values});\n");
+                fwrite($handle, "\n");
             }
 
-            fwrite($handle, "\n");
+            fwrite($handle, "SET FOREIGN_KEY_CHECKS=1;\n");
+        } finally {
+            // Read-only transaction; COMMIT and ROLLBACK are equivalent here.
+            // COMMIT is used because it's the natural end of the snapshot.
+            $pdo->exec("COMMIT");
         }
-
-        fwrite($handle, "SET FOREIGN_KEY_CHECKS=1;\n");
     } finally {
         fclose($handle);
     }
@@ -462,6 +572,11 @@ function splitSqlStatements(string $sql): array
 
 /**
  * Restore the database from a dump file. Returns the number of statements run.
+ *
+ * NOT atomic. TRUNCATE is DDL and forces an implicit commit, so this cannot be
+ * wrapped in a transaction. If a statement fails partway through, the database
+ * is left partially truncated and partially refilled. Callers must take a
+ * safety backup first if they want a recovery path.
  */
 function restoreBackup(PDO $pdo, string $filePath): int
 {
@@ -583,6 +698,11 @@ if ($method === 'GET') {
 // 5. POST — create a new backup and enforce the retention limit
 // -----------------------------------------------------------------------------
 if ($method === 'POST') {
+    $lock = acquireOperationLock($backupDir);
+    if ($lock === null) {
+        Response::error('Another backup or restore operation is already in progress.', 409);
+    }
+
     try {
         $filename = createBackup($pdo, $backupDir);
         $deleted  = pruneBackups($backupDir);
@@ -595,6 +715,8 @@ if ($method === 'POST') {
         ]);
     } catch (Throwable $e) {
         Response::error('Backup failed: ' . $e->getMessage(), 500);
+    } finally {
+        releaseOperationLock($lock);
     }
 }
 
@@ -612,16 +734,63 @@ if ($method === 'PUT') {
         Response::error('Backup file not found.', 404);
     }
 
+    $lock = acquireOperationLock($backupDir);
+    if ($lock === null) {
+        Response::error('Another backup or restore operation is already in progress.', 409);
+    }
+
+    $safetyFile = null;
+
     try {
+        // ------------------------------------------------------------------
+        // Safety snapshot.
+        //
+        // restoreBackup() is not atomic: TRUNCATE is DDL and forces an
+        // implicit commit, so a failure partway through leaves the database
+        // half-truncated and half-refilled with no way back.
+        //
+        // Taking a snapshot immediately before the restore gives the admin a
+        // known-good file to roll back to. It lands in the normal backups/
+        // directory, so it shows up in the GET listing and can be restored
+        // with a normal PUT.
+        //
+        // pruneBackups() runs right after. Because the safety file is the
+        // newest, it can't be pruned by this call — it only ensures we don't
+        // exceed BACKUP_LIMIT when both the safety file and normal retention
+        // are counted together.
+        // ------------------------------------------------------------------
+        $safetyFile = createBackup($pdo, $backupDir);
+        pruneBackups($backupDir);
+
         $executed = restoreBackup($pdo, $filePath);
-        systemLog("{$userData['name']} ({$userData['username']}) restored a database backup: " . basename($filePath), $userData['user_id']);
+
+        systemLog(
+            "{$userData['name']} ({$userData['username']}) restored a database backup: " .
+                basename($filePath) . " (safety snapshot: {$safetyFile})",
+            $userData['user_id']
+        );
 
         Response::success('Database restored successfully: ' . basename($filePath), [
-            'filename'   => basename($filePath),
-            'statements' => $executed,
+            'filename'      => basename($filePath),
+            'statements'    => $executed,
+            'safety_backup' => $safetyFile,
         ]);
     } catch (Throwable $e) {
-        Response::error('Restore failed: ' . $e->getMessage(), 500);
+        systemLog(
+            "Restore failed: " . $e->getMessage() .
+                ($safetyFile !== null ? " | Safety backup: {$safetyFile}" : ''),
+            $userData['user_id']
+        );
+
+        $msg = 'Restore failed: ' . $e->getMessage();
+        if ($safetyFile !== null) {
+            $msg .= '. Pre-restore state was saved as: ' . $safetyFile .
+                '. You can restore it to return to the previous state.';
+        }
+
+        Response::error($msg, 500);
+    } finally {
+        releaseOperationLock($lock);
     }
 }
 

@@ -15,7 +15,7 @@ define('JWT_ALGO', 'HS256');
 define('JWT_EXPIRATION', 18000); //in seconds
 define('APP_URL', 'http://yourdomain.com');
 define('LOG_SECRET_KEY', 'your_log_secret_key');
-define('ENCRYPTION_KEY', 'SIR_PAPASARAMIINTAWNPLEASEHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHU!');
+define('ENCRYPTION_KEY', 'SIR_PAPASARAMIINTAWNPLEASEHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHU!'); //textbee used to encrypt
 
 // --- ENUM CONSTANTS ---
 // Manually update these if the database schema ever changes

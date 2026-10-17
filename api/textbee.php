@@ -173,17 +173,34 @@ function saveTextBeeCredentials($plainTextApiKey, $plainTextDeviceId, $userId = 
 {
     global $pdo;
 
+    // Encrypt outside the transaction. Encrypting is CPU-bound and doesn't
+    // touch the DB, so there's no reason to hold a transaction (or the
+    // connection) open while it runs.
     try {
-        // 1. Encrypt the plain text values
-        $encryptedApiKey = encryptCredential($plainTextApiKey);
+        $encryptedApiKey   = encryptCredential($plainTextApiKey);
         $encryptedDeviceId = encryptCredential($plainTextDeviceId);
+    } catch (Throwable $e) {
+        error_log("Encryption error saving TextBee credentials: " . $e->getMessage());
+        return ['success' => false, 'error' => 'Failed to encrypt credentials.'];
+    }
 
-        // 2. Prepare the database insert/update statement
-        // Using ON DUPLICATE KEY UPDATE to handle existing keys.
+    try {
+        // Both settings must land together or not at all. Without a
+        // transaction, a failure on the second write would leave the pair
+        // mismatched (new api_key, old device_id), which breaks TextBee auth
+        // in a way the admin can't explain.
+        //
+        // The transaction alone also serializes concurrent saves: the first
+        // INSERT ... ON DUPLICATE KEY UPDATE takes a row lock on
+        // textbee_api_key, so a second caller blocks there until we commit.
+        // By the time the second caller reaches its own writes, the first
+        // has finished both — no interleaving into a mixed pair.
+        $pdo->beginTransaction();
+
         // NOTE: VALUES(col) syntax is used for MariaDB 10.4 compatibility
         // (the `AS new` alias syntax requires MySQL 8.0.19+ / MariaDB 11.x+).
         $stmt = $pdo->prepare("
-            INSERT INTO settings 
+            INSERT INTO settings
             (setting_key, setting_value, description, created_at, updated_at, created_by, updated_by)
             VALUES (:key, :value, :desc, NOW(), NOW(), :created_by, :updated_by)
             ON DUPLICATE KEY UPDATE
@@ -193,26 +210,33 @@ function saveTextBeeCredentials($plainTextApiKey, $plainTextDeviceId, $userId = 
             updated_by    = VALUES(updated_by)
         ");
 
-        // Save the encrypted API Key
+        // Write in a fixed order (api_key, then device_id) so any future
+        // code touching these rows takes the same locks in the same
+        // sequence — avoids deadlocks between connections.
         $stmt->execute([
             ':key'        => 'textbee_api_key',
             ':value'      => $encryptedApiKey,
-            ':desc'       => 'Encrypted TextBee API Key',
+            ':desc'       => 'Encrypted TextBee API Key (sensitive)',
             ':created_by' => $userId,
-            ':updated_by' => $userId
+            ':updated_by' => $userId,
         ]);
 
         // Save the encrypted Device ID
         $stmt->execute([
             ':key'        => 'textbee_device_id',
             ':value'      => $encryptedDeviceId,
-            ':desc'       => 'Encrypted TextBee Device ID',
+            ':desc'       => 'Encrypted TextBee Device ID (sensitive)',
             ':created_by' => $userId,
-            ':updated_by' => $userId
+            ':updated_by' => $userId,
         ]);
+
+        $pdo->commit();
 
         return ['success' => true, 'message' => 'Credentials encrypted and saved successfully.'];
     } catch (PDOException $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         error_log("Database error saving TextBee credentials: " . $e->getMessage());
         return ['success' => false, 'error' => 'Database failure while saving credentials.'];
     }
