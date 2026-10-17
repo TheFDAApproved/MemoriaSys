@@ -159,6 +159,29 @@ $stmt = $pdo->query("
 ");
 $dashboardData['active_reservations_count'] = (int)$stmt->fetchColumn();
 
+// --- Payment confirmation queue (role-aware, Tier 1) ---
+//
+// "How many payments does THIS user need to act on right now?"
+// One query fetches both queues; we then pick the one matching the
+// caller's role. Cheaper than three separate COUNT queries.
+//
+// Admin has no confirmation duty in this schema (there is no
+// confirmed_admin_staff column), so their queue is reported as 0.
+// Admin still sees the aggregate totals in Tier 2 below.
+$stmt = $pdo->query("
+    SELECT 
+        COALESCE(SUM(confirmed_office_staff IS NULL), 0)  AS awaiting_office,
+        COALESCE(SUM(confirmed_ground_staff IS NULL), 0)  AS awaiting_grounds
+    FROM payments
+    WHERE deleted_at IS NULL
+");
+$row = $stmt->fetch(PDO::FETCH_ASSOC);
+$awaitingOffice   = (int)$row['awaiting_office'];
+$awaitingGrounds  = (int)$row['awaiting_grounds'];
+
+$dashboardData['payments_awaiting_my_confirmation'] =
+    $userRole === ROLE_OFFICE  ? $awaitingOffice  : ($userRole === ROLE_GROUNDS ? $awaitingGrounds : 0);
+
 // --- Monthly Lease Expiration (grouped by month for the current year) ---
 $stmt = $pdo->query("
     SELECT DATE_FORMAT(lease_expiration_date, '%Y-%m') AS exp_month, 
@@ -188,6 +211,68 @@ if (in_array($userRole, [ROLE_ADMIN, ROLE_OFFICE])) {
     // Total Interment Records (all interments, regardless of status, excluding soft-deleted)
     $stmt = $pdo->query("SELECT COUNT(*) FROM interments WHERE deleted_at IS NULL");
     $dashboardData['total_interment_records'] = (int)$stmt->fetchColumn();
+
+    // --- Payment financial breakdown (Admin + Office) ---
+    //
+    // Grounds staff deliberately do not see monetary totals — only their
+    // work queue (`payments_awaiting_my_confirmation` above).
+    //
+    // Definitions:
+    //   fully_confirmed_count          both office AND grounds confirmed
+    //   unconfirmed_by_office_count    office has NOT confirmed yet
+    //   unconfirmed_by_grounds_count   grounds has NOT confirmed yet
+    //   unconfirmed_by_both_count      neither has confirmed yet
+    //   unconfirmed_count              total - fully_confirmed
+    //                                  (= unconfirmed_by_both + (office-only) + (grounds-only))
+    //   confirmed_amount               sum of amounts where BOTH confirmed
+    //   unconfirmed_amount             sum of amounts NOT fully confirmed
+    //   total_amount                   confirmed_amount + unconfirmed_amount
+    //
+    // Note on "unconfirmed_by_office_count" vs "unconfirmed_by_both_count":
+    //   The former INCLUDES the latter. A payment confirmed by grounds but
+    //   not office contributes to unconfirmed_by_office_count but NOT to
+    //   unconfirmed_by_both_count. This is intentional — it's the actual
+    //   number of payments sitting in the office's queue.
+    $stmt = $pdo->query("
+        SELECT 
+            COUNT(*) AS total_count,
+            COALESCE(SUM(
+                confirmed_office_staff IS NOT NULL 
+                AND confirmed_ground_staff IS NOT NULL
+            ), 0) AS fully_confirmed_count,
+            COALESCE(SUM(confirmed_office_staff IS NULL), 0)  AS unconfirmed_by_office_count,
+            COALESCE(SUM(confirmed_ground_staff IS NULL), 0)  AS unconfirmed_by_grounds_count,
+            COALESCE(SUM(
+                confirmed_office_staff IS NULL 
+                AND confirmed_ground_staff IS NULL
+            ), 0) AS unconfirmed_by_both_count,
+            COALESCE(SUM(CASE 
+                WHEN confirmed_office_staff IS NOT NULL 
+                 AND confirmed_ground_staff IS NOT NULL 
+                THEN amount ELSE 0 END), 0) AS confirmed_amount,
+            COALESCE(SUM(CASE 
+                WHEN confirmed_office_staff IS NULL 
+                  OR confirmed_ground_staff IS NULL 
+                THEN amount ELSE 0 END), 0) AS unconfirmed_amount
+        FROM payments
+        WHERE deleted_at IS NULL
+    ");
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    $totalCount          = (int)$row['total_count'];
+    $fullyConfirmedCount = (int)$row['fully_confirmed_count'];
+
+    $dashboardData['payments'] = [
+        'total_count'               => $totalCount,
+        'fully_confirmed_count'     => $fullyConfirmedCount,
+        'unconfirmed_count'         => $totalCount - $fullyConfirmedCount,
+        'unconfirmed_by_office_count'  => (int)$row['unconfirmed_by_office_count'],
+        'unconfirmed_by_grounds_count' => (int)$row['unconfirmed_by_grounds_count'],
+        'unconfirmed_by_both_count'    => (int)$row['unconfirmed_by_both_count'],
+        'confirmed_amount'          => (float)$row['confirmed_amount'],
+        'unconfirmed_amount'        => (float)$row['unconfirmed_amount'],
+        'total_amount'              => (float)$row['confirmed_amount'] + (float)$row['unconfirmed_amount'],
+    ];
 }
 
 // ==========================================
