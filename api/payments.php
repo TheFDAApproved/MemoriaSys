@@ -5,7 +5,7 @@
  *
  * GET    : List all payments (paginated, role‑filtered) or fetch one by ID
  * POST   : Create a new payment (public, requires image upload)
- * PUT    : Confirm/unconfirm office/grounds, or edit details
+ * PUT    : Confirm/unconfirm office/grounds, edit details, or edit a single remark
  * DELETE : Soft‑delete a payment (admin/office only)
  */
 
@@ -462,6 +462,71 @@ try {
                     $stmt->execute([$userId, $resourceId]);
                     systemLog($userData['name'] . " unconfirmed ground work for ID: $resourceId", $userId);
                     Response::success('Ground work confirmation reverted.');
+                    break;
+
+                case 'edit_remark':
+                    // ---------------------------------------------------------
+                    // Save a single remark (Payer / Office / Grounds / Admin).
+                    // Only the targeted column is written; other remarks are
+                    // left untouched.
+                    // ---------------------------------------------------------
+                    $remarkType = strtolower(trim((string) ($input['remark_type'] ?? '')));
+
+                    // Whitelist of editable remark types → DB columns.
+                    // (Payer is intentionally NOT in this list — it's read-only.)
+                    $columnMap = [
+                        'office'  => 'remarks_office',
+                        'grounds' => 'remarks_grounds',
+                        'admin'   => 'remarks_admin',
+                    ];
+
+                    if ($remarkType === 'payer') {
+                        Response::error('Payer remarks are read-only.', 403);
+                    }
+                    if (!isset($columnMap[$remarkType])) {
+                        Response::error('Invalid remark type.', 400);
+                    }
+
+                    // Role gate per department (backend enforcement; UI is only a hint).
+                    if ($remarkType === 'office') {
+                        requireRole([ROLE_ADMIN, ROLE_OFFICE], $role);
+                    } elseif ($remarkType === 'grounds') {
+                        requireRole([ROLE_ADMIN, ROLE_GROUNDS], $role);
+                    } elseif ($remarkType === 'admin') {
+                        requireRole([ROLE_ADMIN], $role);
+                    }
+
+                    $value = trim((string) ($input['remark_value'] ?? ''));
+                    if (mb_strlen($value) > 2000) {
+                        Response::error('Remark is too long (max 2000 characters).', 400);
+                    }
+
+                    // Store empty as NULL so the UI shows "+ Add remark" again.
+                    $dbValue = ($value === '') ? null : $value;
+
+                    // Column name is safe: whitelisted above, never user-supplied.
+                    $column = $columnMap[$remarkType];
+
+                    $stmt = $pdo->prepare("
+                        UPDATE payments
+                        SET `$column` = ?, updated_by = ?
+                        WHERE payment_id = ? AND deleted_at IS NULL
+                    ");
+                    $stmt->execute([$dbValue, $userId, $resourceId]);
+
+                    systemLog(
+                        $userData['name'] . " updated {$remarkType} remark for payment ID: $resourceId",
+                        $userId
+                    );
+
+                    Response::success(
+                        ucfirst($remarkType) . ' remark updated.',
+                        [
+                            'payment_id'   => (int) $resourceId,
+                            'remark_type'  => $remarkType,
+                            'remark_value' => $value,
+                        ]
+                    );
                     break;
 
                 default: // edit_details

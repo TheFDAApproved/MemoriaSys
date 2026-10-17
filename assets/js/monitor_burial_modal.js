@@ -31,8 +31,8 @@ const MonitorBurialModal = (() => {
     let locationHeaderEl = null;
 
     const MONITOR_API = 'api/monitor.php';
-    const BLOCKS_API  = 'api/blocks.php';
-    const GRAVES_API  = 'api/graves.php';
+    const BLOCKS_API = 'api/blocks.php';
+    const GRAVES_API = 'api/graves.php';
 
     const LEASE_YEARS = 5;
     const BLOCK_CHANGE_DEBOUNCE_MS = 250;
@@ -90,7 +90,7 @@ const MonitorBurialModal = (() => {
         style.textContent = `
             /* ▼ ADDED: location header (parity with Reserve) */
             #burial_modal_overlay .wizardLocationHeader {
-                margin: 12px 0 6px;
+                margin: 0 0 16px 0;
                 padding: 6px 10px;
                 background: #f4f8ff;
                 border-left: 3px solid #2b6cd4;
@@ -98,7 +98,8 @@ const MonitorBurialModal = (() => {
                 font-size: 0.95rem;
                 font-weight: 600;
                 color: #1f2a3d;
-                width: 25%;
+                width: 100%;
+                box-sizing: border-box;
             }
             #burial_modal_overlay .wizardLocationHeader .locName { color: #2b6cd4; }
             #burial_modal_overlay .wizardLocationHeader .locCurrent {
@@ -255,7 +256,8 @@ const MonitorBurialModal = (() => {
             const h = document.createElement('div');
             h.className = 'wizardLocationHeader';
             h.innerHTML = `Where will <span class="locName">this person</span> go? <span class="locCurrent"></span>`;
-            wrapper.parentNode.insertBefore(h, wrapper);
+            const row = wrapper.closest('.row') || wrapper.parentNode;
+            row.parentNode.insertBefore(h, row);
             locationHeaderEl = h;
         }
     }
@@ -294,7 +296,7 @@ const MonitorBurialModal = (() => {
         // ▲ FIXED
         const info = (srcBlock || srcGrave) ? `${srcBlock || '—'} / ${srcGrave || '—'}` : '';
         updateLocationHeaderText(name, info);
-}
+    }
 
     function refreshNewOccupantHeader() {
         if (!modalEl) return;
@@ -1356,14 +1358,14 @@ const MonitorBurialModal = (() => {
 
         // ---- B) Status ↔ destination consistency ----
         const statusEl = modalEl.querySelector('#status');
-        const blockEl  = modalEl.querySelector('#block');
-        const graveEl  = modalEl.querySelector('#grave_code');
-        const typeEl   = modalEl.querySelector('#burial_block');
+        const blockEl = modalEl.querySelector('#block');
+        const graveEl = modalEl.querySelector('#grave_code');
+        const typeEl = modalEl.querySelector('#burial_block');
 
         if (statusEl?.value === 'Active') {
             const hasBlock = !!(blockEl?.value || '').trim();
             const hasGrave = !!(graveEl?.value || '').trim();
-            const hasType  = !!(typeEl?.value  || '').trim();
+            const hasType = !!(typeEl?.value || '').trim();
 
             if (!hasBlock && !hasGrave && !hasType) {
                 warn(
