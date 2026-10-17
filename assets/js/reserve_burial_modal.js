@@ -269,9 +269,10 @@ const ReserveBurialModal = (() => {
       burialTypePlaceholderText = original || "Select Burial Type";
     }
     const isReadOnly = currentMode === "view" && wizardMode !== "old";
+    const isInactive = modalEl.querySelector("#status")?.value !== "Active";
     const hasValue = !!select.value;
     placeholder.textContent =
-      isReadOnly && !hasValue ? "" : burialTypePlaceholderText;
+      (isReadOnly && !hasValue) || (isInactive && !hasValue) ? "" : burialTypePlaceholderText;
   }
 
   function selectGraveByCode(code, graveId) {
@@ -303,7 +304,14 @@ const ReserveBurialModal = (() => {
     const typeEl = modalEl?.querySelector("#burial_block");
     if (!typeEl) return;
 
+    const isInactive = modalEl.querySelector("#status")?.value !== "Active";
     const raw = pick(snapshotValue);
+    
+    if (isInactive) {
+        typeEl.value = "";
+        return;
+    }
+
     if (raw) {
       setBurialTypeFromBlockType(raw);
     } else {
@@ -385,6 +393,9 @@ const ReserveBurialModal = (() => {
     // FIX: no fallback. If snapshot's burial_block is empty (e.g.
     // user set O to Inactive), leave the dropdown empty.
     applyBurialTypeFromSnapshot(snap.burial_block);
+
+    const statusEl = modalEl.querySelector("#status");
+    toggleLocationFields(statusEl && statusEl.value !== "Active");
   }
 
   // ------------------------------------------------------------------
@@ -518,20 +529,31 @@ const ReserveBurialModal = (() => {
     else removePendingFromStatus();
   }
 
+  function toggleLocationFields(isInactive) {
+    const fields = ['burial_block', 'block', 'grave_code'];
+    fields.forEach(id => {
+      const el = modalEl?.querySelector('#' + id);
+      if (!el) return;
+      if (isInactive) {
+        el.classList.add('inactive-readonly');
+        el.value = '';
+      } else {
+        el.classList.remove('inactive-readonly');
+      }
+    });
+  }
+
   async function handleStatusChange() {
     if (!modalEl) return;
     const statusSelect = modalEl.querySelector("#status");
     if (!statusSelect) return;
 
+    const isInactive = statusSelect.value !== "Active";
+    toggleLocationFields(isInactive);
+
     if (wizardMode === "old") {
-      if (statusSelect.value !== "Active") {
-        const blockEl = modalEl.querySelector("#block");
-        if (blockEl) blockEl.value = "";
-        const graveEl = modalEl.querySelector("#grave_code");
-        if (graveEl) graveEl.value = "";
+      if (isInactive) {
         resetGraveSelectUI();
-        const typeEl = modalEl.querySelector("#burial_block");
-        if (typeEl) typeEl.value = "";
       } else {
         await loadBlocks();
         renderBlockOptions("");
@@ -540,11 +562,7 @@ const ReserveBurialModal = (() => {
       return;
     }
 
-    if (statusSelect.value === "Inactive") {
-      const blockEl = modalEl.querySelector("#block");
-      if (blockEl) blockEl.value = "";
-      const burialTypeEl = modalEl.querySelector("#burial_block");
-      if (burialTypeEl) burialTypeEl.selectedIndex = 0;
+    if (isInactive) {
       resetGraveSelectUI();
       updateBurialTypePlaceholder();
       return;
@@ -618,6 +636,7 @@ const ReserveBurialModal = (() => {
     const select = modalEl.querySelector("#block");
     if (!select || select.tagName !== "SELECT") return;
 
+    const isInactive = modalEl.querySelector("#status")?.value !== "Active";
     const isView = currentMode === "view" && wizardMode !== "old";
     const current = keepValue !== undefined ? keepValue : select.value;
     const list = filterType ? blocksMatchingType(filterType) : blockOptions;
@@ -625,7 +644,7 @@ const ReserveBurialModal = (() => {
     select.innerHTML = "";
     const placeholder = document.createElement("option");
     placeholder.value = "";
-    if (isView) placeholder.textContent = "";
+    if (isView || isInactive) placeholder.textContent = "";
     else if (filterType && list.length === 0)
       placeholder.textContent = "No blocks for this Burial Type";
     else placeholder.textContent = "Select Block...";
@@ -692,11 +711,12 @@ const ReserveBurialModal = (() => {
     const select = modalEl ? modalEl.querySelector("#grave_code") : null;
     if (!select || select.tagName !== "SELECT") return;
 
+    const isInactive = modalEl.querySelector("#status")?.value !== "Active";
     const isView = currentMode === "view" && wizardMode !== "old";
     select.innerHTML = "";
     const placeholder = document.createElement("option");
     placeholder.value = "";
-    placeholder.textContent = isView
+    placeholder.textContent = (isView || isInactive)
       ? ""
       : graves.length
         ? "Select Grave Code..."
@@ -758,11 +778,12 @@ const ReserveBurialModal = (() => {
   function resetGraveSelectUI() {
     const select = modalEl ? modalEl.querySelector("#grave_code") : null;
     if (!select || select.tagName !== "SELECT") return;
+    const isInactive = modalEl.querySelector("#status")?.value !== "Active";
     const isView = currentMode === "view" && wizardMode !== "old";
     select.innerHTML = "";
     const placeholder = document.createElement("option");
     placeholder.value = "";
-    placeholder.textContent = isView ? "" : "Select Block first...";
+    placeholder.textContent = (isView || isInactive) ? "" : "Select Block first...";
     placeholder.disabled = true;
     placeholder.selected = true;
     select.appendChild(placeholder);
@@ -953,8 +974,8 @@ const ReserveBurialModal = (() => {
     const style = document.createElement("style");
     style.id = "reserveWizardMiniStyles";
     style.textContent = `
-            #burial_modal_overlay .wizardLocationHeader {
-                margin: 12px 0 6px;
+              #burial_modal_overlay .wizardLocationHeader {
+                margin: 0 0 16px 0;
                 padding: 6px 10px;
                 background: #f4f8ff;
                 border-left: 3px solid #2b6cd4;
@@ -962,7 +983,8 @@ const ReserveBurialModal = (() => {
                 font-size: 0.95rem;
                 font-weight: 600;
                 color: #1f2a3d;
-                width: 25%;
+                width: 100%;
+                box-sizing: border-box;
             }
             #burial_modal_overlay .wizardLocationHeader .locName { color: #2b6cd4; }
             #burial_modal_overlay .wizardLocationHeader .locCurrent {
@@ -1006,6 +1028,17 @@ const ReserveBurialModal = (() => {
                 color: #475569;
                 cursor: not-allowed;
             }
+
+            #burial_modal_overlay .inactive-readonly {
+                appearance: none !important;
+                -webkit-appearance: none !important;
+                -moz-appearance: none !important;
+                background: transparent !important;
+                border: none !important;
+                box-shadow: none !important;
+                padding: 0 !important;
+                pointer-events: none !important;
+            }
         `;
     document.head.appendChild(style);
   }
@@ -1025,7 +1058,8 @@ const ReserveBurialModal = (() => {
       const h = document.createElement("div");
       h.className = "wizardLocationHeader";
       h.innerHTML = `Where will <span class="locName">this person</span> go? <span class="locCurrent"></span>`;
-      wrapper.parentNode.insertBefore(h, wrapper);
+      const row = wrapper.closest(".row") || wrapper.parentNode;
+      row.parentNode.insertBefore(h, row);
       locationHeaderEl = h;
     }
   }
@@ -1511,6 +1545,9 @@ const ReserveBurialModal = (() => {
     setEditable("old");
     updateWizardButtons();
 
+    const statusEl = modalEl.querySelector("#status");
+    toggleLocationFields(statusEl && statusEl.value !== "Active");
+
     oldModeSnapshot = readAllFormFields();
 
     const nameEl = modalEl.querySelector("#deceased_name");
@@ -1794,6 +1831,10 @@ const ReserveBurialModal = (() => {
       lockFieldsOnly();
       updateBurialTypePlaceholder();
       updateWizardButtons();
+      
+      const statusEl = modalEl.querySelector("#status");
+      toggleLocationFields(statusEl && statusEl.value !== "Active");
+      
       refreshOldOccupantHeader();
       return;
     }
@@ -1847,6 +1888,9 @@ const ReserveBurialModal = (() => {
 
     setEditable("old");
     updateWizardButtons();
+
+    const statusEl = modalEl.querySelector("#status");
+    toggleLocationFields(statusEl && statusEl.value !== "Active");
 
     refreshOldOccupantHeader();
   }
@@ -2132,6 +2176,10 @@ const ReserveBurialModal = (() => {
       populateFields(d);
       setEditable("view");
       updateWizardButtons();
+      
+      const statusEl = modalEl.querySelector("#status");
+      toggleLocationFields(statusEl && statusEl.value !== "Active");
+
       updateLocationHeaderText(pick(data.deceased_name, "this person"), "");
     } else {
       if (!sameSession) {
@@ -2311,6 +2359,11 @@ const ReserveBurialModal = (() => {
     field.setAttribute("aria-readonly", "true");
     field.style.pointerEvents = "none";
     field.style.cursor = "default";
+    
+    // Remove dropdown arrow
+    field.style.appearance = "none";
+    field.style.webkitAppearance = "none";
+    field.style.backgroundImage = "none";
   }
 
   function setEditable(mode) {
@@ -2330,6 +2383,11 @@ const ReserveBurialModal = (() => {
         field.style.cursor = "";
         field.removeAttribute("tabindex");
         field.removeAttribute("aria-readonly");
+        
+        // Restore dropdown arrow
+        field.style.appearance = "";
+        field.style.webkitAppearance = "";
+        field.style.backgroundImage = "";
       }
 
       if (EXPIRATION_FIELD_IDS.includes(field.id)) {
@@ -2608,6 +2666,7 @@ const ReserveBurialModal = (() => {
     submissionSucceeded = false;
 
     unlockFields();
+    toggleLocationFields(false);
 
     if (locationHeaderEl && locationHeaderEl.parentNode) {
       locationHeaderEl.parentNode.removeChild(locationHeaderEl);

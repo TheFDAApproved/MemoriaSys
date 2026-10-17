@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memoria</title>
+
+    <meta name="description" content="Monitor user activities and system events in the Cemetery Management System.">
+    <meta name="author" content="Team DND">
+    <meta name="theme-color" content="#2f3136">
+    <meta name="robots" content="noindex, nofollow">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+
+    <link rel="stylesheet" href="assets/css/root.css">
+    <link rel="stylesheet" href="api/rootcolors.php" onerror="console.error('Failed to load custom colors. Using default theme.')">
+    <link rel="stylesheet" href="assets/css/records.css">
+    <link rel="stylesheet" href="assets/css/logs.css">
+</head>
+<body>
+
+    <!-- Keep your existing sidebar / topbar include here -->
+
+    <main class="logsContent">
+
+        <div class="tableControls logsControls">
+            <div class="searchBox">
+                <i class="fas fa-search"></i>
+                <input type="text" id="log_search" placeholder="Search logs or user IDs..." autocomplete="off">
+            </div>
+
+            <div class="controlItem">
+                <input type="date" id="filter_date" class="mainInput" aria-label="Filter by date">
+            </div>
+        </div>
+
+        <div class="table logsTable">
+            <div class="tableHeader">
+                <h3>Activity Log</h3>
+                <div class="pageInfoText">
+                    Page <strong id="current_page_num">1</strong> of <span id="total_pages_num">1</span>
+                </div>
+            </div>
+
+            <div class="tableScrollWrapper">
+                <table class="logsData">
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>User ID</th>
+                            <th>Event Type</th>
+                            <th>Activity Description</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logsTableBody"></tbody>
+                </table>
+
+                <p class="noData" id="logsNoData">
+                    <i class="fas fa-inbox"></i>
+                    No logs found
+                </p>
+            </div>
+        </div>
+
+        <div class="paginationContainer">
+            <div class="paginationControls">
+                <button type="button" class="pageNavBtn" id="prev_page_btn" aria-label="Previous page">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+
+                <div class="carouselViewport" id="carousel_viewport">
+                    <div class="carouselTrack" id="carousel_track"></div>
+                </div>
+
+                <button type="button" class="pageNavBtn" id="next_page_btn" aria-label="Next page">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <script src="assets/js/alert.js"></script>
+    <script src="assets/js/logs.js"></script>
+</body>
+</html>

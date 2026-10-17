@@ -1,0 +1,255 @@
+/* ============================================================================
+   System Logs — page-specific styles
+   ============================================================================ */
+
+.logsContent {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    margin: 0;
+    padding: 24px;
+    overflow: hidden;
+    box-sizing: border-box;
+    font-family: 'Inter', sans-serif;
+}
+
+/* ---------- Search + date filter --------------------------------------- */
+.logsControls {
+    flex-shrink: 0;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+.logsControls .controlItem {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.mainInput {
+    font-family: inherit;
+    font-size: 13px;
+    color: #1c1e21;
+    background: #ffffff;
+    padding: 8px 12px;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    outline: none;
+    transition: border-color .15s ease, box-shadow .15s ease;
+    min-height: 36px;
+    box-sizing: border-box;
+}
+.mainInput:hover { border-color: #d1d5db; }
+.mainInput:focus {
+    border-color: var(--mainColor);
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.08);
+}
+
+/* ---------- Table ------------------------------------------------------ */
+.logsTable {
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Kill horizontal scrolling — rows fit the container width. */
+.logsTable .tableScrollWrapper {
+    overflow-x: hidden;
+    overflow-y: auto;
+}
+
+.logsData {
+    width: 100%;
+    max-width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    font-size: 13.5px;
+}
+
+.logsData thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    padding: 12px 16px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: #606770;
+    background: #f9fafb;
+    box-shadow: inset 0 -1px 0 #e5e7eb;
+    white-space: nowrap;
+    user-select: none;
+}
+
+/* Column widths — Timestamp / User ID / Event Type get fixed widths,
+   the Activity Description column absorbs the remaining space. */
+.logsData thead th:nth-child(1),
+.logsData tbody td:nth-child(1) { width: 180px; }   /* Timestamp */
+
+.logsData thead th:nth-child(2),
+.logsData tbody td:nth-child(2) { width: 160px; }   /* User ID */
+
+.logsData thead th:nth-child(3),
+.logsData tbody td:nth-child(3) { width: 140px; }   /* Event Type */
+
+.logsData tbody td {
+    padding: 12px 16px;
+    color: #1c1e21;
+    border-bottom: 1px solid #eef0f3;
+    vertical-align: middle;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    box-sizing: border-box;
+}
+
+/* First three columns: single line, ellipsis on overflow. */
+.logsData tbody td:nth-child(1),
+.logsData tbody td:nth-child(2),
+.logsData tbody td:nth-child(3) {
+    white-space: nowrap;
+}
+
+/* Description column wraps naturally instead of forcing horizontal scroll. */
+.logsData tbody td.logDesc {
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    line-height: 1.45;
+}
+
+.logsData tbody tr { transition: background .15s ease; }
+.logsData tbody tr:hover { background: #f8fafc; }
+.logsData tbody tr:last-child td { border-bottom: none; }
+
+/* Loading skeleton */
+.logsSkeletonRow td { padding: 14px 16px; }
+.logsSkeleton {
+    display: inline-block;
+    width: 100%;
+    height: 12px;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #eef0f3 25%, #f6f7f9 37%, #eef0f3 63%);
+    background-size: 400% 100%;
+    animation: logsSkeletonShimmer 1.4s ease infinite;
+}
+.logsSkeleton--w40 { width: 40%; }
+.logsSkeleton--w60 { width: 60%; }
+.logsSkeleton--w80 { width: 80%; }
+@keyframes logsSkeletonShimmer {
+    0%   { background-position: 100% 0; }
+    100% { background-position: 0 0; }
+}
+
+/* ---------- Pagination ------------------------------------------------ */
+.paginationContainer {
+    flex-shrink: 0;
+    width: 100%;
+    margin-top: 16px;
+    display: flex;
+    justify-content: center;
+}
+
+.paginationControls {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 999px;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.pageNavBtn {
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: #1c1e21;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background .2s ease, color .2s ease, opacity .2s ease;
+}
+.pageNavBtn:hover:not(:disabled) {
+    background: var(--mainColor);
+    color: #ffffff;
+}
+.pageNavBtn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.2);
+}
+.pageNavBtn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.carouselViewport {
+    overflow: hidden;
+    max-width: 320px;
+}
+.carouselTrack {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: transform .25s ease;
+}
+.carouselTrack button {
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: inherit;
+    color: #1c1e21;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background .2s ease, color .2s ease, border-color .2s ease;
+}
+.carouselTrack button:hover {
+    background: #f8fafc;
+    border-color: #e5e7eb;
+}
+.carouselTrack button:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.2);
+}
+.carouselTrack button.active {
+    background: var(--mainColor);
+    color: #ffffff;
+    border-color: var(--mainColor);
+}
+
+/* ---------- Responsive tweaks ----------------------------------------- */
+@media (max-width: 900px) {
+    .logsContent { padding: 16px; }
+
+    .logsData thead th:nth-child(1),
+    .logsData tbody td:nth-child(1) { width: 140px; }
+    .logsData thead th:nth-child(2),
+    .logsData tbody td:nth-child(2) { width: 120px; }
+    .logsData thead th:nth-child(3),
+    .logsData tbody td:nth-child(3) { width: 110px; }
+}
+
+@media (max-width: 600px) {
+    .logsData { font-size: 12.5px; }
+    .logsData thead th,
+    .logsData tbody td { padding: 10px 12px; }
+    .carouselViewport { max-width: 180px; }
+}
