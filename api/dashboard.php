@@ -29,22 +29,25 @@ $dashboardData = [];
 // TIER 1: EVERYONE SEES THIS (Admin, Office, Grounds)
 // ==========================================
 
-// --- Grave Status Distribution ---
-// Categorises each grave based on interments:
-//   - Expired   : active interment with lease_expiration_date <= CURDATE()
-//   - Expiring  : active interment with expiry between 1–30 days from today
-//   - Occupied  : active interment with expiry > 30 days from today
-//   - Reserved  : pending interment (no active)
-//   - Vacant    : no active/pending interment and grave.status = 'Vacant'
-//   - Other     : fallback (should not happen)
+// --- Grave Status Distribution (per-grave) ---
+//
+// Each grave is classified by its MOST URGENT state. Co-interments are
+// handled by MIN(lease_expiration_date): a grave with one expired and
+// one healthy occupant is classified 'Expired', which is the correct
+// priority for "graves needing attention". Healthy co-occupants are
+// still individually counted in lease_status_by_interment below.
+//
+// NOTE: Pending interments cannot have current_grave_id (enforced by
+// chk_status_grave), so "is this grave reserved?" must be answered via
+// the reservations table — NOT by looking for Pending interments.
 $stmt = $pdo->query("
     SELECT 
         CASE 
-            WHEN min_exp_date <= CURDATE() THEN 'Expired'
-            WHEN min_exp_date BETWEEN DATE_ADD(CURDATE(), INTERVAL 1 DAY) 
-                                  AND DATE_ADD(CURDATE(), INTERVAL 30 DAY) THEN 'Expiring'
+            WHEN min_exp_date IS NOT NULL AND min_exp_date <= CURDATE() THEN 'Expired'
+            WHEN min_exp_date IS NOT NULL 
+                 AND min_exp_date <= DATE_ADD(CURDATE(), INTERVAL 30 DAY) THEN 'Expiring'
             WHEN min_exp_date IS NOT NULL THEN 'Occupied'
-            WHEN has_pending = 1 THEN 'Reserved'
+            WHEN has_active_reservation = 1 THEN 'Reserved'
             WHEN grave_status = 'Vacant' THEN 'Vacant'
             ELSE 'Other'
         END AS category,
@@ -55,11 +58,10 @@ $stmt = $pdo->query("
             g.status AS grave_status,
             MIN(i.lease_expiration_date) AS min_exp_date,
             EXISTS (
-                SELECT 1 FROM interments p 
-                WHERE p.current_grave_id = g.grave_id 
-                  AND p.status = 'Pending'
-                  AND p.deleted_at IS NULL
-            ) AS has_pending
+                SELECT 1 FROM reservations r
+                WHERE r.target_grave_id = g.grave_id
+                  AND r.reservation_state = 'Active'
+            ) AS has_active_reservation
         FROM graves g
         LEFT JOIN interments i 
             ON g.grave_id = i.current_grave_id 
@@ -76,7 +78,7 @@ $graveDistribution = [
     'Expired'  => 0,
     'Occupied' => 0,
     'Expiring' => 0,
-    'Reserved' => 0
+    'Reserved' => 0,
 ];
 
 while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
@@ -88,6 +90,32 @@ while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
 $dashboardData['grave_status_distribution'] = $graveDistribution;
 $dashboardData['available_graves'] = $graveDistribution['Vacant'];
 
+// --- Per-interment lease status counts (co-interment aware) ---
+//
+// Complements the per-grave distribution above. This counts INDIVIDUAL
+// interments, so a co-interment grave with one expired and one healthy
+// occupant contributes 1 to 'Expired' and 1 to 'Occupied' here.
+// 'Unknown' captures active interments with a NULL lease_expiration_date.
+$stmt = $pdo->query("
+    SELECT 
+        SUM(lease_expiration_date <= CURDATE()) AS expired,
+        SUM(lease_expiration_date > CURDATE()
+            AND lease_expiration_date <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)) AS expiring,
+        SUM(lease_expiration_date > DATE_ADD(CURDATE(), INTERVAL 30 DAY)) AS occupied,
+        SUM(lease_expiration_date IS NULL) AS unknown,
+        COUNT(*) AS total
+    FROM interments
+    WHERE status = 'Active' AND deleted_at IS NULL
+");
+$row = $stmt->fetch(PDO::FETCH_ASSOC);
+$dashboardData['lease_status_by_interment'] = [
+    'Expired'  => (int)$row['expired'],
+    'Expiring' => (int)$row['expiring'],
+    'Occupied' => (int)$row['occupied'],
+    'Unknown'  => (int)$row['unknown'],
+    'Total'    => (int)$row['total'],
+];
+
 // --- Expiring Leases Count (active interments expiring within 30 days) ---
 $stmt = $pdo->query("
     SELECT COUNT(*) FROM interments 
@@ -97,6 +125,39 @@ $stmt = $pdo->query("
                                    AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)
 ");
 $dashboardData['expiring_leases_count'] = (int)$stmt->fetchColumn();
+
+// --- Expired Leases Count (active interments already past expiration) ---
+$stmt = $pdo->query("
+    SELECT COUNT(*) FROM interments 
+    WHERE status = 'Active' 
+      AND deleted_at IS NULL
+      AND lease_expiration_date <= CURDATE()
+");
+$dashboardData['expired_leases_count'] = (int)$stmt->fetchColumn();
+
+// --- Co-interment graves (graves with 2+ active interments) ---
+//
+// Tells you how many graves are being "collapsed" into a single category
+// in the per-grave distribution above. Useful when investigating why
+// expiring_leases_count doesn't match the Expiring bucket.
+$stmt = $pdo->query("
+    SELECT COUNT(*) FROM (
+        SELECT current_grave_id
+        FROM interments
+        WHERE status = 'Active'
+          AND deleted_at IS NULL
+          AND current_grave_id IS NOT NULL
+        GROUP BY current_grave_id
+        HAVING COUNT(*) > 1
+    ) AS co
+");
+$dashboardData['co_interment_graves_count'] = (int)$stmt->fetchColumn();
+
+// --- Active reservations (graves currently locked for an upcoming move) ---
+$stmt = $pdo->query("
+    SELECT COUNT(*) FROM reservations WHERE reservation_state = 'Active'
+");
+$dashboardData['active_reservations_count'] = (int)$stmt->fetchColumn();
 
 // --- Monthly Lease Expiration (grouped by month for the current year) ---
 $stmt = $pdo->query("
