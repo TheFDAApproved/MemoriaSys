@@ -594,7 +594,7 @@ try {
                 Response::error('Payment not found or already deleted.', 404);
             }
             systemLog($userData['name'] . " soft‑deleted payment ID: $resourceId", $userData['user_id']);
-            Response::success('Payment soft‑deleted successfully.');
+            Response::success('Payment deleted successfully.');
             break;
 
         default:
