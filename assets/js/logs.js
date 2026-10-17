@@ -31,14 +31,14 @@
     };
 
     const el = {
-        search:        document.getElementById('log_search'),
-        date:          document.getElementById('filter_date'),
-        tbody:         document.getElementById('logsTableBody'),
-        noData:        document.getElementById('logsNoData'),
-        currentPage:   document.getElementById('current_page_num'),
-        totalPages:    document.getElementById('total_pages_num'),
-        prevBtn:       document.getElementById('prev_page_btn'),
-        nextBtn:       document.getElementById('next_page_btn'),
+        search: document.getElementById('log_search'),
+        date: document.getElementById('filter_date'),
+        tbody: document.getElementById('logsTableBody'),
+        noData: document.getElementById('logsNoData'),
+        currentPage: document.getElementById('current_page_num'),
+        totalPages: document.getElementById('total_pages_num'),
+        prevBtn: document.getElementById('prev_page_btn'),
+        nextBtn: document.getElementById('next_page_btn'),
         carouselTrack: document.getElementById('carousel_track'),
     };
 
@@ -90,17 +90,17 @@
         if (!m) {
             // Fallback: treat the whole string as a description.
             return {
-                created_at:  '',
+                created_at: '',
                 description: s,
-                user_id:     '',
-                username:    '',
-                activity:    'General',
+                user_id: '',
+                username: '',
+                activity: 'General',
             };
         }
 
-        const created_at  = m[1];
+        const created_at = m[1];
         const description = m[2] || '';
-        const user_id     = m[3] || '';
+        const user_id = m[3] || '';
 
         return {
             created_at,
@@ -127,14 +127,14 @@
     const deriveActivity = (desc) => {
         if (!desc) return 'General';
         const t = desc.toLowerCase();
-        if (t.includes('failed login'))                                   return 'Failed Login';
-        if (t.includes('logged in') || t.includes('login success'))       return 'Login';
-        if (t.includes('logged out') || t.includes('logout'))             return 'Logout';
-        if (t.includes('created'))                                        return 'Create';
+        if (t.includes('failed login')) return 'Failed Login';
+        if (t.includes('logged in') || t.includes('login success')) return 'Login';
+        if (t.includes('logged out') || t.includes('logout')) return 'Logout';
+        if (t.includes('created')) return 'Create';
         if (t.includes('updated') || t.includes('edited') || t.includes('confirmed')) return 'Update';
-        if (t.includes('deleted') || t.includes('removed'))               return 'Delete';
+        if (t.includes('deleted') || t.includes('removed')) return 'Delete';
         if (t.includes('retrieved') || t.includes('viewed') || t.includes('listed')) return 'View';
-        if (t.includes('upload'))                                         return 'Upload';
+        if (t.includes('upload')) return 'Upload';
         return 'General';
     };
 
@@ -143,11 +143,11 @@
         // fall back to a field-mapped shape.
         if (row && typeof row === 'object') {
             return {
-                created_at:  row.created_at || row.timestamp || row.logged_at || '',
+                created_at: row.created_at || row.timestamp || row.logged_at || '',
                 description: row.description || row.message || '',
-                user_id:     row.user_id || '',
-                username:    row.username || row.user || '',
-                activity:    row.activity_type || row.activity || row.event || 'General',
+                user_id: row.user_id || '',
+                username: row.username || row.user || '',
+                activity: row.activity_type || row.activity || row.event || 'General',
             };
         }
         return parseLogString(row) || {
@@ -180,8 +180,8 @@
     const ymd = (d) => {
         if (!d) return '';
         return d.getFullYear() + '-'
-             + String(d.getMonth() + 1).padStart(2, '0') + '-'
-             + String(d.getDate()).padStart(2, '0');
+            + String(d.getMonth() + 1).padStart(2, '0') + '-'
+            + String(d.getDate()).padStart(2, '0');
     };
 
     // ------------------------------------------------------------------ rendering
@@ -203,11 +203,11 @@
         let html = '';
         for (let i = 0; i < 6; i++) {
             html += '<tr class="logsSkeletonRow">'
-                 +   '<td><span class="logsSkeleton logsSkeleton--w60"></span></td>'
-                 +   '<td><span class="logsSkeleton logsSkeleton--w40"></span></td>'
-                 +   '<td><span class="logsSkeleton logsSkeleton--w60"></span></td>'
-                 +   '<td><span class="logsSkeleton logsSkeleton--w80"></span></td>'
-                 + '</tr>';
+                + '<td><span class="logsSkeleton logsSkeleton--w60"></span></td>'
+                + '<td><span class="logsSkeleton logsSkeleton--w40"></span></td>'
+                + '<td><span class="logsSkeleton logsSkeleton--w60"></span></td>'
+                + '<td><span class="logsSkeleton logsSkeleton--w80"></span></td>'
+                + '</tr>';
         }
         el.tbody.innerHTML = html;
     }
@@ -216,6 +216,9 @@
         el.tbody.innerHTML = '';
 
         if (state.filtered.length === 0) {
+            state.totalPages = 1;
+            state.page = 1;
+
             showNoData('No logs found');
             renderPagination();
             return;
@@ -250,11 +253,11 @@
     }
 
     function renderPagination() {
-        const total   = Math.max(1, state.totalPages);
+        const total = Math.max(1, state.totalPages);
         const current = state.page;
 
         if (el.currentPage) el.currentPage.textContent = String(current);
-        if (el.totalPages)  el.totalPages.textContent  = String(total);
+        if (el.totalPages) el.totalPages.textContent = String(total);
         if (el.prevBtn) el.prevBtn.disabled = current <= 1;
         if (el.nextBtn) el.nextBtn.disabled = current >= total;
 
@@ -263,8 +266,8 @@
 
         const WINDOW = PAGINATION_WINDOW;
         let start = Math.max(1, current - Math.floor(WINDOW / 2));
-        let end   = Math.min(total, start + WINDOW - 1);
-        start     = Math.max(1, end - WINDOW + 1);
+        let end = Math.min(total, start + WINDOW - 1);
+        start = Math.max(1, end - WINDOW + 1);
 
         for (let i = start; i <= end; i++) {
             const btn = document.createElement('button');
@@ -285,9 +288,9 @@
 
     // ------------------------------------------------------------------ filtering
     function applyFilters() {
-        const term      = (el.search?.value || '').trim().toLowerCase();
+        const term = (el.search?.value || '').trim().toLowerCase();
         const dateValue = el.date?.value || '';
-        const useTerm   = term.length >= SEARCH_MIN_LEN;
+        const useTerm = term.length >= SEARCH_MIN_LEN;
 
         state.filtered = state.allLogs.filter((log) => {
             if (useTerm) {
@@ -326,7 +329,7 @@
 
             if (!res.ok || (json && json.success === false)) {
                 const msg = (json && (json.message || json.error))
-                          || ('Request failed (HTTP ' + res.status + ')');
+                    || ('Request failed (HTTP ' + res.status + ')');
                 throw new Error(msg);
             }
 
