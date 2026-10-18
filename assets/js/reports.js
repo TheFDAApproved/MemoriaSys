@@ -171,7 +171,6 @@ function selectOption(element, reportTitle) {
   const target = document.getElementById("selectedOptionTarget");
   if (content && target) target.innerHTML = content.innerHTML;
 
-  // Update Master Card Title
   if (reportTitle) {
     const titleTarget = document.getElementById("report-dynamic-title");
     if (titleTarget) titleTarget.textContent = reportTitle;
@@ -188,28 +187,34 @@ function selectOption(element, reportTitle) {
 async function switchReport(reportId) {
   currentReportScope = reportId;
 
-  // 1. Swap visibility of inner report sections inside the master card
   document.querySelectorAll(".docSection").forEach((section) => {
     section.style.display = "none";
   });
   const activeSection = document.getElementById(reportId + "-content");
   if (activeSection) activeSection.style.display = "block";
 
-  // 2. Toggle appropriate filter panels
   document
     .querySelectorAll(".filterEngineContainer")
     .forEach((panel) => panel.classList.remove("visible"));
-
   const panel = document.getElementById("filter-panel-" + reportId);
   if (panel) panel.classList.add("visible");
 
-  // 3. Lazy-load payment options the first time the payments report opens
-  if (reportId === "payments" && !paymentOptionsLoaded) {
-    await loadPaymentOptions();
-    paymentOptionsLoaded = true;
-  }
+  // ★ CHANGED: kick off the report fetch FIRST. Its synchronous prelude
+  //   inserts the loading placeholder on this same tick — before any
+  //   await — so the spinner is on screen from the moment of the click.
+  const reportPromise = loadReportData(reportId, { immediate: true });
 
-  await loadReportData(reportId);
+  // ★ CHANGED: load payment options IN PARALLEL (previously awaited
+  //   before the report fetch, which left the payments section blank
+  //   for the full duration of that call).
+  const prerequisites =
+    reportId === "payments" && !paymentOptionsLoaded
+      ? loadPaymentOptions().then(() => {
+          paymentOptionsLoaded = true;
+        })
+      : Promise.resolve();
+
+  await Promise.all([prerequisites, reportPromise]);
 }
 
 /* -------------------------------------------------------------------------
@@ -310,9 +315,11 @@ function cancelDebounce(scope, filterName) {
    5. DATA FETCHING
    ------------------------------------------------------------------------- */
 
-async function loadReportData(scope) {
+async function loadReportData(scope, options = {}) {
   const container = document.getElementById(`${scope}-content`);
   if (!container) return;
+
+  const immediate = options.immediate === true;
 
   const token = (requestTokens[scope] = (requestTokens[scope] || 0) + 1);
 
@@ -324,12 +331,18 @@ async function loadReportData(scope) {
   const hasContent = container.classList.contains("has-content");
 
   if (!hasContent) {
+    // Synchronous placeholder insert — happens before the fetch below,
+    // so the spinner paints on the very next frame.
     container.innerHTML = `
       <div class="loadingPlaceholder">
         <i class="fas fa-spinner fa-spin"></i>
         <span>Loading report data…</span>
       </div>`;
     container.classList.remove("is-loading");
+  } else if (immediate) {
+    container.classList.add("is-loading");
+    loaderShownAt[scope] = Date.now();
+    loaderVisible[scope] = true;
   } else {
     loaderShowTimers[scope] = setTimeout(() => {
       if (requestTokens[scope] !== token) return;
@@ -831,22 +844,35 @@ async function loadPaymentOptions() {
    8. BOOTSTRAP
    ------------------------------------------------------------------------- */
 
-document.addEventListener("DOMContentLoaded", async () => {
-  await loadReportBranding();
-  await loadYearOptions();
-  await switchReport("interments");
+document.addEventListener("DOMContentLoaded", () => {
+  const initialContainer = document.getElementById("interments-content");
+  if (initialContainer) {
+    initialContainer.innerHTML = `
+      <div class="loadingPlaceholder">
+        <i class="fas fa-spinner fa-spin"></i>
+        <span>Loading report data…</span>
+      </div>`;
+    initialContainer.classList.remove("is-loading");
+  }
+
+  const reportLoad = switchReport("interments");
+
+  loadReportBranding();
+  loadYearOptions();
+
+  reportLoad.catch((err) => console.error("Initial report load failed:", err));
 });
 
 /* -------------------------------------------------------------------------
-   9. PRINT PIPELINE — refresh data, wait for paint, then print
+   9. PRINT PIPELINE
    ------------------------------------------------------------------------- */
 
-const PRINT_MIN_PAINT_MS = 120; // give the browser a beat to paint after render
-const PRINT_MAX_WAIT_MS = 4000; // hard cap so a slow image never freezes the button
+const PRINT_MIN_PAINT_MS = 120;
+const PRINT_MAX_WAIT_MS = 4000;
 
 function printCurrentReport() {
   const btn = document.getElementById("printReportBtn");
-  if (btn && btn.dataset.busy === "1") return; // prevent double-click spam
+  if (btn && btn.dataset.busy === "1") return;
 
   if (btn) {
     btn.dataset.busy = "1";
@@ -855,24 +881,24 @@ function printCurrentReport() {
     if (label) label.textContent = "Preparing…";
   }
 
-  // 1. Cancel any pending debounced reload — we're about to force one.
   for (const [key, timer] of debounceTimers.entries()) {
     clearTimeout(timer);
     debounceTimers.delete(key);
   }
 
-  // 2. Force a fresh fetch for the current report scope.
-  //    We bypass the cache-busting query the loader normally uses
-  //    by appending a timestamp — the loader already sets cache: "no-store",
-  //    so this is just belt-and-braces.
-  loadReportData(currentReportScope)
+  // ★ Refetch EVERYTHING that appears in the printed document:
+  //   1. Branding first   → settingsMap + .sigName/.sigTitle + cemetery name
+  //   2. Report data next → table body + "Generated on" meta line
+  //   3. Wait for paint + assets, then print.
+  loadReportBranding()
+    .then(() => loadReportData(currentReportScope))
     .then(() => waitForPaintAndAssets())
     .then(() => {
       window.print();
     })
     .catch((err) => {
       console.error("Print prep failed:", err);
-      // Even if the refresh failed, still let them print what's on screen.
+      // Fallback: still print whatever is on screen.
       window.print();
     })
     .finally(() => {
@@ -885,14 +911,6 @@ function printCurrentReport() {
     });
 }
 
-/**
- * Waits for:
- *   - at least one animation frame (paint)
- *   - a minimum quiet period
- *   - any <img> inside the master report card to finish loading
- *   - document.fonts.ready
- * Capped by PRINT_MAX_WAIT_MS.
- */
 function waitForPaintAndAssets() {
   const start = Date.now();
 
@@ -900,7 +918,6 @@ function waitForPaintAndAssets() {
     const finish = () => resolve();
 
     const check = () => {
-      // Hard cap
       if (Date.now() - start > PRINT_MAX_WAIT_MS) return finish();
 
       const card = document.getElementById("master-report-card");
@@ -916,14 +933,12 @@ function waitForPaintAndAssets() {
         fontsReady &&
         Date.now() - start >= PRINT_MIN_PAINT_MS
       ) {
-        // One more frame so the browser actually paints the fresh DOM
         requestAnimationFrame(() => requestAnimationFrame(finish));
       } else {
         setTimeout(check, 50);
       }
     };
 
-    // Kick off after the next frame so the loader can start rendering
     requestAnimationFrame(() => check());
   });
 }

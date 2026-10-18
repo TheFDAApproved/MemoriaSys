@@ -167,7 +167,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (logoutBtn) {
         logoutBtn.addEventListener('click', async () => {
-            if (!confirm('Are you sure you want to logout?')) return;
+            const ok = await confirm_ui('Are you sure you want to logout?', {
+                title: 'Log out?',
+                confirmText: 'Log out',
+                cancelText: 'Cancel',
+                danger: true
+            },true);
+            if (!ok) return;
 
             try {
                 await fetch('api/auth.php', { method: 'DELETE' });

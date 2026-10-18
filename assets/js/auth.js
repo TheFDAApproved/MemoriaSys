@@ -116,32 +116,141 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    /* ---- Busy / loading state ---- */
+    /* ---- Busy / loading state (spinner in the submit button) ---- */
+    // Per-form busy state. A WeakMap (not dataset) means a second busy=true
+    // can never overwrite the snapshot, and a stray busy=false for a form that
+    // was never locked is a no-op instead of corrupting state.
+    var busyState = new WeakMap();
+
+    var busyStylesInjected = false;
+
+    function injectBusyStyles() {
+        if (busyStylesInjected) return;
+        busyStylesInjected = true;
+
+        var style = document.createElement('style');
+        style.id = 'form-busy-spinner-styles';
+        style.textContent = [
+            '.btn-spinner { display: inline-block; width: 1.15em; height: 1.15em; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: btnSpin .6s linear infinite; vertical-align: -0.2em; }',
+            '@keyframes btnSpin { to { transform: rotate(360deg); } }',
+            '@media (prefers-reduced-motion: reduce) { .btn-spinner { animation-duration: 1.6s; } }',
+            '.btn-spinner-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }'
+        ].join('\n');
+        document.head.appendChild(style);
+    }
+
+    // Freeze the button's current size so swapping the text for a spinner
+    // doesn't make it collapse/jump.
+    function freezeButtonSize(btn) {
+        var rect = btn.getBoundingClientRect();
+        if (!rect.width && !rect.height) return; // hidden/unrendered — skip
+
+        var cs = window.getComputedStyle(btn);
+        var w = rect.width;
+        var h = rect.height;
+
+        // getBoundingClientRect() is border-box; min-width/min-height follow the
+        // element's box-sizing, so convert when it's content-box.
+        if (cs.boxSizing !== 'border-box') {
+            w -= (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0) +
+                (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.borderRightWidth) || 0);
+            h -= (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0) +
+                (parseFloat(cs.borderTopWidth) || 0) + (parseFloat(cs.borderBottomWidth) || 0);
+        }
+
+        if (w > 0) btn.style.minWidth = w + 'px';
+        if (h > 0) btn.style.minHeight = h + 'px';
+    }
+
+    function lockSubmitButton(btn, loadingLabel) {
+        injectBusyStyles();
+
+        // Move the original child nodes into a fragment instead of reading
+        // innerHTML: nodes (and any listeners/state on them) survive the round
+        // trip, and the restore is exact.
+        var fragment = document.createDocumentFragment();
+        while (btn.firstChild) fragment.appendChild(btn.firstChild);
+
+        var snapshot = {
+            content: fragment,
+            ariaBusy: btn.getAttribute('aria-busy'),
+            disabled: btn.disabled,
+            minWidth: btn.style.minWidth,
+            minHeight: btn.style.minHeight
+        };
+
+        freezeButtonSize(btn);
+        btn.setAttribute('aria-busy', 'true');
+
+        var spinner = document.createElement('span');
+        spinner.className = 'btn-spinner';
+        spinner.setAttribute('aria-hidden', 'true');
+        btn.appendChild(spinner);
+
+        // Keeps the button's accessible name while the visible text is gone.
+        var label = document.createElement('span');
+        label.className = 'btn-spinner-sr';
+        label.textContent = loadingLabel || 'Loading...';
+        btn.appendChild(label);
+
+        btn.disabled = true;
+
+        return snapshot;
+    }
+
+    function unlockSubmitButton(btn, snapshot) {
+        btn.textContent = ''; // remove spinner + screen-reader label
+        btn.appendChild(snapshot.content); // put the original nodes back
+
+        if (snapshot.ariaBusy === null) {
+            btn.removeAttribute('aria-busy');
+        } else {
+            btn.setAttribute('aria-busy', snapshot.ariaBusy);
+        }
+
+        btn.style.minWidth = snapshot.minWidth;
+        btn.style.minHeight = snapshot.minHeight;
+        btn.disabled = snapshot.disabled;
+    }
 
     function setFormBusy(form, submitBtn, busy, loadingLabel) {
         if (!form) return;
 
-        Array.from(form.elements).forEach(function (el) {
-            if (el === submitBtn) return;
-            if (el.type === 'hidden') return;
-            if (el.tagName === 'INPUT' || el.tagName === 'BUTTON' ||
-                el.tagName === 'SELECT' || el.tagName === 'TEXTAREA') {
-                el.disabled = busy;
-            }
-        });
-
-        if (!submitBtn) return;
-
         if (busy) {
-            if (submitBtn.dataset.idleHtml === undefined) {
-                submitBtn.dataset.idleHtml = submitBtn.innerHTML;
-            }
-            submitBtn.textContent = loadingLabel || 'Loading...';
-        } else if (submitBtn.dataset.idleHtml !== undefined) {
-            submitBtn.innerHTML = submitBtn.dataset.idleHtml;
-        }
+            // Already busy (e.g. double submit / double call): ignore. This is
+            // what prevents the spinner from being snapshotted as the "original".
+            if (busyState.has(form)) return;
 
-        submitBtn.disabled = busy;
+            var state = { disabledEls: [], button: submitBtn || null, snapshot: null };
+            busyState.set(form, state);
+
+            Array.from(form.elements).forEach(function (el) {
+                if (el === submitBtn) return;
+                if (el.type === 'hidden') return;
+                if (el.tagName === 'INPUT' || el.tagName === 'BUTTON' ||
+                    el.tagName === 'SELECT' || el.tagName === 'TEXTAREA') {
+                    // Only touch controls that were enabled; anything that was
+                    // already disabled must stay disabled after unlock.
+                    if (el.disabled) return;
+                    el.disabled = true;
+                    state.disabledEls.push(el);
+                }
+            });
+
+            if (submitBtn) {
+                state.snapshot = lockSubmitButton(submitBtn, loadingLabel);
+            }
+        } else {
+            var locked = busyState.get(form);
+            if (!locked) return; // wasn't busy — nothing to restore
+            busyState.delete(form);
+
+            locked.disabledEls.forEach(function (el) { el.disabled = false; });
+
+            if (locked.button && locked.snapshot) {
+                unlockSubmitButton(locked.button, locked.snapshot);
+            }
+        }
     }
 
     /* ---- Fetch with a minimum loading duration ---- */

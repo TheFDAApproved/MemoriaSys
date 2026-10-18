@@ -3,6 +3,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const PER_PAGE = 10;
     const MAX_SERVER_PAGES = 200;
     const API_URL = 'api/users.php';
+    const MIN_SEARCH_LENGTH = 3;   // minimum characters required to search
 
     const state = {
         allUsers: [],
@@ -70,6 +71,15 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         if (t === 'error') console.error('[accounts] ' + message);
         else console.log('[accounts][' + t + '] ' + message);
+    }
+
+    /* -------- confirm helper (uses confirm_ui.js when available) -------- */
+    async function askConfirm(message, opts) {
+        if (typeof confirm_ui === 'function') {
+            return !!(await confirm_ui(message, opts));
+        }
+        // graceful fallback if confirm_ui.js isn't loaded
+        return window.confirm(message);
     }
 
     /* -------- pending-action helpers -------- */
@@ -189,7 +199,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
         state.isLoading = true;
 
-        // Only paint the in-table loading row when there's nothing to show yet.
         if (state.allUsers.length === 0) renderTable(silent);
 
         try {
@@ -261,30 +270,25 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function renderActions(user, isEditing, rowPending) {
-        // save pending → save spinner, other two disabled
         if (rowPending && state.pendingAction.type === 'save') {
             return '<button type="button" class="actionBtn save-action is-loading" disabled title="Verifying via SMS…"><i class="fas fa-spinner fa-spin"></i></button>' +
                    '<button type="button" class="actionBtn cancel-action" disabled title="Please wait"><i class="fas fa-times"></i></button>' +
                    '<button type="button" class="actionBtn delete-action" disabled title="Please wait"><i class="fas fa-trash"></i></button>';
         }
-        // delete pending → delete spinner, edit disabled
         if (rowPending && state.pendingAction.type === 'delete') {
             return '<button type="button" class="actionBtn edit-action" disabled><i class="fas fa-pen"></i></button>' +
                    '<button type="button" class="actionBtn delete-action is-loading" disabled title="Deleting…"><i class="fas fa-spinner fa-spin"></i></button>';
         }
-        // normal edit row
         if (isEditing) {
             return '<button type="button" class="actionBtn save-action" data-action="save" title="Save"><i class="fas fa-check"></i></button>' +
                    '<button type="button" class="actionBtn cancel-action" data-action="cancel" title="Cancel"><i class="fas fa-times"></i></button>' +
                    '<button type="button" class="actionBtn delete-action" data-action="delete" title="Delete"><i class="fas fa-trash"></i></button>';
         }
-        // normal view row
         return '<button type="button" class="actionBtn edit-action" data-action="edit" title="Edit"><i class="fas fa-pen"></i></button>' +
                '<button type="button" class="actionBtn delete-action" data-action="delete" title="Delete"><i class="fas fa-trash"></i></button>';
     }
 
     function renderTable(silent) {
-        // first load with no data → loading row
         if (state.isLoading && state.allUsers.length === 0) {
             if (state.lastRenderKey !== 'loading') renderLoadingRow('Loading accounts…');
             return;
@@ -503,7 +507,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const statusSel = row.querySelector('select[data-field="status"]');
             if (!roleSel || !statusSel) return;
 
-            const newRole = roleSel.value;      // display value
+            const newRole = roleSel.value;
             const newStatus = statusSel.value;
             const original = findLocalUser(userId);
 
@@ -517,15 +521,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 return;
             }
 
-            // Optimistic local update so the pending re-render keeps the
-            // user's selection visible in the disabled selects.
             if (original) {
                 original.role = newRole;
                 original.status = newStatus;
             }
 
             setPending('save', userId);
-            renderTable(false);   // paints spinner + disabled selects
+            renderTable(false);
 
             try {
                 const res = await fetch(API_URL + '/' + userId, {
@@ -553,7 +555,6 @@ document.addEventListener('DOMContentLoaded', function () {
                     notify(serverMsg || 'Account updated successfully.', 'success');
                 }
             } catch (err) {
-                // revert optimistic update
                 if (original) {
                     original.role = oldRole;
                     original.status = oldStatus;
@@ -567,10 +568,20 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         if (action === 'delete') {
-            if (!confirm('Delete this account? This action can be undone by restoring from database.')) return;
+            const confirmed = await askConfirm(
+                'This action can be undone by restoring from the database.',
+                {
+                    title: 'Delete account?',
+                    confirmText: 'Delete',
+                    cancelText: 'Cancel',
+                    danger: true
+                }
+            );
+            if (!confirmed) return;
+            if (isPending()) return; // safety net after await
 
             setPending('delete', userId);
-            renderTable(false);   // paints spinner on delete button
+            renderTable(false);
 
             try {
                 const res = await fetch(API_URL + '/' + userId, { method: 'DELETE' });
@@ -605,7 +616,8 @@ document.addEventListener('DOMContentLoaded', function () {
         state.appliedRole = 'all';
 
         const val = els.searchInput.value;
-        if (val.length === 1 || val.length === 2) return;
+        // 1–2 characters is below the minimum: wait until it's 3+ (or empty)
+        if (val.length > 0 && val.length < MIN_SEARCH_LENGTH) return;
 
         state.appliedSearch = val;
         state.page = 1;
@@ -613,7 +625,28 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     els.searchInput.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') e.preventDefault();
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        if (isPending()) return;
+
+        const term = els.searchInput.value.trim();
+
+        // 1–2 characters typed → warn, do not search
+        if (term.length > 0 && term.length < MIN_SEARCH_LENGTH) {
+            if (typeof showAlertTOP === 'function') {
+                showAlertTOP('Search term too short', 'warning');
+            } else {
+                notify('Search term too short', 'warning');
+            }
+            return;
+        }
+
+        // valid term (3+ chars, or empty = show all) → apply search + filters
+        state.appliedStatus = els.statusFilter.value;
+        state.appliedRole = els.roleFilter.value;
+        state.appliedSearch = els.searchInput.value;
+        state.page = 1;
+        loadUsers();
     });
 
     els.searchBox.addEventListener('click', function (e) {

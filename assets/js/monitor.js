@@ -331,6 +331,9 @@
             actionButtons += `<button type="button" class="viewBtn monitorActionBtn" data-action="view-new" title="View New Occupant" aria-label="View New Occupant"><i class="fas fa-user-plus"></i></button>`;
             actionButtons += `<button type="button" class="checkBtn monitorActionBtn" data-action="check" title="Confirm Reservation" aria-label="Confirm Reservation"><i class="fas fa-check"></i></button>`;
             actionButtons += `<button type="button" class="cancelBtn monitorActionBtn" data-action="cancel" title="Cancel Reservation" aria-label="Cancel Reservation"><i class="fas fa-times"></i></button>`;
+            actionButtons += `<button type="button" class="printBtn monitorActionBtn" data-action="print" title="Print Certificate" aria-label="Print Certificate">
+          <i class="fas fa-print"></i>
+        </button>`;
 
             tr.innerHTML = `
                 <td>${escapeHtml(oldName)}</td>
@@ -514,6 +517,7 @@
         else if (action === 'view-new') await openNewOccupant(reservation);
         else if (action === 'check') await confirmReservation(reservation);
         else if (action === 'cancel') await cancelReservation(reservation);
+        else if (action === 'print') await printCertificate(reservation);
     }
 
     async function openOldOccupant(reservation) {
@@ -624,6 +628,30 @@
         if (!ok) return;
         removeRowLocally(reservation.reservation_id);
         notify('success', 'Reservation cancelled.');
+    }
+
+    // Table print button — uses pending_interment.interment_id
+    // (the ID of the NEW occupant's pending interment record).
+    async function printCertificate(reservation) {
+        // Pull fresh data so a just-confirmed reservation still prints right.
+        const fresh = await refetchReservation(reservation.reservation_id);
+        const payload = fresh || reservation;
+
+        const newOcc = payload.pending_interment || {};
+        const intermentId = newOcc.interment_id;
+
+        if (intermentId === null || intermentId === undefined || intermentId === '') {
+            notify('warning', 'No printable ID found for this reservation.');
+            return;
+        }
+
+        if (typeof window.memoria_certificate !== 'function') {
+            console.warn('[monitor.js] memoria_certificate not available.');
+            notify('error', 'Print certificate feature is not available right now.');
+            return;
+        }
+
+        window.memoria_certificate(intermentId);
     }
 
     // ------------------------------------------------------------------

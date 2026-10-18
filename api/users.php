@@ -10,8 +10,8 @@ require_once 'logger.php';
 $method = $_SERVER['REQUEST_METHOD'] ?? null;
 
 // --- REST ROUTING: PARSE THE URI ---
-$pathInfo = $_GET['path_info'] ?? $_SERVER['PATH_INFO'] ?? '';
-$pathParts = array_filter(explode('/', trim($pathInfo, '/')));
+$pathInfo  = $_GET['path_info'] ?? $_SERVER['PATH_INFO'] ?? '';
+$pathParts = array_values(array_filter(explode('/', trim($pathInfo, '/'))));
 $resourceId = array_shift($pathParts);
 
 // --- AUTHENTICATION GATEKEEPER ---
@@ -78,7 +78,6 @@ if ($method === 'GET') {
         }
         $roleFilter = strtolower(trim((string) $roleRaw));
 
-        // Friendly label → DB enum value
         $roleMap = [
             'admin'   => ROLE_ADMIN,
             'office'  => ROLE_OFFICE,
@@ -105,7 +104,6 @@ if ($method === 'GET') {
         }
         $statusFilter = strtolower(trim((string) $statusRaw));
 
-        // Friendly label → DB enum value
         $statusMap = [
             'verified'   => STATUS_VERIFIED,
             'unverified' => STATUS_UNVERIFIED,
@@ -163,7 +161,6 @@ if ($method === 'GET') {
         $page       = min($page, $totalPages);
         $offset     = ($page - 1) * $limit;
 
-        // ---- Fetch page ----
         // $limit / $offset are strict ints at this point → safe to interpolate.
         $sql = "
             SELECT user_id, username, email, role, status, phone_number, name
@@ -176,7 +173,6 @@ if ($method === 'GET') {
         $stmt->execute($params);
         $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // ---- Response ----
         $payload = [
             'users' => $users,
             'pagination' => [
@@ -218,11 +214,11 @@ if ($method === 'POST') {
         Response::error("Forbidden: You are already logged in.", 403);
     }
 
-    $email = trim($rawData['email'] ?? '');
-    $username = trim($rawData['username'] ?? '');
-    $name = trim($rawData['name'] ?? '');
-    $phone_number = formatPhNumber(trim($rawData['phone_number'] ?? ''));
-    $password = $rawData['password'] ?? '';
+    $email        = trim((string)($rawData['email'] ?? ''));
+    $username     = trim((string)($rawData['username'] ?? ''));
+    $name         = trim((string)($rawData['name'] ?? ''));
+    $phone_number = formatPhNumber(trim((string)($rawData['phone_number'] ?? '')));
+    $password     = (string)($rawData['password'] ?? '');
 
     // --- VALIDATION ---
     if (empty($username) || !preg_match('/^[a-zA-Z0-9_]{3,20}$/', $username)) {
@@ -244,6 +240,9 @@ if ($method === 'POST') {
     $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 
     // SCENARIO A: POST /users.php/forgot-password
+    // NOTE: this is a knowledge-based reset (no OTP). It relies entirely on
+    // the four identity fields. Rate limiting on this endpoint is essential;
+    // see the reverse-proxy note near the top of this file.
     if ($resourceId === 'forgot-password') {
         $stmt = $pdo->prepare("
             UPDATE users
@@ -258,13 +257,13 @@ if ($method === 'POST') {
               AND deleted_at IS NULL
         ");
         $stmt->execute([
-            ':hash' => $hashedPassword,
-            ':status' => STATUS_UNVERIFIED,
-            ':email' => $email,
-            ':username' => $username,
-            ':name' => $name,
+            ':hash'         => $hashedPassword,
+            ':status'       => STATUS_UNVERIFIED,
+            ':email'        => $email,
+            ':username'     => $username,
+            ':name'         => $name,
             ':phone_number' => $phone_number,
-            ':admin_role' => ROLE_ADMIN
+            ':admin_role'   => ROLE_ADMIN,
         ]);
 
         if ($stmt->rowCount() > 0) {
@@ -283,13 +282,13 @@ if ($method === 'POST') {
                 VALUES (:username, :email, :name, :phone_number, :hash, :role, :status)
             ");
             $stmt->execute([
-                ':username' => $username,
-                ':email' => $email,
-                ':name' => $name,
+                ':username'     => $username,
+                ':email'        => $email,
+                ':name'         => $name,
                 ':phone_number' => $phone_number,
-                ':hash' => $hashedPassword,
-                ':role' => ROLE_GROUNDS,
-                ':status' => STATUS_UNVERIFIED
+                ':hash'         => $hashedPassword,
+                ':role'         => ROLE_GROUNDS,
+                ':status'       => STATUS_UNVERIFIED,
             ]);
             // created_at/updated_at auto-set, created_by/updated_by remain NULL (public registration)
 
@@ -300,9 +299,10 @@ if ($method === 'POST') {
                 systemLog("Registration failed due to duplicate entry: $username ($email) or phone number: $phone_number", null);
                 Response::error("Conflict: The username, phone number, or email is already registered.", 409);
             }
-            systemlog($e->getMessage(), null);
+            systemLog($e->getMessage(), null);
             error_log($e->getMessage());
-            Response::error("Database error: Could not create user. " . $e->getMessage(), 500);
+            // Don't leak driver messages to the client.
+            Response::error("Database error: could not create user.", 500);
         }
     }
 
@@ -325,7 +325,32 @@ if ($method === 'DELETE') {
     }
 
     try {
-        // Soft delete: set deleted_at and updated_by
+        // Look up the target first so we can enforce the co-admin rule.
+        $stmt = $pdo->prepare("
+            SELECT user_id, username, name, role
+            FROM users
+            WHERE user_id = :id AND deleted_at IS NULL
+            LIMIT 1
+        ");
+        $stmt->execute([':id' => (int)$resourceId]);
+        $targetUser = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$targetUser) {
+            Response::error("Not Found: User does not exist or already deleted", 404);
+        }
+
+        // ---- CO-ADMIN PROTECTION ----
+        // Admins may not delete other admins. Together with the self-delete
+        // guard above, this means admins can only delete non-admin accounts.
+        if ($targetUser['role'] === ROLE_ADMIN) {
+            systemLog(
+                "{$userData['name']} ({$userData['username']}) attempted to delete fellow admin " .
+                    "{$targetUser['name']} ({$targetUser['username']}) [ID $resourceId]",
+                $userData['user_id']
+            );
+            Response::error("Forbidden: Administrators cannot delete other administrators.", 403);
+        }
+
         $stmt = $pdo->prepare("
             UPDATE users
             SET deleted_at = NOW(),
@@ -334,8 +359,8 @@ if ($method === 'DELETE') {
               AND deleted_at IS NULL
         ");
         $stmt->execute([
-            ':id' => (int)$resourceId,
-            ':updated_by' => $userData['user_id']
+            ':id'         => (int)$resourceId,
+            ':updated_by' => $userData['user_id'],
         ]);
 
         if ($stmt->rowCount() > 0) {
@@ -344,9 +369,9 @@ if ($method === 'DELETE') {
         }
         Response::error("Not Found: User does not exist or already deleted", 404);
     } catch (PDOException $e) {
-        systemlog($e->getMessage(), null);
+        systemLog($e->getMessage(), null);
         error_log($e->getMessage());
-        Response::error("Database error: Could not delete user. " . $e->getMessage(), 500);
+        Response::error("Database error: could not delete user.", 500);
     }
 }
 
@@ -363,7 +388,6 @@ if ($method === 'PUT') {
         Response::error("Bad Request: Invalid or missing user ID in URL path", 400);
     }
 
-    // First, check if the user exists and is not deleted
     $stmt = $pdo->prepare("
         SELECT user_id, username, email, role, status, phone_number, name
         FROM users
@@ -377,20 +401,35 @@ if ($method === 'PUT') {
         Response::error("User not found", 404);
     }
 
-    $targetId = (int)$resourceId;
+    $targetId     = (int)$resourceId;
     $updateFields = [];
-    $queryParams = [];
-    $isVerifying = false;
+    $queryParams  = [];
+    $isVerifying  = false;
 
-    $isSelf = ($userData['user_id'] === $targetId);
+    // FIX: strict-int comparison (previously string === int, always false).
+    $isSelf  = ((int)$userData['user_id'] === $targetId);
     $isAdmin = ($userData['role'] === ROLE_ADMIN);
 
-    // Ensure the requester has authorization to edit this account
     if (!$isSelf && !$isAdmin) {
         Response::error("Forbidden: You do not have permission to edit this user", 403);
     }
 
-    // --- STRICT ROLE & STATUS GATEKEEPER ---
+    // --- CO-ADMIN PROTECTION (PUT side) ---
+    // A peer admin may not change the sensitive fields of another admin
+    // (these are the fields that enable demotion, lockout, or impersonation).
+    if ($user['role'] === ROLE_ADMIN && !$isSelf) {
+        foreach (['role', 'status', 'password', 'phone_number'] as $f) {
+            if (!empty($rawData[$f])) {
+                systemLog(
+                    "{$userData['name']} ({$userData['username']}) attempted to modify '$f' of fellow admin ID $targetId",
+                    $userData['user_id']
+                );
+                Response::error("Forbidden: Cannot modify another administrator's $f.", 403);
+            }
+        }
+    }
+
+    // --- ROLE & STATUS GATEKEEPER ---
     if (isset($rawData['role']) || isset($rawData['status'])) {
         if (!$isAdmin) {
             Response::error("Forbidden: Only administrators can change roles and statuses", 403);
@@ -400,7 +439,7 @@ if ($method === 'PUT') {
         }
     }
 
-    // --- STANDARD FIELD VALIDATIONS (Allowed for Self AND Admin) ---
+    // --- STANDARD FIELD VALIDATIONS (Self AND Admin) ---
     if (!empty($rawData['name'])) {
         if (!preg_match('/^[a-zA-Z\s.\'-]{2,100}$/', $rawData['name'])) Response::error("Invalid full name format.", 400);
         $updateFields[] = "name = :name";
@@ -450,11 +489,9 @@ if ($method === 'PUT') {
         Response::error("Bad Request: No valid fields provided to update", 400);
     }
 
-    // Always update updated_by with the current user
-    $updateFields[] = "updated_by = :updated_by";
+    $updateFields[]             = "updated_by = :updated_by";
     $queryParams[':updated_by'] = $userData['user_id'];
-
-    $queryParams[':id'] = $targetId;
+    $queryParams[':id']         = $targetId;
 
     try {
         $stmt = $pdo->prepare("
@@ -467,14 +504,17 @@ if ($method === 'PUT') {
 
         if ($stmt->rowCount() === 0) Response::success("Looks like nothing has changed.");
 
-        // Send Verification SMS if a user was newly verified
         if ($isVerifying) {
             $stmt = $pdo->prepare("SELECT phone_number, name FROM users WHERE user_id = :id AND deleted_at IS NULL LIMIT 1");
             $stmt->execute([':id' => $targetId]);
             $targetUser = $stmt->fetch(PDO::FETCH_ASSOC);
 
             if ($targetUser && !empty($targetUser['phone_number'])) {
-                $smsStatus = sendSmsViaTextBee($targetUser['phone_number'], "Hello {$targetUser['name']}, your Memoria account has been Verified by an Administrator. You can now log-in to the system.", true);
+                $smsStatus = sendSmsViaTextBee(
+                    $targetUser['phone_number'],
+                    "Hello {$targetUser['name']}, your Memoria account has been Verified by an Administrator. You can now log-in to the system.",
+                    true
+                );
                 if (!$smsStatus['success']) {
                     systemLog("Failed to send verification SMS to User ID {$targetId}. Error: {$smsStatus['error']}", $userData['user_id']);
                     echo json_encode(["success" => true, "sms_failed" => true, "message" => "Saved changes, but failed to send SMS: " . $smsStatus['error']]);
@@ -488,8 +528,8 @@ if ($method === 'PUT') {
     } catch (PDOException $e) {
         if ($e->getCode() == 23000) Response::error("Conflict: Email or Username is already in use", 409);
         error_log($e->getMessage());
-        systemlog($e->getMessage(), null);
-        Response::error("Database error: Could not update user" . $e->getMessage(), 500);
+        systemLog($e->getMessage(), null);
+        Response::error("Database error: could not update user.", 500);
     }
 }
 

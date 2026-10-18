@@ -11,6 +11,15 @@
  * Only one remark section can be in edit mode at a time.
  *
  * No dummy data. Idempotent event binding. XSS-safe rendering.
+ *
+ * Order-stability contract:
+ *   - Verify actions update the row in place (no reload) so items never jump.
+ *   - Delete removes the row locally; a reload is only triggered when the
+ *     current page becomes empty and we can step back a page.
+ *
+ * Busy-state contract:
+ *   - While a verify/delete request is in flight, the whole <tr> is inert:
+ *     action buttons disabled, remarks cell & SMS link unclickable, row dimmed.
  */
 (function () {
     'use strict';
@@ -22,6 +31,10 @@
     const SEARCH_MIN_LEN = 3;
     const SEARCH_DEBOUNCE_MS = 350;
     const REMARK_MAX_LEN = 2000;
+
+    // Requests that take longer than this are aborted so a busy / hung
+    // backend never leaves a button stuck in the loading state.
+    const REQUEST_TIMEOUT_MS = 30000;
 
     // ------------------------------------------------------------------ state
     const state = {
@@ -88,6 +101,35 @@
         else console.log(message);
     };
 
+    /**
+     * Promise-based confirm that prefers the shared confirm_ui.js modal
+     * and gracefully falls back to native confirm() if it isn't loaded.
+     * Always await this — never test it directly.
+     */
+    async function askConfirm(message, opts) {
+        if (typeof window.confirm_ui === 'function') {
+            return !!(await window.confirm_ui(message, opts));
+        }
+        return window.confirm(message);
+    }
+
+    /**
+     * Fetch wrapper that aborts after `ms` so a slow/busy endpoint cannot
+     * leave the UI stuck in a loading state forever.
+     */
+    async function fetchWithTimeout(url, options, ms) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), ms || REQUEST_TIMEOUT_MS);
+        try {
+            const opts = Object.assign({}, options || {}, { signal: controller.signal });
+            return await fetch(url, opts);
+        } finally {
+            clearTimeout(timeout);
+        }
+    }
+
+    const isAbortError = (err) => !!(err && err.name === 'AbortError');
+
     const unwrap = (json) => (json && (json.data !== undefined ? json.data : json)) || {};
 
     const classifyStatus = (p) => {
@@ -97,6 +139,14 @@
         if (office) return 'pending_grounds';
         return 'pending_office';
     };
+
+    /** Find the <tr> for a payment id, or null. */
+    function getRow(paymentId) {
+        if (!el.tbody) return null;
+        return el.tbody.querySelector(
+            'tr[data-payment-id="' + CSS.escape(String(paymentId)) + '"]'
+        );
+    }
 
     // ------------------------------------------------------------------ role
     function getUserRole() {
@@ -161,6 +211,86 @@
         const url = 'sms:' + encodeURIComponent(phone) + '&body=' + encodeURIComponent(message || '');
         try { window.location.href = url; } catch (_) { }
     };
+
+    // ------------------------------------------------------------------ busy state
+
+    /**
+     * Puts the row containing `btn` into a "busy" state:
+     *   - row gets `pmRowBusy`, `inert`, and `aria-busy="true"`
+     *   - every action button in that row is disabled
+     *   - the clicked button shows a spinner
+     *   - the row is dimmed and gets `cursor: progress`
+     *
+     * While busy, clicks on the remarks cell and the SMS link are blocked
+     * (via CSS `pointer-events:none` on those children, plus delegation
+     * guards in the row handlers). Keyboard activation is blocked by
+     * `inert` and the same delegation guards.
+     *
+     * Returns a `restore()` function that undoes all of the above.
+     * Callers should invoke `restore()` only on the failure path; on
+     * success the row is either refreshed in place (verify) or removed
+     * (delete), so restore is unnecessary.
+     */
+    function enterRowBusy(btn) {
+        if (!btn) return function noop() {};
+
+        const row = btn.closest('tr');
+        const group = btn.closest('.pmActionGroup');
+
+        if (row) {
+            row.classList.add('pmRowBusy');
+            row.setAttribute('inert', '');
+            row.setAttribute('aria-busy', 'true');
+        }
+
+        // Fallback: no action group — just busy-state the single button.
+        if (!group) {
+            const originalHtml = btn.innerHTML;
+            const wasDisabled = btn.disabled;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            return function restore() {
+                btn.innerHTML = originalHtml;
+                btn.disabled = wasDisabled;
+                if (row) {
+                    row.classList.remove('pmRowBusy');
+                    row.removeAttribute('inert');
+                    row.removeAttribute('aria-busy');
+                }
+            };
+        }
+
+        const buttons = Array.from(group.querySelectorAll('button'));
+        const snapshot = buttons.map((b) => ({ html: b.innerHTML, disabled: b.disabled }));
+
+        buttons.forEach((b) => { b.disabled = true; });
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+        return function restore() {
+            buttons.forEach((b, i) => {
+                const snap = snapshot[i];
+                if (!snap) return;
+                b.innerHTML = snap.html;
+                b.disabled = snap.disabled;
+            });
+            if (row) {
+                row.classList.remove('pmRowBusy');
+                row.removeAttribute('inert');
+                row.removeAttribute('aria-busy');
+            }
+        };
+    }
+
+    /**
+     * Clears the busy visual state from a row without touching button HTML
+     * (used when we're about to replace the action cell entirely anyway).
+     */
+    function clearRowBusy(row) {
+        if (!row) return;
+        row.classList.remove('pmRowBusy');
+        row.removeAttribute('inert');
+        row.removeAttribute('aria-busy');
+    }
 
     // ------------------------------------------------------------------ styles
     function injectStyles() {
@@ -237,6 +367,24 @@
             .pmActionBtn--verify:focus-visible { background: #eff6ff; border-color: #dbeafe; color: #2563eb; }
             .pmActionBtn--delete:hover,
             .pmActionBtn--delete:focus-visible { background: #fef2f2; border-color: #fee2e2; color: #dc2626; }
+
+            /* ============================================================
+               Row-busy state (verify / delete in flight)
+               ============================================================ */
+            .paymentsTable tr.pmRowBusy {
+                opacity: 0.55;
+                cursor: progress;
+                user-select: none;
+                transition: opacity 0.15s ease;
+            }
+            .paymentsTable tr.pmRowBusy .pmActionGroup,
+            .paymentsTable tr.pmRowBusy .pmRemarksCell,
+            .paymentsTable tr.pmRowBusy .smsPhoneLink {
+                pointer-events: none;
+            }
+            .paymentsTable tr.pmRowBusy .pmActionBtn {
+                cursor: progress;
+            }
 
             /* ============================================================
                Verified pill
@@ -699,14 +847,14 @@
             wrap.appendChild(makeIconBtn(
                 'fas fa-check',
                 'pmActionBtn--verify',
-                () => runAction(p, 'confirm_grounds'),
+                (ev) => runAction(p, 'confirm_grounds', ev.currentTarget),
                 'Verify \u2014 mark grounds work as completed'
             ));
         } else {
             wrap.appendChild(makeIconBtn(
                 'fas fa-check',
                 'pmActionBtn--verify',
-                () => runAction(p, 'confirm_office'),
+                (ev) => runAction(p, 'confirm_office', ev.currentTarget),
                 'Verify \u2014 confirm payment received by office'
             ));
         }
@@ -714,7 +862,7 @@
         wrap.appendChild(makeIconBtn(
             'fas fa-trash',
             'pmActionBtn--delete',
-            () => confirmDelete(p),
+            (ev) => confirmDelete(p, ev.currentTarget),
             'Delete payment record'
         ));
 
@@ -796,12 +944,37 @@
         }
     }
 
-    // ------------------------------------------------------------------ remarks modal
+    // ------------------------------------------------------------------ in-place row updates
+
+    /**
+     * Refresh the status + action cells of an existing row without
+     * rebuilding the whole tbody. Used after a successful verify so the
+     * row keeps its exact position in the list.
+     */
+    function refreshRowAfterAction(payment) {
+        const row = getRow(payment.payment_id);
+        if (!row) return;
+        row.__payment = payment;
+
+        const cells = row.querySelectorAll('td');
+        if (!cells.length) return;
+
+        // status cell is second-to-last
+        const statusCell = cells[cells.length - 2];
+        if (statusCell) statusCell.innerHTML = buildStatusBadge(payment);
+
+        // action cell is last
+        const actionCell = cells[cells.length - 1];
+        if (actionCell) {
+            actionCell.innerHTML = '';
+            actionCell.appendChild(buildActionsCell(payment));
+        }
+
+        clearRowBusy(row);
+    }
+
     function refreshRowRemarks(payment) {
-        if (!el.tbody) return;
-        const row = el.tbody.querySelector(
-            'tr[data-payment-id="' + CSS.escape(String(payment.payment_id)) + '"]'
-        );
+        const row = getRow(payment.payment_id);
         if (!row) return;
         const cells = row.querySelectorAll('td');
         const remarkCell = cells[cells.length - 3];
@@ -809,6 +982,18 @@
         row.__payment = payment;
     }
 
+    /**
+     * Remove a row from the DOM without re-fetching.
+     * Returns true if the row was found and removed.
+     */
+    function removeRowLocally(payment) {
+        const row = getRow(payment.payment_id);
+        if (!row) return false;
+        row.remove();
+        return true;
+    }
+
+    // ------------------------------------------------------------------ remarks modal
     function closeRemarksModal() {
         const modal = state.remarksModal;
         if (!modal) return;
@@ -1078,7 +1263,7 @@
         renderLoading();
 
         try {
-            const res = await fetch(API_URL + '?' + buildQuery(), {
+            const res = await fetchWithTimeout(API_URL + '?' + buildQuery(), {
                 method: 'GET',
                 credentials: 'same-origin',
                 headers: { 'Accept': 'application/json' },
@@ -1099,7 +1284,10 @@
         } catch (err) {
             if (reqId !== state.requestId) return;
             console.error('[payments] load error:', err);
-            renderError(err.message || 'Unable to load payment records.');
+            const msg = isAbortError(err)
+                ? 'Loading payments timed out. Please try again.'
+                : (err.message || 'Unable to load payment records.');
+            renderError(msg);
         } finally {
             if (reqId === state.requestId) state.loading = false;
         }
@@ -1107,7 +1295,7 @@
 
     async function saveRemark(payment, type, value) {
         try {
-            const res = await fetch(API_URL + '?path_info=' + encodeURIComponent(payment.payment_id), {
+            const res = await fetchWithTimeout(API_URL + '?path_info=' + encodeURIComponent(payment.payment_id), {
                 method: 'PUT',
                 credentials: 'same-origin',
                 headers: {
@@ -1135,20 +1323,57 @@
             return true;
         } catch (err) {
             console.error('[payments] save remark error:', err);
-            notify(err.message || 'Failed to save remark.', 'error');
+            const msg = isAbortError(err)
+                ? 'Saving remark timed out. Please try again.'
+                : (err.message || 'Failed to save remark.');
+            notify(msg, 'error');
             return false;
         }
     }
 
-    async function runAction(payment, action) {
-        const prompts = {
-            confirm_office: 'Confirm this payment was received by the office?',
-            confirm_grounds: 'Mark the grounds work as completed for this payment?',
-        };
-        if (!window.confirm(prompts[action] || 'Proceed?')) return;
+    async function runAction(payment, action, btn) {
+        // Guard against double-open of the confirm modal (e.g. fast double-click).
+        if (btn && btn.dataset.confirming === '1') return;
 
+        const prompts = {
+            confirm_office: {
+                message: 'Confirm this payment was received by the office?',
+                title: 'Confirm office receipt?',
+                confirmText: 'Confirm',
+            },
+            confirm_grounds: {
+                message: 'Mark the grounds work as completed for this payment?',
+                title: 'Mark grounds as completed?',
+                confirmText: 'Confirm',
+            },
+        };
+
+        const cfg = prompts[action] || {
+            message: 'Proceed?',
+            title: 'Confirm action?',
+            confirmText: 'Confirm',
+        };
+
+        if (btn) btn.dataset.confirming = '1';
+        let ok = false;
         try {
-            const res = await fetch(API_URL + '?path_info=' + encodeURIComponent(payment.payment_id), {
+            ok = await askConfirm(cfg.message, {
+                title: cfg.title,
+                confirmText: cfg.confirmText,
+                cancelText: 'Cancel',
+            });
+        } finally {
+            if (btn) delete btn.dataset.confirming;
+        }
+        if (!ok) return;
+
+        // Enter loading state BEFORE the request so the user sees feedback
+        // while the endpoint is being hit.
+        const restore = enterRowBusy(btn);
+
+        let succeeded = false;
+        try {
+            const res = await fetchWithTimeout(API_URL + '?path_info=' + encodeURIComponent(payment.payment_id), {
                 method: 'PUT',
                 credentials: 'same-origin',
                 headers: {
@@ -1164,19 +1389,58 @@
                     || ('Request failed (HTTP ' + res.status + ')'));
             }
             notify((json && json.message) || 'Action completed.', 'success');
-            loadPayments();
+
+            // ---- No-reload local update --------------------------------
+            // Mutate the payment object optimistically and re-render only
+            // this row's status + action cells. The row keeps its exact
+            // position, so no re-ordering can happen.
+            if (action === 'confirm_office') payment.office_confirmed = 1;
+            if (action === 'confirm_grounds') payment.grounds_confirmed = 1;
+
+            refreshRowAfterAction(payment);
+            succeeded = true;
         } catch (err) {
             console.error('[payments] action error:', err);
-            notify(err.message || 'Action failed.', 'error');
+            const msg = isAbortError(err)
+                ? 'Request timed out. The server may be busy \u2014 please try again.'
+                : (err.message || 'Action failed.');
+            notify(msg, 'error');
+        } finally {
+            if (!succeeded) restore();
         }
     }
 
-    async function confirmDelete(payment) {
-        const label = payment.reference_number || ('#' + payment.payment_id);
-        if (!window.confirm('Delete payment ' + label + '? It will be hidden from this list.')) return;
+    async function confirmDelete(payment, btn) {
+        // Guard against double-open of the confirm modal (e.g. fast double-click).
+        if (btn && btn.dataset.confirming === '1') return;
 
+        const label = payment.reference_number || ('#' + payment.payment_id);
+
+        if (btn) btn.dataset.confirming = '1';
+        let ok = false;
         try {
-            const res = await fetch(API_URL + '?path_info=' + encodeURIComponent(payment.payment_id), {
+            ok = await askConfirm(
+                'Delete payment ' + label + '? It will be hidden from this list.',
+                {
+                    title: 'Delete payment?',
+                    confirmText: 'Delete',
+                    cancelText: 'Cancel',
+                    danger: true,
+                }
+            );
+        } finally {
+            if (btn) delete btn.dataset.confirming;
+        }
+        if (!ok) return;
+
+        // Enter loading state BEFORE the request so the user sees feedback
+        // (spinner on the delete button + dimmed, inert row) while the
+        // DELETE runs.
+        const restore = enterRowBusy(btn);
+
+        let succeeded = false;
+        try {
+            const res = await fetchWithTimeout(API_URL + '?path_info=' + encodeURIComponent(payment.payment_id), {
                 method: 'DELETE',
                 credentials: 'same-origin',
                 headers: { 'Accept': 'application/json' },
@@ -1189,13 +1453,39 @@
             }
             notify((json && json.message) || 'Payment deleted.', 'success');
 
-            if (el.tbody && el.tbody.children.length === 1 && state.page > 1) {
-                state.page -= 1;
+            // ---- No-reload local removal -------------------------------
+            // Remove the row directly instead of re-fetching, so the
+            // remaining rows keep their exact order.
+            const removed = removeRowLocally(payment);
+
+            if (!removed) {
+                // Unexpected: row wasn't in the DOM. Fall back to a full
+                // reload so the list isn't left showing a phantom entry.
+                loadPayments();
+            } else if (el.tbody.children.length === 0) {
+                // The page is now empty.
+                if (state.page > 1) {
+                    // Step back a page — this is the only situation where
+                    // a re-fetch is unavoidable. The previous page has
+                    // already been seen, so its order is stable.
+                    state.page -= 1;
+                    loadPayments();
+                } else {
+                    showNoData('No records found');
+                }
             }
-            loadPayments();
+            // Otherwise: leave the page slightly under-filled. The next
+            // navigation will fetch the correct slice from the server.
+
+            succeeded = true;
         } catch (err) {
             console.error('[payments] delete error:', err);
-            notify(err.message || 'Delete failed.', 'error');
+            const msg = isAbortError(err)
+                ? 'Delete request timed out. The server may be busy \u2014 please try again.'
+                : (err.message || 'Delete failed.');
+            notify(msg, 'error');
+        } finally {
+            if (!succeeded) restore();
         }
     }
 
@@ -1267,7 +1557,9 @@
                 if (smsLink && el.tbody.contains(smsLink)) {
                     e.preventDefault();
                     const row = smsLink.closest('tr');
-                    const payment = row && row.__payment;
+                    // Block interactions while the row is busy.
+                    if (!row || row.classList.contains('pmRowBusy')) return;
+                    const payment = row.__payment;
                     if (!payment) return;
 
                     const phone = (payment.payers_phone_number || '').trim();
@@ -1283,7 +1575,9 @@
                 if (remarkRow && el.tbody.contains(remarkRow)) {
                     e.preventDefault();
                     const row = remarkRow.closest('tr');
-                    const payment = row && row.__payment;
+                    // Block interactions while the row is busy.
+                    if (!row || row.classList.contains('pmRowBusy')) return;
+                    const payment = row.__payment;
                     if (!payment) return;
                     openRemarksModal(payment, remarkRow.dataset.type || '');
                 }
@@ -1295,7 +1589,9 @@
                 if (!remarkRow || !el.tbody.contains(remarkRow)) return;
                 e.preventDefault();
                 const row = remarkRow.closest('tr');
-                const payment = row && row.__payment;
+                // Block keyboard activation while the row is busy.
+                if (!row || row.classList.contains('pmRowBusy')) return;
+                const payment = row.__payment;
                 if (!payment) return;
                 openRemarksModal(payment, remarkRow.dataset.type || '');
             });
