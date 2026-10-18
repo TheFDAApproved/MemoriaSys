@@ -13,6 +13,9 @@ document.addEventListener('DOMContentLoaded', function () {
     // the user interacts with it first.
     var SHAKE_HIGHLIGHT_MS = 1500;
 
+    // How long the login success greeting is shown before redirect.
+    var LOGIN_SUCCESS_REDIRECT_MS = 3500;
+
     function readErrorMessage(data, fallback) {
         if (!data) return fallback;
         return data.message || data.error || fallback;
@@ -530,7 +533,20 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (target) {
                     success = true;
                     localStorage.setItem('justLoggedIn', '1');
-                    window.location.href = target;
+
+                    // Prefer the display name from the API; fall back to the
+                    // username the user typed if it's missing.
+                    const displayName = (payload && payload.name) ? payload.name : username;
+
+                    showAlertTOP(
+                        'Greetings ' + displayName + '! You are now logged in. Redirecting...',
+                        'success',
+                        LOGIN_SUCCESS_REDIRECT_MS
+                    );
+
+                    setTimeout(function () {
+                        window.location.href = target;
+                    }, LOGIN_SUCCESS_REDIRECT_MS);
                 } else {
                     showAlertTOP('Login succeeded, but the account role is not recognized. Please contact an administrator.', 'error');
                 }

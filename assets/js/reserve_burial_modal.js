@@ -122,6 +122,74 @@ const ReserveBurialModal = (() => {
     return local.toISOString().split("T")[0];
   }
 
+  // ---------- automated remarks helpers ----------
+  // "October 18, 2026 3:45 PM"
+  function formatRemarksTimestamp(date = new Date()) {
+    const MONTHS = [
+      "January",
+      "February",
+      "March",
+      "April",
+      "May",
+      "June",
+      "July",
+      "August",
+      "September",
+      "October",
+      "November",
+      "December",
+    ];
+    const month = MONTHS[date.getMonth()];
+    const day = date.getDate();
+    const year = date.getFullYear();
+    let hours = date.getHours();
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    const ampm = hours >= 12 ? "PM" : "AM";
+    hours = hours % 12;
+    if (hours === 0) hours = 12;
+    return `${month} ${day}, ${year} ${hours}:${minutes} ${ampm}`;
+  }
+
+  function buildRemarksSuffix() {
+    return `(Remarks added - ${formatRemarksTimestamp()})`;
+  }
+
+  // Strip any prior auto-generated marker/suffix so remarks never
+  // accumulate. Handles:
+  //   (Remarks added - October 18, 2026 3:45 PM)   [current format]
+  //   [Replace with new]                            [old-occupant marker]
+  //   [Replace] - 2026-10-18                        [legacy dated]
+  //   [Replace]                                     [legacy]
+  function stripRemarksSuffix(text) {
+    if (!text) return "";
+    let s = String(text);
+    const patterns = [
+      /\s*\(Remarks added - [^)]*\)\s*$/i,
+      /\s*\[Replace with new\]\s*$/i,
+      /\s*\[Replace\](?:\s*-\s*\d{4}-\d{2}-\d{2})?\s*$/i,
+    ];
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const re of patterns) {
+        const next = s.replace(re, "");
+        if (next !== s) {
+          s = next;
+          changed = true;
+        }
+      }
+    }
+    return s.trim();
+  }
+
+  // Old occupant: "<original remarks> [Replace with new] (Remarks added - ...)"
+  function buildDatedReplaceRemark(baseRemarks) {
+    const cleaned = stripRemarksSuffix(baseRemarks);
+    const marker = `[Replace with new]`;
+    const suffix = buildRemarksSuffix();
+    return cleaned ? `${cleaned} ${marker} ${suffix}` : `${marker} ${suffix}`;
+  }
+
   function formatPhoneValue(raw) {
     let digits = String(raw || "").replace(/\D/g, "");
     if (digits.startsWith("63")) digits = digits.slice(2);
@@ -268,11 +336,74 @@ const ReserveBurialModal = (() => {
       const original = (placeholder.textContent || "").trim();
       burialTypePlaceholderText = original || "Select Burial Type";
     }
+
+    const statusVal = modalEl.querySelector("#status")?.value || "";
+    const isInactiveStatus = statusVal === "Inactive";
     const isReadOnly = currentMode === "view" && wizardMode !== "old";
-    const isInactive = modalEl.querySelector("#status")?.value !== "Active";
+    const hidePlaceholder = isReadOnly || statusVal !== "Active";
     const hasValue = !!select.value;
-    placeholder.textContent =
-      (isReadOnly && !hasValue) || (isInactive && !hasValue) ? "" : burialTypePlaceholderText;
+
+    if (isInactiveStatus && !hasValue) {
+      placeholder.textContent = "Inactive";
+    } else if (hidePlaceholder && !hasValue) {
+      placeholder.textContent = "";
+    } else {
+      placeholder.textContent = burialTypePlaceholderText;
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Refresh the placeholder text of location dropdowns without
+  // re-rendering them. Keeps current selections intact.
+  // ------------------------------------------------------------------
+  function refreshLocationPlaceholderText() {
+    if (!modalEl) return;
+    const statusVal = modalEl.querySelector("#status")?.value || "";
+    const isInactiveStatus = statusVal === "Inactive";
+    const isView = currentMode === "view" && wizardMode !== "old";
+    const hidePlaceholder = isView || statusVal !== "Active";
+
+    // burial_block
+    const typeSel = modalEl.querySelector("#burial_block");
+    if (typeSel && typeSel.tagName === "SELECT" && typeSel.options.length) {
+      const ph = typeSel.options[0];
+      if (ph.value === "" && !typeSel.value) {
+        if (burialTypePlaceholderText === null) {
+          burialTypePlaceholderText =
+            (ph.textContent || "").trim() || "Select Burial Type";
+        }
+        if (isInactiveStatus) ph.textContent = "Inactive";
+        else if (hidePlaceholder) ph.textContent = "";
+        else ph.textContent = burialTypePlaceholderText;
+      }
+    }
+
+    // block
+    const blockSel = modalEl.querySelector("#block");
+    if (blockSel && blockSel.tagName === "SELECT" && blockSel.options.length) {
+      const ph = blockSel.options[0];
+      if (ph.value === "" && !blockSel.value) {
+        if (isInactiveStatus) ph.textContent = "Inactive";
+        else if (hidePlaceholder) ph.textContent = "";
+        else ph.textContent = "Select Block...";
+      }
+    }
+
+    // grave_code
+    const graveSel = modalEl.querySelector("#grave_code");
+    if (graveSel && graveSel.tagName === "SELECT" && graveSel.options.length) {
+      const ph = graveSel.options[0];
+      if (ph.value === "" && !graveSel.value) {
+        if (isInactiveStatus) ph.textContent = "Inactive";
+        else if (hidePlaceholder) ph.textContent = "";
+        else {
+          const hasBlock = !!(blockSel?.value || "").trim();
+          ph.textContent = hasBlock
+            ? "Select Grave Code..."
+            : "Select Block first...";
+        }
+      }
+    }
   }
 
   function selectGraveByCode(code, graveId) {
@@ -306,10 +437,10 @@ const ReserveBurialModal = (() => {
 
     const isInactive = modalEl.querySelector("#status")?.value !== "Active";
     const raw = pick(snapshotValue);
-    
+
     if (isInactive) {
-        typeEl.value = "";
-        return;
+      typeEl.value = "";
+      return;
     }
 
     if (raw) {
@@ -530,17 +661,20 @@ const ReserveBurialModal = (() => {
   }
 
   function toggleLocationFields(isInactive) {
-    const fields = ['burial_block', 'block', 'grave_code'];
-    fields.forEach(id => {
-      const el = modalEl?.querySelector('#' + id);
+    if (!modalEl) return;
+    const fields = ["burial_block", "block", "grave_code"];
+    fields.forEach((id) => {
+      const el = modalEl.querySelector("#" + id);
       if (!el) return;
       if (isInactive) {
-        el.classList.add('inactive-readonly');
-        el.value = '';
+        el.classList.add("inactive-readonly");
+        el.value = "";
       } else {
-        el.classList.remove('inactive-readonly');
+        el.classList.remove("inactive-readonly");
       }
     });
+    // Keep the placeholder text in sync (shows "Inactive" while locked).
+    refreshLocationPlaceholderText();
   }
 
   async function handleStatusChange() {
@@ -553,6 +687,7 @@ const ReserveBurialModal = (() => {
 
     if (wizardMode === "old") {
       if (isInactive) {
+        renderBlockOptions("");
         resetGraveSelectUI();
       } else {
         await loadBlocks();
@@ -636,15 +771,18 @@ const ReserveBurialModal = (() => {
     const select = modalEl.querySelector("#block");
     if (!select || select.tagName !== "SELECT") return;
 
-    const isInactive = modalEl.querySelector("#status")?.value !== "Active";
+    const statusVal = modalEl.querySelector("#status")?.value || "";
+    const isInactiveStatus = statusVal === "Inactive";
     const isView = currentMode === "view" && wizardMode !== "old";
+    const hidePlaceholder = isView || statusVal !== "Active";
     const current = keepValue !== undefined ? keepValue : select.value;
     const list = filterType ? blocksMatchingType(filterType) : blockOptions;
 
     select.innerHTML = "";
     const placeholder = document.createElement("option");
     placeholder.value = "";
-    if (isView || isInactive) placeholder.textContent = "";
+    if (isInactiveStatus) placeholder.textContent = "Inactive";
+    else if (hidePlaceholder) placeholder.textContent = "";
     else if (filterType && list.length === 0)
       placeholder.textContent = "No blocks for this Burial Type";
     else placeholder.textContent = "Select Block...";
@@ -711,16 +849,18 @@ const ReserveBurialModal = (() => {
     const select = modalEl ? modalEl.querySelector("#grave_code") : null;
     if (!select || select.tagName !== "SELECT") return;
 
-    const isInactive = modalEl.querySelector("#status")?.value !== "Active";
+    const statusVal = modalEl.querySelector("#status")?.value || "";
+    const isInactiveStatus = statusVal === "Inactive";
     const isView = currentMode === "view" && wizardMode !== "old";
+    const hidePlaceholder = isView || statusVal !== "Active";
+
     select.innerHTML = "";
     const placeholder = document.createElement("option");
     placeholder.value = "";
-    placeholder.textContent = (isView || isInactive)
-      ? ""
-      : graves.length
-        ? "Select Grave Code..."
-        : "No available grave codes";
+    if (isInactiveStatus) placeholder.textContent = "Inactive";
+    else if (hidePlaceholder) placeholder.textContent = "";
+    else if (graves.length) placeholder.textContent = "Select Grave Code...";
+    else placeholder.textContent = "No available grave codes";
     placeholder.disabled = true;
     placeholder.selected = true;
     select.appendChild(placeholder);
@@ -778,12 +918,18 @@ const ReserveBurialModal = (() => {
   function resetGraveSelectUI() {
     const select = modalEl ? modalEl.querySelector("#grave_code") : null;
     if (!select || select.tagName !== "SELECT") return;
-    const isInactive = modalEl.querySelector("#status")?.value !== "Active";
+
+    const statusVal = modalEl.querySelector("#status")?.value || "";
+    const isInactiveStatus = statusVal === "Inactive";
     const isView = currentMode === "view" && wizardMode !== "old";
+    const hidePlaceholder = isView || statusVal !== "Active";
+
     select.innerHTML = "";
     const placeholder = document.createElement("option");
     placeholder.value = "";
-    placeholder.textContent = (isView || isInactive) ? "" : "Select Block first...";
+    if (isInactiveStatus) placeholder.textContent = "Inactive";
+    else if (hidePlaceholder) placeholder.textContent = "";
+    else placeholder.textContent = "Select Block first...";
     placeholder.disabled = true;
     placeholder.selected = true;
     select.appendChild(placeholder);
@@ -1321,11 +1467,9 @@ const ReserveBurialModal = (() => {
     setIfPresent("transfer_permit_issued_by", src.transfer_permit_issued_by);
     setIfPresent("exhumation_permit_number", src.exhumation_permit_number);
 
+    // Dated, non-accumulating automated remark for old occupant.
     const oldBaseRemarks = pick(src.interment_remarks, src.remarks);
-    setIfPresent(
-      "remarks",
-      oldBaseRemarks ? `${oldBaseRemarks} [Replace]` : "[Replace]",
-    );
+    setIfPresent("remarks", buildDatedReplaceRemark(oldBaseRemarks));
 
     setIfPresent("status", "Active");
     setIfPresent("block", "");
@@ -1394,7 +1538,10 @@ const ReserveBurialModal = (() => {
         viewSnapshot?.plan_grave_code,
       );
       const atPart = oldGrave ? ` at grave ${oldGrave}` : "";
-      setIfPresent("remarks", `Replace: ${oldName}${atPart}`);
+      setIfPresent(
+        "remarks",
+        `Replace: ${oldName}${atPart} ${buildRemarksSuffix()}`,
+      );
     } else {
       // Vacant grave — no old occupant to replace.
       const vacantGrave = pick(
@@ -1405,7 +1552,9 @@ const ReserveBurialModal = (() => {
       );
       setIfPresent(
         "remarks",
-        vacantGrave ? `Assign at: ${vacantGrave}` : "Assign",
+        vacantGrave
+          ? `Assign at: ${vacantGrave} ${buildRemarksSuffix()}`
+          : `Assign ${buildRemarksSuffix()}`,
       );
     }
 
@@ -1831,10 +1980,10 @@ const ReserveBurialModal = (() => {
       lockFieldsOnly();
       updateBurialTypePlaceholder();
       updateWizardButtons();
-      
+
       const statusEl = modalEl.querySelector("#status");
       toggleLocationFields(statusEl && statusEl.value !== "Active");
-      
+
       refreshOldOccupantHeader();
       return;
     }
@@ -2176,7 +2325,7 @@ const ReserveBurialModal = (() => {
       populateFields(d);
       setEditable("view");
       updateWizardButtons();
-      
+
       const statusEl = modalEl.querySelector("#status");
       toggleLocationFields(statusEl && statusEl.value !== "Active");
 
@@ -2359,7 +2508,7 @@ const ReserveBurialModal = (() => {
     field.setAttribute("aria-readonly", "true");
     field.style.pointerEvents = "none";
     field.style.cursor = "default";
-    
+
     // Remove dropdown arrow
     field.style.appearance = "none";
     field.style.webkitAppearance = "none";
@@ -2383,7 +2532,7 @@ const ReserveBurialModal = (() => {
         field.style.cursor = "";
         field.removeAttribute("tabindex");
         field.removeAttribute("aria-readonly");
-        
+
         // Restore dropdown arrow
         field.style.appearance = "";
         field.style.webkitAppearance = "";
@@ -2558,22 +2707,22 @@ const ReserveBurialModal = (() => {
 
       burial_permit_number:
         modalEl.querySelector("#burial_permit_number")?.value.trim() || "",
-      burial_permit_date:                                             
-        modalEl.querySelector("#burial_permit_date")?.value || null,  
+      burial_permit_date:
+        modalEl.querySelector("#burial_permit_date")?.value || null,
 
       exhumation_permit_number:
         modalEl.querySelector("#exhumation_permit_number")?.value.trim() || "",
-      exhumation_permit_date:                                        
-        modalEl.querySelector("#exhumation_permit_date")?.value || null, 
+      exhumation_permit_date:
+        modalEl.querySelector("#exhumation_permit_date")?.value || null,
 
       transfer_permit_number:
         modalEl.querySelector("#transfer_permit_number")?.value.trim() || "",
-      transfer_permit_issued_by:                                      
+      transfer_permit_issued_by:
         modalEl.querySelector("#transfer_permit_issued_by")?.value.trim() || "",
-      transfer_permit_date:                                           
-        modalEl.querySelector("#transfer_permit_date")?.value || null, 
+      transfer_permit_date:
+        modalEl.querySelector("#transfer_permit_date")?.value || null,
 
-      date_exhumed:                                                  
+      date_exhumed:
         modalEl.querySelector("#date_exhumed")?.value || null,
 
       burial_clearance_date:
