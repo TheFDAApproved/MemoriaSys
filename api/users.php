@@ -406,7 +406,7 @@ if ($method === 'PUT') {
     $queryParams  = [];
     $isVerifying  = false;
 
-    // FIX: strict-int comparison (previously string === int, always false).
+    // Strict-int comparison (previously string === int, always false).
     $isSelf  = ((int)$userData['user_id'] === $targetId);
     $isAdmin = ($userData['role'] === ROLE_ADMIN);
 
@@ -414,11 +414,24 @@ if ($method === 'PUT') {
         Response::error("Forbidden: You do not have permission to edit this user", 403);
     }
 
-    // --- CO-ADMIN PROTECTION (PUT side) ---
-    // A peer admin may not change the sensitive fields of another admin
-    // (these are the fields that enable demotion, lockout, or impersonation).
+    // ==========================================================
+    // CO-ADMIN PROTECTION (PUT side)
+    // ==========================================================
+    // A peer admin may not perform actions that enable demotion,
+    // lockout, or impersonation against another admin:
+    //
+    //   - role   → only if NOT demoting (role=admin is a no-op, allowed)
+    //   - status → only if VERIFYING (verified), never un-verifying
+    //   - password     → forbidden (impersonation)
+    //   - phone_number → forbidden (impersonation / hijack of resets)
+    //
+    // Allowing "status = verified" is intentional: it lets an admin
+    // repair a legacy unverified-admin state (see the pairing rule
+    // below) without weakening the actual security boundaries.
+    // ==========================================================
     if ($user['role'] === ROLE_ADMIN && !$isSelf) {
-        foreach (['role', 'status', 'password', 'phone_number'] as $f) {
+
+        foreach (['password', 'phone_number'] as $f) {
             if (!empty($rawData[$f])) {
                 systemLog(
                     "{$userData['name']} ({$userData['username']}) attempted to modify '$f' of fellow admin ID $targetId",
@@ -426,6 +439,22 @@ if ($method === 'PUT') {
                 );
                 Response::error("Forbidden: Cannot modify another administrator's $f.", 403);
             }
+        }
+
+        if (!empty($rawData['role']) && $rawData['role'] !== ROLE_ADMIN) {
+            systemLog(
+                "{$userData['name']} ({$userData['username']}) attempted to demote fellow admin ID $targetId",
+                $userData['user_id']
+            );
+            Response::error("Forbidden: Cannot change another administrator's role.", 403);
+        }
+
+        if (!empty($rawData['status']) && $rawData['status'] !== STATUS_VERIFIED) {
+            systemLog(
+                "{$userData['name']} ({$userData['username']}) attempted to unverify fellow admin ID $targetId",
+                $userData['user_id']
+            );
+            Response::error("Forbidden: Cannot unverify another administrator.", 403);
         }
     }
 
@@ -436,6 +465,26 @@ if ($method === 'PUT') {
         }
         if ($isSelf) {
             Response::error("Forbidden: You cannot change your own role or status", 403);
+        }
+    }
+
+    // ==========================================================
+    // PROMOTION PAIRING RULE (primary fix)
+    // ==========================================================
+    // Promoting a user to admin MUST be atomic with verification.
+    // Otherwise a "verified role + unverified status" state is created,
+    // which used to be unrecoverable (co-admin protection blocked the
+    // subsequent status update). Requiring both in the same payload
+    // guarantees we never produce that broken state going forward.
+    // ==========================================================
+    if ($isAdmin && !empty($rawData['role']) && $rawData['role'] === ROLE_ADMIN) {
+        $effectiveStatus = $rawData['status'] ?? $user['status'];
+        if ($effectiveStatus !== STATUS_VERIFIED) {
+            Response::error(
+                "Bad Request: Promoting a user to admin requires status='verified' in the same request " .
+                    "(send role=admin and status=verified together).",
+                400
+            );
         }
     }
 
