@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const menuItems = document.querySelectorAll('.sidebarNav .menu');
     const logoutBtn = document.querySelector('.logout');
     const iframe = document.querySelector('iframe[name="contentFrame"]');
+    const frameLoader = document.getElementById('frameLoader');
 
     if (sidebar) {
         requestAnimationFrame(() => {
@@ -19,6 +20,51 @@ document.addEventListener('DOMContentLoaded', async () => {
             });
         });
     }
+
+    /* ------------------------------------------------------------------ *
+     * Frame loader — shows a branded spinner over the iframe while a page
+     * is fetching/parsing, so the user never sees a blank white area.
+     * ------------------------------------------------------------------ */
+    const LOADER_DELAY       = 120;   // don't flash the spinner on fast loads
+    const LOADER_MIN_VISIBLE = 250;   // avoid a 1-frame flicker
+    const LOADER_MAX_WAIT    = 6000;  // safety: never trap the user behind the spinner
+
+    let loaderShowTimer = null;
+    let loaderHideTimer = null;
+    let loaderMaxTimer  = null;
+    let loaderShownAt   = Date.now();
+
+    const showFrameLoader = (delay = LOADER_DELAY) => {
+        if (!frameLoader) return;
+        clearTimeout(loaderShowTimer);
+        clearTimeout(loaderHideTimer);
+        clearTimeout(loaderMaxTimer);
+
+        const reveal = () => {
+            loaderShownAt = Date.now();
+            frameLoader.classList.add('is-visible');
+        };
+
+        if (delay > 0) loaderShowTimer = setTimeout(reveal, delay);
+        else reveal();
+
+        // If something hangs (slow image, broken API), reveal the partial page anyway
+        loaderMaxTimer = setTimeout(hideFrameLoader, LOADER_MAX_WAIT);
+    };
+
+    const hideFrameLoader = () => {
+        if (!frameLoader) return;
+        clearTimeout(loaderShowTimer);
+        clearTimeout(loaderMaxTimer);
+        clearTimeout(loaderHideTimer);
+
+        const elapsed = Date.now() - loaderShownAt;
+        const wait = Math.max(0, LOADER_MIN_VISIBLE - elapsed);
+
+        loaderHideTimer = setTimeout(() => {
+            frameLoader.classList.remove('is-visible');
+        }, wait);
+    };
 
     const justLoggedIn = localStorage.getItem('justLoggedIn') === '1';
     if (justLoggedIn) {
@@ -49,6 +95,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
 
         if (savedPage && iframe.getAttribute('src') !== savedPage) {
+            showFrameLoader(0); // we're about to change src — cover the gap right away
             iframe.src = savedPage;
         }
     }
@@ -121,33 +168,48 @@ document.addEventListener('DOMContentLoaded', async () => {
         requestAnimationFrame(ensureActiveItemVisible);
     });
 
+    /* ------------------------------------------------------------------ *
+     * Prefetch: warm the HTTP cache on hover/focus so the iframe paints
+     * almost instantly when the user actually clicks.
+     * ------------------------------------------------------------------ */
+    const prefetched = new Set();
+
+    const prefetchPage = (url) => {
+        if (!url || prefetched.has(url)) return;
+        prefetched.add(url);
+        fetch(url, { credentials: 'same-origin', priority: 'low' })
+            .catch(() => { /* ignore — this is an optimisation only */ });
+    };
+
+    menuItems.forEach(item => {
+        const href = item.getAttribute('href');
+        if (!href) return;
+        item.addEventListener('pointerenter', () => prefetchPage(href), { passive: true });
+        item.addEventListener('focus', () => prefetchPage(href));
+    });
+
     menuItems.forEach(item => {
         item.addEventListener('click', function (e) {
             const pageUrl = this.getAttribute('href');
             if (!pageUrl || !iframe) return;
 
-            if (iframe.getAttribute('src') === pageUrl) {
-                e.preventDefault();
-                return;
-            }
-
             e.preventDefault();
+
+            if (iframe.getAttribute('src') === pageUrl) return;
 
             menuItems.forEach(i => i.classList.remove('active'));
             this.classList.add('active');
             localStorage.setItem('activePage', pageUrl);
 
-            iframe.classList.add('fading');
-
-            iframe.addEventListener('transitionend', function swap() {
-                iframe.removeEventListener('transitionend', swap);
-                iframe.src = pageUrl;
-            }, { once: true });
+            // Start the network request immediately — no waiting on animation.
+            showFrameLoader();
+            iframe.src = pageUrl;
         });
     });
 
     if (iframe) {
         iframe.addEventListener('load', () => {
+            hideFrameLoader();
             iframe.classList.remove('fading');
         });
     }

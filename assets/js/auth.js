@@ -131,9 +131,9 @@ document.addEventListener('DOMContentLoaded', function () {
         var style = document.createElement('style');
         style.id = 'form-busy-spinner-styles';
         style.textContent = [
-            '.btn-spinner { display: inline-block; width: 1.15em; height: 1.15em; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: btnSpin .6s linear infinite; vertical-align: -0.2em; }',
+            '.btn-spinner { display: inline-block; width: 1.15em; height: 1.15em; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: btnSpin 1s linear infinite; vertical-align: -0.2em; }',
             '@keyframes btnSpin { to { transform: rotate(360deg); } }',
-            '@media (prefers-reduced-motion: reduce) { .btn-spinner { animation-duration: 1.6s; } }',
+            '@media (prefers-reduced-motion: reduce) { .btn-spinner { animation-duration: 2s; } }',
             '.btn-spinner-sr { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }'
         ].join('\n');
         document.head.appendChild(style);

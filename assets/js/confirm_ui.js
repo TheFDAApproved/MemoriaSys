@@ -87,7 +87,7 @@
     "border:2px solid rgba(255,255,255,.35);",
     "border-top-color:#fff;",
     "border-radius:50%;",
-    "animation:confirmUiSpin .7s linear infinite;",
+    "animation:confirmUiSpin 1.5s linear infinite;",
     "}",
     "@keyframes confirmUiSpin{to{transform:rotate(360deg);}}",
 
