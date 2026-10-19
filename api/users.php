@@ -566,7 +566,7 @@ if ($method === 'PUT') {
                 );
                 if (!$smsStatus['success']) {
                     systemLog("Failed to send verification SMS to User ID {$targetId}. Error: {$smsStatus['error']}", $userData['user_id']);
-                    echo json_encode(["success" => true, "sms_failed" => true, "message" => "Saved changes, but failed to send SMS: " . $smsStatus['error']]);
+                    echo json_encode(["success" => true, "sms_failed" => true, "message" => "Saved changes, but failed to send SMS, Recheck you textbee api key and device id. Error: " . $smsStatus['error']]);
                     exit;
                 }
             }
