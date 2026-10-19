@@ -693,7 +693,14 @@ function importInterments($pdo, $filePath, $userId)
 // Route: GET -> export
 // ------------------------------------------------------------------
 if ($method === 'GET') {
-    exportInterments($pdo);
+    $now = new DateTime('now', new DateTimeZone(DB_TIMEZONE));
+
+    $exportFilename = 'memoria_interments_export_'
+        . $now->format('Y-m-d_H-i-s-A')
+        . '.csv';
+
+    exportInterments($pdo, $exportFilename);
+
     systemLog(
         "{$userData['name']} ({$userData['username']}) exported a csv file",
         $userData['user_id']
