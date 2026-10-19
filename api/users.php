@@ -526,7 +526,7 @@ if ($method === 'PUT') {
         systemLog("{$userData['name']} updated user with ID $targetId", $userData['user_id']);
         Response::success("User updated successfully");
     } catch (PDOException $e) {
-        if ($e->getCode() == 23000) Response::error("Conflict: Email or Username is already in use", 409);
+        if ($e->getCode() == 23000) Response::error("Conflict: Email or Username or Phone Number is already in use", 409);
         error_log($e->getMessage());
         systemLog($e->getMessage(), null);
         Response::error("Database error: could not update user.", 500);

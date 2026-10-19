@@ -2,7 +2,7 @@
    settings.js
    ================================================================ */
 
-const EXCEL_API = "api/csv"; // ← change to your actual endpoint
+const EXCEL_API = "api/csv";
 
 document.addEventListener("DOMContentLoaded", () => {
   /* ============================================================
@@ -173,22 +173,40 @@ document.addEventListener("DOMContentLoaded", () => {
   };
 
   const PROFILE_API = "api/users/me";
-  /* -------- Map an error message to the field it belongs to --------
-     Order matters: more specific patterns first. */
+
+  /* -------- Map an error message to the field(s) it belongs to --------
+     Order matters only for scroll priority: the first matched field is
+     the one the page scrolls to and focuses. All matches are highlighted.
+
+     Note the negative lookbehind on the `name` rule: it prevents the
+     substring "name" inside "Username" / "User Name" from also lighting
+     up the Full Name input. */
   const PROFILE_ERROR_FIELD_MAP = [
-    { re: /username/i, field: "user_name" },
-    { re: /email/i, field: "email" },
-    { re: /phone/i, field: "phone_number" },
+    { re: /user[\s_-]*name/i, field: "user_name" },
+    { re: /e-?mail/i, field: "email" },
+    { re: /\bphone(?:\s*number)?\b/i, field: "phone_number" },
     { re: /password/i, field: "new_pass" },
-    { re: /full name|name/i, field: "name" },
+    { re: /(?<!user[\s_-]*)\b(?:full\s+)?name\b/i, field: "name" },
   ];
 
-  function findProfileErrorField(message) {
-    if (!message) return null;
+  /**
+   * Returns EVERY field id mentioned in the server's error message,
+   * de-duplicated and in map order (which roughly mirrors the form).
+   *
+   * Example:
+   *   "Conflict: Email or Username or Phone Number is already in use"
+   *   -> ["user_name", "email", "phone_number"]
+   */
+  function findProfileErrorFields(message) {
+    if (!message) return [];
+
+    const fields = [];
     for (const { re, field } of PROFILE_ERROR_FIELD_MAP) {
-      if (re.test(message)) return field;
+      if (re.test(message) && !fields.includes(field)) {
+        fields.push(field);
+      }
     }
-    return null;
+    return fields;
   }
 
   /* -------- Fields that must not be empty --------
@@ -356,8 +374,24 @@ document.addEventListener("DOMContentLoaded", () => {
       console.error("Save Changes failed:", err);
       showAlertTOP(err.message || "Failed to update profile", "error");
 
-      const field = findProfileErrorField(err.message);
-      if (field) animateInputError(field);
+      /* ------------------------------------------------------------
+         Highlight EVERY field the server complained about.
+
+         Example: "Conflict: Email or Username or Phone Number is
+         already in use" -> shake + flash email, username AND phone.
+
+         Only the first one scrolls & takes focus so the page
+         doesn't jump around between three inputs.
+         ------------------------------------------------------------ */
+      const errorFields = findProfileErrorFields(err.message);
+      console.log("Profile error fields:", errorFields);
+
+      errorFields.forEach((fieldId, index) => {
+        animateInputError(fieldId, {
+          scroll: index === 0, // only the first offender scrolls
+          focus: index === 0, // only the first offender is focused
+        });
+      });
     } finally {
       saveChangesBtn.disabled = false;
       saveChangesBtn.innerHTML = originalHTML;
@@ -449,8 +483,80 @@ document.addEventListener("DOMContentLoaded", () => {
     { key: "footer", desc: "Report Footer Image", inputId: "footer" },
   ];
 
+  /* -------- Map an API error message back to the settings field(s) --------
+     Mirrors the shape of PROFILE_ERROR_FIELD_MAP, but each entry can
+     target multiple fields (TextBee is a pair).
+
+     Regex notes:
+       * /textbee/i        -> matches the PHP copy "TextBee was not
+                              updated…" and "TextBee credentials failed".
+       * /for\s+['"]?header['"]?/i
+                           -> matches "for 'header'" AND "for header"
+                              (the PHP uses both quoted and unquoted forms).
+     -------------------------------------------------------------- */
+  const SYSTEM_ERROR_FIELD_MAP = [
+    {
+      re: /textbee/i,
+      fields: ["textbee_api_key", "textbee_device_id"],
+    },
+    {
+      re: /for\s+['"]?header['"]?/i,
+      fields: ["header"],
+    },
+    {
+      re: /for\s+['"]?footer['"]?/i,
+      fields: ["footer"],
+    },
+  ];
+
+  /** Returns every settings field id mentioned in the error message. */
+  function findSystemErrorFields(message) {
+    if (!message) return [];
+    const out = [];
+    for (const { re, fields } of SYSTEM_ERROR_FIELD_MAP) {
+      if (re.test(message)) {
+        for (const f of fields) if (!out.includes(f)) out.push(f);
+      }
+    }
+    return out;
+  }
+
   systemConfigForm?.addEventListener("submit", async (e) => {
     e.preventDefault();
+
+    /* -------- 0. TextBee pair validation --------
+       Rules (mirrors the signatory pair below):
+         - both filled  → OK
+         - both empty   → OK (backend skips the TextBee block)
+         - only one     → ERROR, highlight the missing one
+       ------------------------------------------------- */
+    {
+      const keyEl = document.getElementById("textbee_api_key");
+      const devEl = document.getElementById("textbee_device_id");
+
+      if (keyEl && devEl) {
+        const keyVal = (keyEl.value ?? "").trim();
+        const devVal = (devEl.value ?? "").trim();
+
+        const keyEmpty = keyVal === "";
+        const devEmpty = devVal === "";
+
+        // Both filled, or both empty → fine
+        if (keyEmpty !== devEmpty) {
+          const missingEl = keyEmpty ? keyEl : devEl;
+          const missingLabel = keyEmpty ? "API Key" : "Device ID";
+          const filledLabel = keyEmpty ? "Device ID" : "API Key";
+
+          showAlertTOP(
+            `TextBee: ${filledLabel} is filled in but ${missingLabel} is empty. ` +
+              `Fill in both, or clear both.`,
+            "warning",
+          );
+          animateInputError(missingEl);
+          return;
+        }
+      }
+    }
 
     /* -------- 1. Validate signatory pairs --------
        Rules per pair:
@@ -576,6 +682,40 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (err) {
       console.error("Save Configuration failed:", err);
       showAlertTOP(err.message || "Failed to save settings.", "error");
+
+      /* ------------------------------------------------------------
+         Highlight every settings field the server complained about.
+
+         Examples:
+           "Settings saved. Except: TextBee was not updated because…"
+             -> shake API Key + Device ID.
+           "Settings saved, but TextBee credentials failed: …"
+             -> shake API Key + Device ID.
+           "Upload failed: Only PNG images are allowed for 'header'."
+             -> shake the header preview.
+           "Image upload failed for footer: …"
+             -> shake the footer preview.
+
+         For image settings we animate the preview <img> (the file
+         input itself is usually hidden/off-screen). For TextBee we
+         animate the text inputs directly. Only the first field
+         scrolls/focuses so the viewport doesn't jump around.
+         ------------------------------------------------------------ */
+      const errorFields = findSystemErrorFields(err.message);
+      console.log("Settings error fields:", errorFields);
+
+      errorFields.forEach((fieldId, index) => {
+        let target = fieldId;
+        if (fieldId === "header" || fieldId === "footer") {
+          const preview = document.getElementById(`preview_${fieldId}`);
+          if (preview) target = preview;
+        }
+
+        animateInputError(target, {
+          scroll: index === 0, // only the first offender scrolls
+          focus: index === 0, // only the first offender is focused
+        });
+      });
     } finally {
       document.getElementById("preview_footer").src = "api/images/footer.png";
       document.getElementById("preview_header").src = "api/images/header.png";
