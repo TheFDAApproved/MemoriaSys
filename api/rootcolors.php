@@ -59,3 +59,35 @@ $hasImage = file_exists($bgRelativePath);
 <?php endif; ?>
 
 }
+
+/* =========================================================
+   Disabled state — cursor + pointer-events
+   ========================================================= */
+
+/* 1. Native disabled form controls. */
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled,
+optgroup:disabled,
+option:disabled,
+fieldset:disabled {
+  cursor: not-allowed !important;
+  pointer-events: auto !important;
+}
+
+/* 2. ARIA-based disabled (works on <a>, <div>, wrappers…) */
+[aria-disabled="true"],
+[aria-disabled="true"] * {
+  cursor: not-allowed !important;
+  pointer-events: auto !important;
+}
+
+/* 3. Class-based disabled (common in component libraries). */
+.is-disabled,
+.is-disabled *,
+.disabled,
+.disabled * {
+  cursor: not-allowed !important;
+  pointer-events: auto !important;
+}

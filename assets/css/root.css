@@ -2,3 +2,41 @@
     --mainColor: #0f172a;
     --backgroundImage: url(../images/MandaueBackground.jpg);
 }
+
+/* =========================================================
+   Disabled state — cursor + pointer-events
+   ========================================================= */
+
+/* 1. Native disabled form controls.
+   Listed explicitly (not just `:disabled`) so specificity is
+   high enough to beat framework rules like
+   `.btn:disabled { pointer-events: none !important; }`.      */
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled,
+optgroup:disabled,
+option:disabled,
+fieldset:disabled {
+  cursor: not-allowed !important;
+  pointer-events: auto !important;
+}
+
+/* 2. ARIA-based disabled (works on <a>, <div>, wrappers…).
+   `cursor` and `pointer-events` both inherit, so descendants
+   automatically get the not-allowed cursor too.              */
+[aria-disabled="true"],
+[aria-disabled="true"] * {
+  cursor: not-allowed !important;
+  pointer-events: auto !important;
+}
+
+/* 3. Class-based disabled (common in component libraries).
+   Optional — drop this block if your codebase doesn't use it. */
+.is-disabled,
+.is-disabled *,
+.disabled,
+.disabled * {
+  cursor: not-allowed !important;
+  pointer-events: auto !important;
+}
