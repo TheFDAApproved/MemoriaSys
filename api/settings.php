@@ -6,6 +6,30 @@ require_once 'imagemanager.php';
 require_once 'checkuser.php';
 require_once 'textbee.php';
 
+// ============================================================================
+// Office permission allowlist.
+// Office users can CREATE / UPDATE / DELETE ONLY these setting keys.
+// Everything else (main_color, people_*, textbee_*, header, footer, ...)
+// remains admin-only.
+// ============================================================================
+const OFFICE_WRITABLE_SETTING_KEYS = [
+    'logo_1',
+    'logo_2',
+    'cemetery_logo',
+    'cemetery_mark',
+    'cemetery_background',
+    'qr_code',
+    'dept_name',
+    'cemetery_name',
+    'cemetery_address',
+    'office_address',
+    'cemetery_google_maps',
+    'contact_phone',
+    'contact_email',
+    'payment_channels_list',
+    'payment_purposes_list',
+];
+
 $userData = checkuser(false);
 $method = $_SERVER['REQUEST_METHOD'] ?? null;
 
@@ -15,19 +39,42 @@ $pathParts = array_filter(explode('/', trim($pathInfo, '/')));
 $resourceId = array_shift($pathParts);
 
 // ============================================================================
-// TIER 1: Public / Grounds / Office  →  identical level.
-//   * Only non-sensitive settings are visible.
-//   * Any write method is rejected (401 for unauthenticated, 403 otherwise).
+// ROLE FLAGS
 // ============================================================================
-$limitedRoles = [ROLE_GROUNDS, ROLE_OFFICE];
-if (!$userData || in_array($userData['role'] ?? "", $limitedRoles, true)) {
-    if ($method !== 'GET') {
-        Response::error(
-            "Forbidden: insufficient permissions to modify settings",
-            $userData ? 403 : 401
-        );
-    }
+$isPublic  = !$userData;
+$isGrounds = !$isPublic && ($userData['role'] ?? null) === ROLE_GROUNDS;
+$isOffice  = !$isPublic && ($userData['role'] ?? null) === ROLE_OFFICE;
+$isAdmin   = !$isPublic && ($userData['role'] ?? null) === ROLE_ADMIN;
 
+// Unknown role → deny outright.
+if (!$isPublic && !$isGrounds && !$isOffice && !$isAdmin) {
+    Response::error("Forbidden to access this resource", 403);
+}
+
+// Allowed HTTP methods per role.
+if ($isPublic || $isGrounds) {
+    $allowedMethods = ['GET'];
+} elseif ($isOffice) {
+    // Office may attempt writes — per-key allowlist is enforced further down.
+    $allowedMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+} else { // admin
+    $allowedMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
+}
+
+if (!in_array($method, $allowedMethods, true)) {
+    Response::error(
+        $isPublic
+            ? "Unauthorized access"
+            : "Forbidden: method '{$method}' is not allowed for your role",
+        $isPublic ? 401 : 403
+    );
+}
+
+// ============================================================================
+// PUBLIC-TIER GET (public, grounds, office): non-sensitive only.
+// Admin skips this block and uses the full view in the switch below.
+// ============================================================================
+if ($method === 'GET' && !$isAdmin) {
     try {
         if ($resourceId) {
             $stmt = $pdo->prepare("
@@ -38,7 +85,6 @@ if (!$userData || in_array($userData['role'] ?? "", $limitedRoles, true)) {
             ");
             $stmt->execute([':id' => $resourceId]);
             $setting = $stmt->fetch(PDO::FETCH_ASSOC);
-
             if (!$setting) Response::error("Public Setting not found", 404);
             Response::success("Public System setting retrieved", $setting);
         } else {
@@ -55,18 +101,12 @@ if (!$userData || in_array($userData['role'] ?? "", $limitedRoles, true)) {
         systemLog("Database Error: " . $e->getMessage(), $userData['user_id'] ?? 'Unauthenticated');
         Response::error("Internal server error.", 500);
     }
-    // Defensive fallback — unreachable if GET path above succeeded.
     Response::error("Unauthorized access", 401);
 }
 
 // ============================================================================
-// TIER 2: Admin only.
-//   Everything below assumes the caller is an administrator.
+// ADMIN (full) or OFFICE (scoped to OFFICE_WRITABLE_SETTING_KEYS) reach the switch.
 // ============================================================================
-if (($userData['role'] ?? null) !== ROLE_ADMIN) {
-    Response::error("Forbidden to access this resource", 403);
-}
-
 $manager = new ImageManager();
 
 // Parse Input Data
@@ -80,8 +120,8 @@ try {
     switch ($method) {
 
         case 'GET':
+            // Admin-only full view (public/grounds/office already served above).
             if ($resourceId) {
-                // Get single setting (only if not deleted)
                 $stmt = $pdo->prepare("
                     SELECT * FROM settings 
                     WHERE setting_id = :id AND deleted_at IS NULL
@@ -93,18 +133,17 @@ try {
                     Response::error("Setting not found", 404);
                 }
 
-                // Admin: decrypt sensitive values
+                // Admin: always decrypt sensitive values.
                 if (stripos((string)($setting['description'] ?? ''), 'sensitive') !== false) {
                     $setting['setting_value'] = decryptCredential($setting['setting_value']);
                 }
                 Response::success("System setting retrieved", $setting);
             } else {
-                // Get all settings (only active ones)
                 $stmt = $pdo->prepare("SELECT * FROM settings WHERE deleted_at IS NULL");
                 $stmt->execute();
                 $settings = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-                // Admin: decrypt sensitive values
+                // Admin: always decrypt sensitive values.
                 foreach ($settings as &$setting) {
                     if (stripos((string)($setting['description'] ?? ''), 'sensitive') !== false) {
                         $setting['setting_value'] = decryptCredential($setting['setting_value']);
@@ -133,6 +172,28 @@ try {
                     'description' => $setdesc,
                     'setting_value' => $setval
                 ]];
+            }
+
+            // ----------------------------------------------------------------
+            // OFFICE RESTRICTION: only keys in OFFICE_WRITABLE_SETTING_KEYS.
+            // Applied AFTER the single→bulk normalization above, so both
+            // payload shapes are covered by the same guard.
+            //
+            // If any submitted key is out of scope, the WHOLE request is
+            // rejected — no partial writes sneak through when an office user
+            // tries to mix allowed + forbidden keys in one bulk call.
+            // ----------------------------------------------------------------
+            if ($isOffice) {
+                foreach ($rawData['bulk_settings'] as $setting) {
+                    $key = trim($setting['setting_key'] ?? '');
+                    if (!in_array($key, OFFICE_WRITABLE_SETTING_KEYS, true)) {
+                        Response::error(
+                            "Forbidden: office users cannot modify '{$key}'. "
+                                . "Allowed keys: " . implode(', ', OFFICE_WRITABLE_SETTING_KEYS),
+                            403
+                        );
+                    }
+                }
             }
 
             $pdo->beginTransaction();
@@ -178,6 +239,10 @@ try {
                         //
                         // The helper also hardcodes the description, so we
                         // don't need the submitted description for these keys.
+                        //
+                        // NOTE: These keys are admin-only. The office allowlist
+                        // above already rejects them before we get here — this
+                        // branch is only reached by admins.
                         // ----------------------------------------------------------
                         if ($sKey === 'textbee_api_key') {
                             $textbeeApiKey = $sValue;
@@ -356,6 +421,28 @@ try {
 
             if (!$settingId) {
                 Response::error("Setting ID is required for deletion.", 400);
+            }
+
+            // Office can only delete settings whose key is in its allowlist.
+            // Look up the key first so the guard is by setting_key, matching
+            // the write path, not by setting_id.
+            if ($isOffice) {
+                $check = $pdo->prepare("
+                    SELECT setting_key FROM settings 
+                    WHERE setting_id = :id AND deleted_at IS NULL
+                ");
+                $check->execute([':id' => $settingId]);
+                $row = $check->fetch(PDO::FETCH_ASSOC);
+
+                if (!$row) {
+                    Response::error("Setting not found or already deleted", 404);
+                }
+                if (!in_array($row['setting_key'], OFFICE_WRITABLE_SETTING_KEYS, true)) {
+                    Response::error(
+                        "Forbidden: office users cannot delete '{$row['setting_key']}'",
+                        403
+                    );
+                }
             }
 
             // Soft delete: set deleted_at and updated_by
