@@ -1,3 +1,14 @@
+<script>
+    // This file is loaded via fetch() + DOMParser and injected as a fragment.
+    // Scripts in fetched HTML do NOT execute (DOMParser blocks them), so this
+    // line is silent during normal modal use.
+    //
+    // When someone navigates to burial_modal.html directly, this file is parsed
+    // as a real document, this script runs, and we bounce them to the shell.
+    // admin.html's check_user.js will route them to their own role page
+    // (grounds / office) or to login.html if their session is invalid.
+    if (window.self === window.top) location.replace('admin.html');
+</script>
 <div class="modalOverlay" id="burial_modal_overlay">
     <form id="burial_clearance_form">
         <div class="paperForm">
