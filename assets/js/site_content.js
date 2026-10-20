@@ -111,6 +111,105 @@ function wireSiteContentUI() {
 
 const SAVE_API_URL = "api/settings";
 
+// ================================================================
+//  Saving / loading state  (NEW)
+//  - Shows a spinner on the Save button
+//  - Blocks clicks on the form with a soft overlay
+//  - Restores everything via a returned restore() closure
+// ================================================================
+
+// Inject the overlay + spinner styling once.
+(function injectSaveLoadingCss() {
+  if (document.getElementById("saveLoadingStyles")) return;
+  const s = document.createElement("style");
+  s.id = "saveLoadingStyles";
+  s.textContent = `
+    #site_content_form {
+      position: relative;
+      transition: opacity 150ms ease;
+    }
+    #site_content_form.is-saving {
+      pointer-events: none;      /* blocks clicks on fields + buttons */
+    }
+    #site_content_form.is-saving::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: rgba(255, 255, 255, 0.55);
+      -webkit-backdrop-filter: blur(1px);
+      backdrop-filter: blur(1px);
+      border-radius: inherit;
+      z-index: 20;
+    }
+
+    .btn.is-loading {
+      cursor: progress !important;
+      opacity: 0.85;
+      pointer-events: none;
+    }
+  `;
+  document.head.appendChild(s);
+})();
+
+/**
+ * Find the "Save Changes" button even if it's not a <button type="submit">
+ * inside the form. Checks common IDs first, then falls back to class/text.
+ */
+function resolveSaveButton(form) {
+  return (
+    document.getElementById("save_site_content") ||
+    document.getElementById("saveSiteContent") ||
+    document.getElementById("save_changes") ||
+    document.getElementById("site_content_save") ||
+    form?.querySelector('button[type="submit"]') ||
+    form?.querySelector(".btn.primaryBtn, .btn.btnPrimary, .btn-primary") ||
+    [...document.querySelectorAll("button")].find((b) =>
+      /save\s*changes/i.test(b.textContent || ""),
+    ) ||
+    null
+  );
+}
+
+/**
+ * Toggle the "saving" state on the form + save button.
+ * Returns a restore() function that puts everything back the way it was.
+ * Call restore() in a `finally {}` so errors can't leave a stuck spinner.
+ */
+function setSavingState(isSaving, { form, button } = {}) {
+  if (!form) form = document.getElementById("site_content_form");
+  const btn = button || resolveSaveButton(form);
+
+  if (!isSaving) {
+    if (form) form.classList.remove("is-saving");
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove("is-loading");
+      btn.removeAttribute("aria-busy");
+    }
+    return () => {};
+  }
+
+  const savedHtml = btn ? btn.innerHTML : null;
+
+  if (form) form.classList.add("is-saving");
+  if (btn) {
+    btn.disabled = true;
+    btn.classList.add("is-loading");
+    btn.setAttribute("aria-busy", "true");
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+  }
+
+  return function restore() {
+    if (form) form.classList.remove("is-saving");
+    if (btn) {
+      btn.disabled = false;
+      btn.classList.remove("is-loading");
+      btn.removeAttribute("aria-busy");
+      if (savedHtml !== null) btn.innerHTML = savedHtml;
+    }
+  };
+}
+
 /**
  * Declarative spec: setting_key -> { description, kind }
  * kind: "image" | "text" | "list"
@@ -406,14 +505,9 @@ async function saveSiteContent(event) {
     }
   });
 
-  // ---- UI: disable the submit button while in flight ----
+  // ---- UI: enter the saving state (overlay + spinner) ----
   const form = document.getElementById("site_content_form");
-  const submitBtn = form?.querySelector('button[type="submit"]');
-  const originalHTML = submitBtn ? submitBtn.innerHTML : null;
-  if (submitBtn) {
-    submitBtn.disabled = true;
-    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
-  }
+  const restoreSaving = setSavingState(true, { form });
 
   try {
     let response;
@@ -460,19 +554,28 @@ async function saveSiteContent(event) {
       }
     }
   } finally {
-    if (submitBtn) {
-      submitBtn.disabled = false;
-      if (originalHTML !== null) submitBtn.innerHTML = originalHTML;
-      document.getElementById("preview_logo_1").src = "api/images/logo_1.png";
-      document.getElementById("preview_logo_2").src = "api/images/logo_2.png";
-      document.getElementById("preview_cemetery_logo").src =
-        "api/images/cemetery_logo.png";
-      document.getElementById("preview_cemetery_mark").src =
-        "api/images/cemetery_mark.png";
-      document.getElementById("preview_cemetery_background").src =
-        "api/images/cemetery_background.png";
-      document.getElementById("preview_qr_code").src = "api/images/qr_code.png";
-      refreshImages();
+    // Always restore the button + overlay, even on errors
+    restoreSaving();
+
+    // Reset preview images to their defaults (guarded — elements may be absent)
+    try {
+      const setPreview = (id, src) => {
+        const el = document.getElementById(id);
+        if (el) el.src = src;
+      };
+      setPreview("preview_logo_1", "api/images/logo_1.png");
+      setPreview("preview_logo_2", "api/images/logo_2.png");
+      setPreview("preview_cemetery_logo", "api/images/cemetery_logo.png");
+      setPreview("preview_cemetery_mark", "api/images/cemetery_mark.png");
+      setPreview(
+        "preview_cemetery_background",
+        "api/images/cemetery_background.png",
+      );
+      setPreview("preview_qr_code", "api/images/qr_code.png");
+
+      if (typeof refreshImages === "function") refreshImages();
+    } catch (e) {
+      console.warn("Preview reset skipped:", e);
     }
   }
 }
