@@ -141,9 +141,12 @@ body {
     box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.15);
   }
 
+  /* ============================================================
+     IMPORT PREVIEW — filename now wraps to multiple lines
+     ============================================================ */
   .importPreview {
     display: flex;
-    align-items: center;
+    align-items: flex-start;        /* was: center — keep icon/btn on line 1 */
     gap: 10px;
     margin-top: 12px;
     padding: 10px 12px;
@@ -161,6 +164,7 @@ body {
     flex: 0 0 auto;
     font-size: 18px;
     color: #10b981;
+    margin-top: 1px;                /* nudge icon onto the first text line */
   }
 
   .importPreview .importFileName {
@@ -169,14 +173,18 @@ body {
     font-size: 13.5px;
     font-weight: 500;
     color: #1f2937;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+
+    /* was: white-space: nowrap; overflow: hidden; text-overflow: ellipsis; */
+    white-space: normal;            /* allow wrapping to a new line          */
+    overflow-wrap: anywhere;        /* break long unbroken filenames         */
+    word-break: break-all;          /* filenames have no spaces — force break */
+    line-height: 1.4;
   }
 
   .importPreview .importRemoveBtn {
     flex: 0 0 auto;
     padding: 8px 10px;
+    margin-top: -2px;               /* visually align ✕ with line 1          */
   }
 
   .selectWrapper {
