@@ -14,43 +14,56 @@ $pathInfo = $_GET['path_info'] ?? $_SERVER['PATH_INFO'] ?? '';
 $pathParts = array_filter(explode('/', trim($pathInfo, '/')));
 $resourceId = array_shift($pathParts);
 
-// Handle Unauthenticated GET Requests First
-if (!$userData || in_array($userData['role'] ?? "", [ROLE_GROUNDS])) {
-    try {
-        if ($method === 'GET') {
-            if ($resourceId) {
-                $stmt = $pdo->prepare("
-                    SELECT setting_id, setting_key, setting_value, description FROM settings 
-                    WHERE setting_id = :id 
-                      AND deleted_at IS NULL 
-                      AND description NOT LIKE '%sensitive%'
-                ");
-                $stmt->execute([':id' => $resourceId]);
-                $setting = $stmt->fetch(PDO::FETCH_ASSOC);
+// ============================================================================
+// TIER 1: Public / Grounds / Office  →  identical level.
+//   * Only non-sensitive settings are visible.
+//   * Any write method is rejected (401 for unauthenticated, 403 otherwise).
+// ============================================================================
+$limitedRoles = [ROLE_GROUNDS, ROLE_OFFICE];
+if (!$userData || in_array($userData['role'] ?? "", $limitedRoles, true)) {
+    if ($method !== 'GET') {
+        Response::error(
+            "Forbidden: insufficient permissions to modify settings",
+            $userData ? 403 : 401
+        );
+    }
 
-                if (!$setting) Response::error("Public Setting not found", 404);
-                Response::success("Public System setting retrieved", $setting);
-            } else {
-                $stmt = $pdo->prepare("
-                    SELECT setting_id, setting_key, setting_value, description FROM settings 
-                    WHERE deleted_at IS NULL 
-                      AND description NOT LIKE '%sensitive%'
-                ");
-                $stmt->execute();
-                $settings = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                Response::success("Public System settings retrieved", $settings);
-            }
+    try {
+        if ($resourceId) {
+            $stmt = $pdo->prepare("
+                SELECT setting_id, setting_key, setting_value, description FROM settings 
+                WHERE setting_id = :id 
+                  AND deleted_at IS NULL 
+                  AND description NOT LIKE '%sensitive%'
+            ");
+            $stmt->execute([':id' => $resourceId]);
+            $setting = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$setting) Response::error("Public Setting not found", 404);
+            Response::success("Public System setting retrieved", $setting);
+        } else {
+            $stmt = $pdo->prepare("
+                SELECT setting_id, setting_key, setting_value, description FROM settings 
+                WHERE deleted_at IS NULL 
+                  AND description NOT LIKE '%sensitive%'
+            ");
+            $stmt->execute();
+            $settings = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            Response::success("Public System settings retrieved", $settings);
         }
     } catch (PDOException $e) {
-        systemLog("Database Error: " . $e->getMessage(), "Unauthenticated");
+        systemLog("Database Error: " . $e->getMessage(), $userData['user_id'] ?? 'Unauthenticated');
         Response::error("Internal server error.", 500);
     }
+    // Defensive fallback — unreachable if GET path above succeeded.
     Response::error("Unauthorized access", 401);
 }
 
-// Strict Gatekeeper
-$canModify = in_array($userData['role'], [ROLE_ADMIN, ROLE_OFFICE]);
-if (!$canModify) {
+// ============================================================================
+// TIER 2: Admin only.
+//   Everything below assumes the caller is an administrator.
+// ============================================================================
+if (($userData['role'] ?? null) !== ROLE_ADMIN) {
     Response::error("Forbidden to access this resource", 403);
 }
 
@@ -70,9 +83,9 @@ try {
             if ($resourceId) {
                 // Get single setting (only if not deleted)
                 $stmt = $pdo->prepare("
-            SELECT * FROM settings 
-            WHERE setting_id = :id AND deleted_at IS NULL
-        ");
+                    SELECT * FROM settings 
+                    WHERE setting_id = :id AND deleted_at IS NULL
+                ");
                 $stmt->execute([':id' => $resourceId]);
                 $setting = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -80,11 +93,8 @@ try {
                     Response::error("Setting not found", 404);
                 }
 
-                // Decrypt specific sensitive value (only for admins)
+                // Admin: decrypt sensitive values
                 if (stripos((string)($setting['description'] ?? ''), 'sensitive') !== false) {
-                    if ($userData['role'] !== ROLE_ADMIN) {
-                        Response::error("Forbidden to access this resource", 403);
-                    }
                     $setting['setting_value'] = decryptCredential($setting['setting_value']);
                 }
                 Response::success("System setting retrieved", $setting);
@@ -94,19 +104,14 @@ try {
                 $stmt->execute();
                 $settings = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-                // Process sensitive values
+                // Admin: decrypt sensitive values
                 foreach ($settings as &$setting) {
                     if (stripos((string)($setting['description'] ?? ''), 'sensitive') !== false) {
-                        if ($userData['role'] !== ROLE_ADMIN) {
-                            $setting = null; // mark for removal
-                        } else {
-                            $setting['setting_value'] = decryptCredential($setting['setting_value']);
-                        }
+                        $setting['setting_value'] = decryptCredential($setting['setting_value']);
                     }
                 }
                 unset($setting);
 
-                $settings = array_values(array_filter($settings, fn($s) => $s !== null));
                 Response::success("System settings retrieved", $settings);
             }
             break;
