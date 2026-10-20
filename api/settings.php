@@ -30,6 +30,34 @@ const OFFICE_WRITABLE_SETTING_KEYS = [
     'payment_purposes_list',
 ];
 
+// ============================================================================
+// Setting key types.
+//
+//   IMAGE_SETTING_KEYS     → value must be a .png filename.
+//                            Uploads are only accepted for these keys.
+//   JSON_LIST_SETTING_KEYS → value must be valid JSON (arrays of strings).
+//   Everything else        → free-text string, no special validation.
+//
+// These apply to every writer (admin + office). A key appearing in both
+// OFFICE_WRITABLE_SETTING_KEYS and IMAGE_SETTING_KEYS is writable by office
+// AND still gets the .png validation.
+// ============================================================================
+const IMAGE_SETTING_KEYS = [
+    'logo_1',
+    'logo_2',
+    'cemetery_logo',
+    'cemetery_mark',
+    'cemetery_background',
+    'qr_code',
+    'header',   // admin-only write, but still an image
+    'footer',   // admin-only write, but still an image
+];
+
+const JSON_LIST_SETTING_KEYS = [
+    'payment_channels_list',
+    'payment_purposes_list',
+];
+
 $userData = checkuser(false);
 $method = $_SERVER['REQUEST_METHOD'] ?? null;
 
@@ -183,7 +211,7 @@ try {
             // rejected — no partial writes sneak through when an office user
             // tries to mix allowed + forbidden keys in one bulk call.
             // ----------------------------------------------------------------
-            if ($isOffice) {
+            if ($isOffice && isset($rawData['bulk_settings']) && is_array($rawData['bulk_settings'])) {
                 foreach ($rawData['bulk_settings'] as $setting) {
                     $key = trim($setting['setting_key'] ?? '');
                     if (!in_array($key, OFFICE_WRITABLE_SETTING_KEYS, true)) {
@@ -223,6 +251,21 @@ try {
 
                         if (empty($sKey) || empty($sDesc)) {
                             throw new Exception("Setting key and description are strictly required for all entries.");
+                        }
+
+                        $isImageKey    = in_array($sKey, IMAGE_SETTING_KEYS, true);
+                        $isJsonListKey = in_array($sKey, JSON_LIST_SETTING_KEYS, true);
+
+                        // ----------------------------------------------------
+                        // Reject image uploads for non-image keys.
+                        // Runs BEFORE the upload so we don't waste disk I/O
+                        // on a request that's going to fail anyway.
+                        // ----------------------------------------------------
+                        if ($hasImage && !$isImageKey) {
+                            throw new Exception(
+                                "'{$sKey}' does not accept an image upload. "
+                                . "Image keys are: " . implode(', ', IMAGE_SETTING_KEYS)
+                            );
                         }
 
                         // ----------------------------------------------------------
@@ -293,25 +336,64 @@ try {
                             $uploadedFiles[] = $sValue;
                         }
 
+                        // ----------------------------------------------------
+                        // Image key WITHOUT a new upload: the value must be a
+                        // .png filename. Covers the "edit description but
+                        // keep the same image" case — the form re-submits
+                        // the existing filename, which passes this check.
+                        // ----------------------------------------------------
+                        if ($isImageKey && !$hasImage) {
+                            if ($sValue === '' || strtolower(pathinfo($sValue, PATHINFO_EXTENSION)) !== 'png') {
+                                throw new Exception(
+                                    "'{$sKey}' requires a PNG image. Upload a new file or keep the existing .png filename."
+                                );
+                            }
+                        }
+
+                        // ----------------------------------------------------
+                        // JSON list key: value must be valid JSON.
+                        // Only checked when no image was uploaded (these keys
+                        // aren't images, and the reject above already caught
+                        // the "upload to non-image key" case anyway).
+                        // ----------------------------------------------------
+                        if ($isJsonListKey && !$hasImage && $sValue !== '') {
+                            json_decode($sValue);
+                            if (json_last_error() !== JSON_ERROR_NONE) {
+                                throw new Exception("'{$sKey}' must be valid JSON.");
+                            }
+                        }
+
                         // Encrypt before saving if description flags it as sensitive
                         if (stripos($sDesc, 'sensitive') !== false) {
                             $sValue = encryptCredential($sValue);
                         }
 
-                        // ================================================================
-                        // UPDATED QUERY: now includes audit columns and restores soft-deleted
-                        // ================================================================
+                        // ----------------------------------------------------
+                        // Upsert settings by key.
+                        //
+                        //   ACTIVE row exists  → UNIQUE on active_setting_key
+                        //                        fires → update in place.
+                        //   NO active row      → a NEW row is inserted. Any
+                        //                        soft-deleted row with the
+                        //                        same key stays untouched (its
+                        //                        active_setting_key is NULL,
+                        //                        so it can't block the insert).
+                        //
+                        // Soft-deleted keys are intentionally NOT revived.
+                        // Re-saving a deleted key produces a new row with a
+                        // new setting_id; the old soft-deleted row is
+                        // preserved as history.
+                        // ----------------------------------------------------
                         $sql = "
                             INSERT INTO settings 
-                                (setting_key, setting_value, description, created_at, updated_at, created_by, updated_by, deleted_at)
+                                (setting_key, setting_value, description, created_at, updated_at, created_by, updated_by)
                             VALUES 
-                                (:key, :value, :desc, NOW(), NOW(), :created_by, :updated_by, NULL)
+                                (:key, :value, :desc, NOW(), NOW(), :created_by, :updated_by)
                             ON DUPLICATE KEY UPDATE
                                 setting_value = VALUES(setting_value),
                                 description   = VALUES(description),
                                 updated_at    = NOW(),
-                                updated_by    = VALUES(updated_by),
-                                deleted_at    = NULL
+                                updated_by    = VALUES(updated_by)
                         ";
 
                         $stmt = $pdo->prepare($sql);
@@ -423,9 +505,7 @@ try {
                 Response::error("Setting ID is required for deletion.", 400);
             }
 
-            // Office can only delete settings whose key is in its allowlist.
-            // Look up the key first so the guard is by setting_key, matching
-            // the write path, not by setting_id.
+            // Office can delete only allowlisted keys — scoped by setting_key, not ID.
             if ($isOffice) {
                 $check = $pdo->prepare("
                     SELECT setting_key FROM settings 
@@ -473,3 +553,4 @@ try {
     systemLog("Database Error: " . $e->getMessage(), $userData['user_id'] ?? 'Unknown');
     Response::error("An internal server error occurred. " . $e->getMessage(), 500);
 }
+
