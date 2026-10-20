@@ -39,6 +39,77 @@
         return;
     }
 
+    // NEW: global lock so only one row-action can run at a time.
+    // Prevents double-click / cross-button re-entrancy.
+    let actionInProgress = false;
+
+    // ---------- NEW: button loading state ----------
+
+    function injectLoadingStyles() {
+        if (document.getElementById('recordsBtnLoadingStyles')) return;
+        const style = document.createElement('style');
+        style.id = 'recordsBtnLoadingStyles';
+        style.textContent = `
+            .records-btn-loading {
+                pointer-events: none !important;
+                cursor: progress;
+            }
+            .records-btn-loading > * {
+                opacity: 0.35;
+            }
+            .records-btn-loading::after {
+                content: "";
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                width: 14px;
+                height: 14px;
+                margin: -7px 0 0 -7px;
+                border: 2px solid rgba(0, 0, 0, 0.55);
+                border-top-color: transparent;
+                border-radius: 50%;
+                box-sizing: border-box;
+                animation: recordsBtnSpin 0.7s linear infinite;
+                pointer-events: none;
+            }
+            @keyframes recordsBtnSpin {
+                to { transform: rotate(360deg); }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // Runs `fn` while showing a spinner on `btn`. Guarantees cleanup on
+    // success OR failure. Only sets position:relative when the button is
+    // statically positioned, so fixed/absolute/relative buttons don't jump.
+    async function runAction(btn, fn) {
+        if (actionInProgress) return;
+        if (!btn || btn.dataset.loading === 'true') return;
+
+        actionInProgress = true;
+        const prevDisabled = btn.disabled;
+
+        const wasStatic = window.getComputedStyle(btn).position === 'static';
+        if (wasStatic) btn.style.position = 'relative';
+
+        btn.dataset.loading = 'true';
+        btn.classList.add('records-btn-loading');
+        btn.disabled = true;
+
+        try {
+            await new Promise((r) => requestAnimationFrame(() => r()));
+            await fn();
+        } catch (err) {
+            console.error('[reserve.js] Action failed:', err);
+        } finally {
+            btn.classList.remove('records-btn-loading');
+            btn.disabled = prevDisabled;
+            if (wasStatic) btn.style.position = '';
+            delete btn.dataset.loading;
+            actionInProgress = false;
+        }
+    }
+
     // ------------------------------------------------------------------
     // Flatten the nested API item  {type, grave:{...}, interment:{...}|null}
     // into the flat shape the rest of this file (and the modal) expects.
@@ -525,20 +596,26 @@
         fetchReservations();
     }
 
-    function handleReserveClick(event) {
+    async function handleReserveClick(event) {
         const btn = event.currentTarget;
         const graveId = Number(btn.dataset.graveId);
         const item = state.items.find((row) => Number(row.grave_id) === graveId);
         if (!item) return;
-        openReserveModal(item);
+
+        await runAction(btn, async () => {
+            await openReserveModal(item);
+        });
     }
 
-    function handleViewClick(event) {
+    async function handleViewClick(event) {
         const btn = event.currentTarget;
         const graveId = Number(btn.dataset.graveId);
         const item = state.items.find((row) => Number(row.grave_id) === graveId);
         if (!item) return;
-        openEditOldOccupant(item);
+
+        await runAction(btn, async () => {
+            await openEditOldOccupant(item);
+        });
     }
 
     async function openEditOldOccupant(item) {
@@ -546,12 +623,10 @@
         const payload = fresh || item;
 
         if (typeof window.openEditOldOccupantModal === 'function') {
-            window.openEditOldOccupantModal(payload);
-            return;
+            return await Promise.resolve(window.openEditOldOccupantModal(payload));
         }
         if (typeof window.openReserveBurialModal === 'function') {
-            window.openReserveBurialModal(payload);
-            return;
+            return await Promise.resolve(window.openReserveBurialModal(payload));
         }
         document.dispatchEvent(new CustomEvent('reserve:edit-old', { detail: payload }));
     }
@@ -581,18 +656,15 @@
         window.openSmsModal(phone, message);
     }
 
-    function openReserveModal(item) {
+    async function openReserveModal(item) {
         if (typeof window.openReserveBurialModal === 'function') {
-            window.openReserveBurialModal(item);
-            return;
+            return await Promise.resolve(window.openReserveBurialModal(item));
         }
         if (window.ReserveBurialModal && typeof window.ReserveBurialModal.open === 'function') {
-            window.ReserveBurialModal.open('add', item);
-            return;
+            return await Promise.resolve(window.ReserveBurialModal.open('add', item));
         }
         if (typeof window.openBurialModal === 'function') {
-            window.openBurialModal(item);
-            return;
+            return await Promise.resolve(window.openBurialModal(item));
         }
         document.dispatchEvent(new CustomEvent('reserve:open', { detail: item }));
     }
@@ -602,12 +674,10 @@
         const payload = fresh || item;
 
         if (typeof window.openViewBurialModal === 'function') {
-            window.openViewBurialModal(payload);
-            return;
+            return await Promise.resolve(window.openViewBurialModal(payload));
         }
         if (window.ReserveBurialModal && typeof window.ReserveBurialModal.open === 'function') {
-            window.ReserveBurialModal.open('view', payload);
-            return;
+            return await Promise.resolve(window.ReserveBurialModal.open('view', payload));
         }
         document.dispatchEvent(new CustomEvent('reserve:view', { detail: payload }));
     }
@@ -785,6 +855,9 @@
     }
 
     if (els.noData) els.noData.style.display = 'none';
+
+    // NEW: inject spinner CSS once before first render.
+    injectLoadingStyles();
 
     fetchReservations();
 })();

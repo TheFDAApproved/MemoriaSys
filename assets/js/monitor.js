@@ -37,6 +37,77 @@
         return;
     }
 
+    // NEW: global lock so only one row-action can run at a time.
+    // Prevents double-click / cross-button re-entrancy.
+    let actionInProgress = false;
+
+    // ---------- NEW: button loading state ----------
+
+    function injectLoadingStyles() {
+        if (document.getElementById('recordsBtnLoadingStyles')) return;
+        const style = document.createElement('style');
+        style.id = 'recordsBtnLoadingStyles';
+        style.textContent = `
+            .records-btn-loading {
+                pointer-events: none !important;
+                cursor: progress;
+            }
+            .records-btn-loading > * {
+                opacity: 0.35;
+            }
+            .records-btn-loading::after {
+                content: "";
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                width: 14px;
+                height: 14px;
+                margin: -7px 0 0 -7px;
+                border: 2px solid rgba(0, 0, 0, 0.55);
+                border-top-color: transparent;
+                border-radius: 50%;
+                box-sizing: border-box;
+                animation: recordsBtnSpin 0.7s linear infinite;
+                pointer-events: none;
+            }
+            @keyframes recordsBtnSpin {
+                to { transform: rotate(360deg); }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // Runs `fn` while showing a spinner on `btn`. Guarantees cleanup on
+    // success OR failure. Only sets position:relative when the button is
+    // statically positioned, so fixed/absolute/relative buttons don't jump.
+    async function runAction(btn, fn) {
+        if (actionInProgress) return;
+        if (!btn || btn.dataset.loading === 'true') return;
+
+        actionInProgress = true;
+        const prevDisabled = btn.disabled;
+
+        const wasStatic = window.getComputedStyle(btn).position === 'static';
+        if (wasStatic) btn.style.position = 'relative';
+
+        btn.dataset.loading = 'true';
+        btn.classList.add('records-btn-loading');
+        btn.disabled = true;
+
+        try {
+            await new Promise((r) => requestAnimationFrame(() => r()));
+            await fn();
+        } catch (err) {
+            console.error('[monitor.js] Action failed:', err);
+        } finally {
+            btn.classList.remove('records-btn-loading');
+            btn.disabled = prevDisabled;
+            if (wasStatic) btn.style.position = '';
+            delete btn.dataset.loading;
+            actionInProgress = false;
+        }
+    }
+
     // ------------------------------------------------------------------
     // utilities
     // ------------------------------------------------------------------
@@ -513,19 +584,21 @@
         if (!reservation) return;
 
         const action = btn.dataset.action;
-        if (action === 'view-old') await openOldOccupant(reservation);
-        else if (action === 'view-new') await openNewOccupant(reservation);
-        else if (action === 'check') await confirmReservation(reservation);
-        else if (action === 'cancel') await cancelReservation(reservation);
-        else if (action === 'print') await printCertificate(reservation);
+
+        await runAction(btn, async () => {
+            if (action === 'view-old') await openOldOccupant(reservation);
+            else if (action === 'view-new') await openNewOccupant(reservation);
+            else if (action === 'check') await confirmReservation(reservation);
+            else if (action === 'cancel') await cancelReservation(reservation);
+            else if (action === 'print') await printCertificate(reservation);
+        });
     }
 
     async function openOldOccupant(reservation) {
         const fresh = await refetchReservation(reservation.reservation_id);
         const payload = fresh || reservation;
         if (typeof window.openMonitorOldOccupant === 'function') {
-            window.openMonitorOldOccupant(payload);
-            return;
+            return await Promise.resolve(window.openMonitorOldOccupant(payload));
         }
         document.dispatchEvent(new CustomEvent('monitor:view-old', { detail: payload }));
     }
@@ -534,8 +607,7 @@
         const fresh = await refetchReservation(reservation.reservation_id);
         const payload = fresh || reservation;
         if (typeof window.openMonitorNewOccupant === 'function') {
-            window.openMonitorNewOccupant(payload);
-            return;
+            return await Promise.resolve(window.openMonitorNewOccupant(payload));
         }
         document.dispatchEvent(new CustomEvent('monitor:view-new', { detail: payload }));
     }
@@ -651,7 +723,7 @@
             return;
         }
 
-        window.memoria_certificate(intermentId);
+        await Promise.resolve(window.memoria_certificate(intermentId));
     }
 
     // ------------------------------------------------------------------
@@ -739,6 +811,9 @@
         toggleSearchClear(v);
     }
     if (els.noData) els.noData.style.display = 'none';
+
+    // NEW: inject spinner CSS once before first render.
+    injectLoadingStyles();
 
     fetchReservations();
 })();

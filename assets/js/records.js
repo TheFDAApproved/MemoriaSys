@@ -41,6 +41,83 @@
     let searchClearBtn = null;
     let booted = false;
 
+    // NEW: global lock so only one modal-opening action can run at a time.
+    // Prevents double-open if the user clicks two different buttons quickly.
+    let actionInProgress = false;
+
+    // ---------- NEW: button loading state ----------
+
+    function injectLoadingStyles() {
+        if (document.getElementById('recordsBtnLoadingStyles')) return;
+        const style = document.createElement('style');
+        style.id = 'recordsBtnLoadingStyles';
+        style.textContent = `
+            .records-btn-loading {
+                pointer-events: none !important;
+                cursor: progress;
+            }
+            .records-btn-loading > * {
+                opacity: 0.35;
+            }
+            .records-btn-loading::after {
+                content: "";
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                width: 14px;
+                height: 14px;
+                margin: -7px 0 0 -7px;
+                border: 2px solid rgba(0, 0, 0, 0.55);
+                border-top-color: transparent;
+                border-radius: 50%;
+                box-sizing: border-box;
+                animation: recordsBtnSpin 0.7s linear infinite;
+                pointer-events: none;
+            }
+            @keyframes recordsBtnSpin {
+                to { transform: rotate(360deg); }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    // Runs `fn` while showing a spinner on `btn`. Guarantees cleanup on
+    // success OR failure. Safe against double-clicks and cross-button
+    // re-entrancy (global actionInProgress flag).
+    async function runAction(btn, fn) {
+        if (actionInProgress) return;
+        if (!btn || btn.dataset.loading === 'true') return;
+
+        actionInProgress = true;
+        const prevDisabled = btn.disabled;
+
+        // Only give the button a containing block for the ::after spinner
+        // if it isn't positioned already. Floating / absolutely-positioned
+        // buttons (e.g. the "+" add button) already are, and overriding
+        // their position would make them jump mid-load.
+        const wasStatic = window.getComputedStyle(btn).position === 'static';
+        if (wasStatic) btn.style.position = 'relative';
+
+        btn.dataset.loading = 'true';
+        btn.classList.add('records-btn-loading');
+        btn.disabled = true;
+
+        try {
+            // Yield one frame so the loading state actually paints before
+            // fn runs (important when fn is mostly synchronous).
+            await new Promise((r) => requestAnimationFrame(() => r()));
+            await fn();
+        } catch (err) {
+            console.error('[records.js] Action failed:', err);
+        } finally {
+            btn.classList.remove('records-btn-loading');
+            btn.disabled = prevDisabled;
+            if (wasStatic) btn.style.position = '';
+            delete btn.dataset.loading;
+            actionInProgress = false;
+        }
+    }
+
     // ---------- formatting helpers ----------
 
     // Helper to strictly enforce only Active or Inactive statuses
@@ -463,11 +540,15 @@
          </div>`
             : dash(item.control_number);
 
+        // NOTE: inline onclick="memoria_certificate(...)" was removed from the
+        // print button — the delegated handler in onRowActionClick now owns
+        // the call so we can show a loading state. data-id was added so the
+        // handler can resolve it.
         const actionButtons = `
         <button type="button" class="viewBtn" data-action="view" data-id="${id}" title="View / Edit" aria-label="View / Edit">
           <i class="fas fa-file-lines"></i>
         </button>
-        <button type="button" class="printBtn" data-action="print" onclick="memoria_certificate('${id}')" title="Print" aria-label="Print">
+        <button type="button" class="printBtn" data-action="print" data-id="${id}" title="Print" aria-label="Print">
           <i class="fas fa-print"></i>
         </button>
         <button type="button" class="deleteBtn" data-action="delete" data-id="${id}" title="Delete" aria-label="Delete">
@@ -656,6 +737,8 @@
     // ---------- event wiring ----------
 
     function bindEvents() {
+        injectLoadingStyles();
+
         if (els.searchInput && !els.searchInput.__recordsBound) {
             els.searchInput.__recordsBound = true;
 
@@ -722,14 +805,16 @@
         }
     }
 
-    function onAddClick(e) {
+    async function onAddClick(e) {
         e.preventDefault();
 
         const takenControlNos = state.items
             .map((r) => r.control_number)
             .filter(Boolean);
 
-        global.BurialModal.open('add', {}, { takenControlNos });
+        await runAction(els.addBtn, async () => {
+            await global.BurialModal.open('add', {}, { takenControlNos });
+        });
     }
 
     function handleSmsClick(link) {
@@ -766,33 +851,45 @@
             const item = RecordsAPI.getItem(id);
 
             if (action === 'view') {
-                // Fetch the full record so the modal sees the freshest live
-                // row (single-GET returns flat: index 0 = live, 1..n = history).
-                let fullItem = item;
-                try {
-                    const resData = await RecordsAPI.get(id);
-                    if (resData && Array.isArray(resData.interments) && resData.interments.length > 0) {
-                        fullItem = resData.interments[0];
+                await runAction(btn, async () => {
+                    // Fetch the full record so the modal sees the freshest live
+                    // row (single-GET returns flat: index 0 = live, 1..n = history).
+                    let fullItem = item;
+                    try {
+                        const resData = await RecordsAPI.get(id);
+                        if (resData && Array.isArray(resData.interments) && resData.interments.length > 0) {
+                            fullItem = resData.interments[0];
+                        }
+                    } catch (err) {
+                        console.warn('[records.js] Failed to fetch full item before viewing:', err);
                     }
-                } catch (err) {
-                    console.warn('[records.js] Failed to fetch full item before viewing:', err);
-                }
 
-                global.BurialModal.open('view', fullItem, {
-                    takenControlNos: state.items
-                        .filter((r) => Number(r.interment_id) !== Number(id))
-                        .map((r) => r.control_number),
+                    await global.BurialModal.open('view', fullItem, {
+                        takenControlNos: state.items
+                            .filter((r) => Number(r.interment_id) !== Number(id))
+                            .map((r) => r.control_number),
+                    });
                 });
                 return;
             }
 
             if (action === 'print') {
-                document.dispatchEvent(new CustomEvent('records:print', { detail: { item, id } }));
+                await runAction(btn, async () => {
+                    // Inline onclick was removed from renderMainRow — the
+                    // call now lives here so we can await it and manage the
+                    // loading state.
+                    if (typeof global.memoria_certificate === 'function') {
+                        await Promise.resolve(global.memoria_certificate(id));
+                    }
+                    document.dispatchEvent(new CustomEvent('records:print', { detail: { item, id } }));
+                });
                 return;
             }
 
             if (action === 'delete') {
-                handleDelete(id, item);
+                await runAction(btn, async () => {
+                    await handleDelete(id, item);
+                });
                 return;
             }
             return;
