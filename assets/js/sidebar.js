@@ -250,42 +250,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    try {
-        const res = await fetch('api/auth.php');
-        if (!res.ok) return;
-        const body = await res.json();
-
-        const payload = (body && body.data) ? body.data : body;
-        if (!payload || (!payload.username && !payload.name)) return;
-
-        const nameEl = document.getElementById('user_name');
-        const roleEl = document.getElementById('user_role');
-        const avatarEl = document.getElementById('user_avatar');
-
-        const displayName = payload.username || payload.name || '';
-        if (nameEl) nameEl.textContent = displayName;
-
-        const roleLabel = payload.role === 'Grounds Staff' ? 'Ground Staff'
-            : payload.role === 'Office Staff' ? 'Office Staff'
-                : payload.role === 'Administrator' ? 'Administrator'
-                    : payload.role || '';
-        if (roleEl) roleEl.textContent = roleLabel;
-
-        if (avatarEl) avatarEl.textContent = getInitials(displayName);
-    } catch (err) {
-        console.error('Failed to load sidebar user info:', err);
-    }
-
     updateSidebarTime();
     setInterval(updateSidebarTime, 1000);
 });
-
-function getInitials(username) {
-    const words = String(username || '').trim().split(/\s+/).filter(Boolean);
-    if (words.length === 0) return '--';
-    if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
-    return (words[0][0] + words[1][0]).toUpperCase();
-}
 
 function updateSidebarTime() {
     const displayElement = document.getElementById('date_time_display');

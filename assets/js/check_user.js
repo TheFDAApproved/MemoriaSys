@@ -113,6 +113,17 @@
     }
 
     /* =================================================================
+       SHARED HELPERS
+       ================================================================= */
+
+    function getInitials(username) {
+        var words = String(username || '').trim().split(/\s+/).filter(Boolean);
+        if (words.length === 0) return '--';
+        if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+        return (words[0][0] + words[1][0]).toUpperCase();
+    }
+
+    /* =================================================================
        FIGURE OUT WHERE WE ARE
        ================================================================= */
 
@@ -182,6 +193,44 @@
             if (requiredRole && role !== requiredRole) {
                 deny(homePage || LOGIN_PAGE);
                 return;
+            }
+
+            /* ---------- 3. Populate the sidebar user card ---------- *
+             * NEW: moved here from sidebar.js so the shell only makes
+             * ONE call to api/auth.php instead of two. This runs only
+             * on the shell pages (admin.html, grounds.html, office.html)
+             * because:
+             *
+             *   - auth pages take the isAuthPage branch above and return
+             *     before ever reaching this code, AND
+             *   - sub-pages running inside the iframe don't have these
+             *     DOM ids, so the getElementById guards no-op silently.
+             *
+             * Doing this BEFORE allow() means the user card is already
+             * filled when the page is first revealed — no "--" flash,
+             * no pop-in of name/role/initials on load.
+             *
+             * The `window.self === window.top` check is a cheap belt-
+             * and-suspenders: it makes the "shell only" intent explicit
+             * and skips three getElementById lookups when we're in the
+             * iframe, even though the per-element guards would already
+             * make it safe.
+             * ------------------------------------------------------- */
+            if (window.self === window.top) {
+                var nameEl   = document.getElementById('user_name');
+                var roleEl   = document.getElementById('user_role');
+                var avatarEl = document.getElementById('user_avatar');
+
+                var displayName = payload.username || payload.name || '';
+                if (nameEl) nameEl.textContent = displayName;
+
+                var roleLabel = payload.role === 'Grounds Staff' ? 'Ground Staff'
+                    : payload.role === 'Office Staff' ? 'Office Staff'
+                        : payload.role === 'Administrator' ? 'Administrator'
+                            : payload.role || '';
+                if (roleEl) roleEl.textContent = roleLabel;
+
+                if (avatarEl) avatarEl.textContent = getInitials(displayName);
             }
 
             allow();
