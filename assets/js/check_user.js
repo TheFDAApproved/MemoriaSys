@@ -41,6 +41,58 @@
     })();
 
     /* =================================================================
+       PER-ROLE PAGE WHITELIST  (NEW)
+       -------------------------------------------------------------
+       Empty array  → all sub-pages allowed for that role (today's
+                      behavior — nothing is restricted).
+       Non-empty    → only the listed sub-pages can be viewed by that
+                      role. Any other sub-page the user opens (inside
+                      the iframe OR as a naked URL) is redirected to
+                      the user's own shell.
+
+       Notes:
+         - Shell pages (admin.html / grounds.html / office.html) are
+           NOT listed here. They are always allowed for their own role
+           (via the existing requiredRole check) and always denied for
+           other roles (same check). Whitelists only affect sub-pages.
+         - This is a UX guard, not a security boundary. The real
+           security is api/auth.php (server-side session check). A
+           user with devtools can bypass this; a user without a valid
+           session cannot bypass the server.
+
+       Example — restrict Administrator to just two pages:
+           'Administrator': ['payments.html', 'accounts.html']
+       ================================================================= */
+    var ROLE_PAGES = {
+        'Administrator': [],
+        'Grounds Staff': [],
+        'Office Staff':   []
+    };
+
+    /* =================================================================
+       NAKED-URL WHITELIST  (NEW)
+       -------------------------------------------------------------
+       Empty array  → every sub-page may be opened directly (top-level,
+                      no shell) — today's behavior.
+       Non-empty    → only the listed sub-pages may be opened naked.
+                      Any other naked sub-page URL is redirected to the
+                      user's shell, with the intended page preserved
+                      via localStorage.activePage so it loads in the
+                      iframe after the redirect.
+
+       Notes:
+         - Auth pages (login/signup/forgot) are exempt — they are
+           meant to be top-level.
+         - Shell pages are exempt — they are the shell.
+         - Putting a shell or auth page in this list is a no-op; they
+           never reach the naked check.
+
+       Example — only a printable receipt may be naked:
+           var NAKED_ALLOWED = ['receipt_print.html'];
+       ================================================================= */
+    var NAKED_ALLOWED = ['']; //so far nothing is allowed
+
+    /* =================================================================
        IFRAME-AWARE NAVIGATION
        -------------------------------------------------------------
        The auth guard can run inside an <iframe> whose src is a
@@ -134,6 +186,16 @@
     var isAuthPage   = AUTH_PAGES.indexOf(current) !== -1;
     var requiredRole = PAGE_ROLE[current] || null;
 
+    /* A "shell page" is one of admin.html / grounds.html / office.html —
+       the pages that own the sidebar + iframe. Identified by being a
+       key in PAGE_ROLE. Shell pages are the destination of a redirect,
+       never the thing being guarded against a naked-URL whitelist. */
+    var isShellPage = !!requiredRole;
+
+    /* Naked = this document is the top-level window, not an iframe.
+       Sub-pages inside the shell have window.self !== window.top. */
+    var isNaked = window.self === window.top;
+
     /* Hide protected pages while the auth check is in flight so we
        never flash dashboard content to a user who's about to be
        bounced to login. Auth pages are left visible — showing the
@@ -195,28 +257,53 @@
                 return;
             }
 
-            /* ---------- 3. Populate the sidebar user card ---------- *
-             * NEW: moved here from sidebar.js so the shell only makes
-             * ONE call to api/auth.php instead of two. This runs only
-             * on the shell pages (admin.html, grounds.html, office.html)
-             * because:
+            /* ---------- 3. Per-role page whitelist (NEW) ---------- *
+             * Applies to sub-pages only. Empty list = no restriction.
+             * If the list is non-empty and the current page isn't in
+             * it, bounce the user to their own shell.
              *
-             *   - auth pages take the isAuthPage branch above and return
-             *     before ever reaching this code, AND
-             *   - sub-pages running inside the iframe don't have these
-             *     DOM ids, so the getElementById guards no-op silently.
+             * This runs before the naked-URL check on purpose: if a
+             * page is blocked by role, we deny without preserving it
+             * in activePage (preserving it would just cause a loop
+             * — the shell would restore it, the iframe would reload
+             * it, and the role check would bounce again).
+             * ----------------------------------------------------- */
+            if (!isShellPage) {
+                var allowedPages = ROLE_PAGES[role] || [];
+                if (allowedPages.length > 0 && allowedPages.indexOf(current) === -1) {
+                    deny(homePage || LOGIN_PAGE);
+                    return;
+                }
+            }
+
+            /* ---------- 4. Naked-URL whitelist (NEW) ---------- *
+             * Applies to sub-pages viewed as the top-level window.
+             * Empty list = every page can be naked (today).
+             * Non-empty list = only listed pages can be naked; any
+             * other naked sub-page is redirected into the shell,
+             * with the intended page preserved so the iframe restores
+             * it after the redirect.
              *
-             * Doing this BEFORE allow() means the user card is already
-             * filled when the page is first revealed — no "--" flash,
-             * no pop-in of name/role/initials on load.
-             *
-             * The `window.self === window.top` check is a cheap belt-
-             * and-suspenders: it makes the "shell only" intent explicit
-             * and skips three getElementById lookups when we're in the
-             * iframe, even though the per-element guards would already
-             * make it safe.
-             * ------------------------------------------------------- */
-            if (window.self === window.top) {
+             * By the time we reach here, the role-whitelist check
+             * above has already passed (or ROLE_PAGES is empty), so
+             * preserving the page in activePage is safe — the iframe
+             * will accept it on reload.
+             * ----------------------------------------------------- */
+            if (!isShellPage && isNaked &&
+                NAKED_ALLOWED.length > 0 &&
+                NAKED_ALLOWED.indexOf(current) === -1) {
+                try { localStorage.setItem('activePage', current); } catch (e) { }
+                deny(homePage || LOGIN_PAGE);
+                return;
+            }
+
+            /* ---------- 5. Populate the sidebar user card ---------- *
+             * Runs only on the shell pages. Auth pages return above,
+             * and sub-pages don't have these DOM ids so the guards
+             * no-op even if we got here (which we don't, because
+             * isShellPage is false for them).
+             * ----------------------------------------------------- */
+            if (isShellPage) {
                 var nameEl   = document.getElementById('user_name');
                 var roleEl   = document.getElementById('user_role');
                 var avatarEl = document.getElementById('user_avatar');
