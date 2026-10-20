@@ -264,7 +264,7 @@ try {
                         if ($hasImage && !$isImageKey) {
                             throw new Exception(
                                 "'{$sKey}' does not accept an image upload. "
-                                . "Image keys are: " . implode(', ', IMAGE_SETTING_KEYS)
+                                    . "Image keys are: " . implode(', ', IMAGE_SETTING_KEYS)
                             );
                         }
 
@@ -443,6 +443,11 @@ try {
                 //   * A TextBee failure does NOT trigger the uploaded-image
                 //     cleanup (those files are already referenced by the
                 //     committed settings and must not be deleted).
+                //
+                // Success and failure are both audit-logged here. Values are
+                // never logged in plaintext — only fingerprints (short sha256
+                // prefix) so future logs can tell "same key" from "changed key"
+                // without exposing the secret.
                 // ------------------------------------------------------------------
                 if ($bulkSucceeded && ($textbeeApiKey !== null || $textbeeDeviceId !== null)) {
 
@@ -489,6 +494,15 @@ try {
                             500
                         );
                     }
+
+                    // Success — log the fact with key fingerprints (never plaintext).
+                    $keyFingerprint    = substr(hash('sha256', $textbeeApiKey), 0, 8);
+                    $deviceFingerprint = substr(hash('sha256', $textbeeDeviceId), 0, 8);
+                    systemLog(
+                        "{$userData['name']} ({$userData['username']}) updated TextBee credentials "
+                            . "(api_key fingerprint: {$keyFingerprint}…, device_id fingerprint: {$deviceFingerprint}…).",
+                        $userData['user_id']
+                    );
 
                     $changes .= 'TextBee credentials updated (api_key + device_id). ';
                 }
@@ -553,4 +567,3 @@ try {
     systemLog("Database Error: " . $e->getMessage(), $userData['user_id'] ?? 'Unknown');
     Response::error("An internal server error occurred. " . $e->getMessage(), 500);
 }
-
