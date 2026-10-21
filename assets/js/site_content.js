@@ -436,6 +436,44 @@ function collectListValues(containerId) {
   return out;
 }
 
+// ================================================================
+//  Raw-error sanitization (NEW)
+//  Prevents ngrok/proxy HTML pages, bare HTTP status codes, JSON
+//  parse failures, and network failures from reaching showAlertTOP.
+// ================================================================
+
+const GENERIC_ERROR = "Something went wrong. Please try again.";
+
+function looksRawMessage(text) {
+  if (!text) return true;
+  const t = String(text).trim();
+  if (!t) return true;
+  if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true; // HTML body
+  if (/ERR_NGROK_|ngrok/i.test(t)) return true; // ngrok
+  if (/^HTTP\s+\d{3}/i.test(t)) return true; // bare "HTTP 502"
+  if (/^Save failed \(HTTP \d{3}\)$/i.test(t)) return true; // our own fallback
+  if (
+    /non-JSON|Unexpected token|is not valid JSON|Unexpected end of JSON/i.test(
+      t,
+    )
+  )
+    return true;
+  if (/Failed to fetch|NetworkError|Load failed/i.test(t)) return true;
+  if (
+    /^(TypeError|SyntaxError|ReferenceError|RangeError|DOMException)\b/i.test(t)
+  )
+    return true;
+  if (t.length > 200) return true; // giant dumps
+  return false;
+}
+
+function friendlyMessage(raw, fallback) {
+  if (!raw) return fallback || GENERIC_ERROR;
+  const s = String(raw).trim();
+  if (!s || looksRawMessage(s)) return fallback || GENERIC_ERROR;
+  return s;
+}
+
 /**
  * Submit handler: gathers every field, sends as multipart/form-data,
  * shows a summary modal, then a toast after dismissal, then re-syncs.
@@ -533,7 +571,8 @@ async function saveSiteContent(event) {
         data?.message || data?.error || `Save failed (HTTP ${response.status})`;
       console.error("Save settings — server error:", message, data);
       if (typeof showAlertTOP === "function") {
-        showAlertTOP(message, "error");
+        // Raw-error sanitization: html/ngrok/bare-status text → generic message.
+        showAlertTOP(friendlyMessage(message), "error");
       }
       return;
     }

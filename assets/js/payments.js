@@ -73,6 +73,33 @@
             .replace(/'/g, '&#39;');
     };
 
+    // ---- raw-error sanitization ----
+    // Prevent ngrok/proxy HTML pages, bare HTTP status codes, JSON parse
+    // failures, and network failures from reaching showAlertTOP.
+    const GENERIC_ERROR = 'Something went wrong. Please try again.';
+
+    const looksRawMessage = (text) => {
+        if (!text) return true;
+        const t = String(text).trim();
+        if (!t) return true;
+        if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true;                // HTML body
+        if (/ERR_NGROK_|ngrok/i.test(t)) return true;                  // ngrok
+        if (/^HTTP\s+\d{3}/i.test(t)) return true;                     // bare "HTTP 502"
+        if (/^Request failed \(HTTP \d{3}\)$/i.test(t)) return true;   // our own fallback
+        if (/non-JSON|Unexpected token|is not valid JSON|Unexpected end of JSON/i.test(t)) return true;
+        if (/Failed to fetch|NetworkError|Load failed/i.test(t)) return true;
+        if (/^(TypeError|SyntaxError|ReferenceError|RangeError|DOMException)\b/i.test(t)) return true;
+        if (t.length > 200) return true;                               // giant dumps
+        return false;
+    };
+
+    const friendlyMessage = (err, fallback) => {
+        if (!err) return fallback || GENERIC_ERROR;
+        const msg = (err && err.message) ? String(err.message).trim() : String(err).trim();
+        if (!msg || looksRawMessage(msg)) return fallback || GENERIC_ERROR;
+        return msg;
+    };
+
     const formatMoney = (value) => {
         const n = Number(value) || 0;
         try {
@@ -93,9 +120,6 @@
     const notify = (message, type) => {
         try {
             if (typeof window.showAlertTOP === 'function') { window.showAlertTOP(message, type); return; }
-            if (typeof window.showAlert === 'function') { window.showAlert(message, type); return; }
-            if (window.Alert && typeof window.Alert.show === 'function') { window.Alert.show(message, type); return; }
-            if (window.toast && typeof window.toast.show === 'function') { window.toast.show(message, type); return; }
         } catch (_) { /* fall through */ }
         if (type === 'error') console.error(message);
         else console.log(message);
@@ -1286,7 +1310,7 @@
             console.error('[payments] load error:', err);
             const msg = isAbortError(err)
                 ? 'Loading payments timed out. Please try again.'
-                : (err.message || 'Unable to load payment records.');
+                : friendlyMessage(err, 'Unable to load payment records.');
             renderError(msg);
         } finally {
             if (reqId === state.requestId) state.loading = false;
@@ -1325,7 +1349,7 @@
             console.error('[payments] save remark error:', err);
             const msg = isAbortError(err)
                 ? 'Saving remark timed out. Please try again.'
-                : (err.message || 'Failed to save remark.');
+                : friendlyMessage(err, 'Failed to save remark.');
             notify(msg, 'error');
             return false;
         }
@@ -1403,7 +1427,7 @@
             console.error('[payments] action error:', err);
             const msg = isAbortError(err)
                 ? 'Request timed out. The server may be busy \u2014 please try again.'
-                : (err.message || 'Action failed.');
+                : friendlyMessage(err, 'Action failed.');
             notify(msg, 'error');
         } finally {
             if (!succeeded) restore();
@@ -1482,7 +1506,7 @@
             console.error('[payments] delete error:', err);
             const msg = isAbortError(err)
                 ? 'Delete request timed out. The server may be busy \u2014 please try again.'
-                : (err.message || 'Delete failed.');
+                : friendlyMessage(err, 'Delete failed.');
             notify(msg, 'error');
         } finally {
             if (!succeeded) restore();

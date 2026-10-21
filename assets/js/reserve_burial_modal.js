@@ -122,74 +122,6 @@ const ReserveBurialModal = (() => {
     return local.toISOString().split("T")[0];
   }
 
-  // ---------- automated remarks helpers ----------
-  // "October 18, 2026 3:45 PM"
-  function formatRemarksTimestamp(date = new Date()) {
-    const MONTHS = [
-      "January",
-      "February",
-      "March",
-      "April",
-      "May",
-      "June",
-      "July",
-      "August",
-      "September",
-      "October",
-      "November",
-      "December",
-    ];
-    const month = MONTHS[date.getMonth()];
-    const day = date.getDate();
-    const year = date.getFullYear();
-    let hours = date.getHours();
-    const minutes = String(date.getMinutes()).padStart(2, "0");
-    const ampm = hours >= 12 ? "PM" : "AM";
-    hours = hours % 12;
-    if (hours === 0) hours = 12;
-    return `${month} ${day}, ${year} ${hours}:${minutes} ${ampm}`;
-  }
-
-  function buildRemarksSuffix() {
-    return `(Remarks added - ${formatRemarksTimestamp()})`;
-  }
-
-  // Strip any prior auto-generated marker/suffix so remarks never
-  // accumulate. Handles:
-  //   (Remarks added - October 18, 2026 3:45 PM)   [current format]
-  //   [Replace with new]                            [old-occupant marker]
-  //   [Replace] - 2026-10-18                        [legacy dated]
-  //   [Replace]                                     [legacy]
-  function stripRemarksSuffix(text) {
-    if (!text) return "";
-    let s = String(text);
-    const patterns = [
-      /\s*\(Remarks added - [^)]*\)\s*$/i,
-      /\s*\[Replace with new\]\s*$/i,
-      /\s*\[Replace\](?:\s*-\s*\d{4}-\d{2}-\d{2})?\s*$/i,
-    ];
-    let changed = true;
-    while (changed) {
-      changed = false;
-      for (const re of patterns) {
-        const next = s.replace(re, "");
-        if (next !== s) {
-          s = next;
-          changed = true;
-        }
-      }
-    }
-    return s.trim();
-  }
-
-  // Old occupant: "<original remarks> [Replace with new] (Remarks added - ...)"
-  function buildDatedReplaceRemark(baseRemarks) {
-    const cleaned = stripRemarksSuffix(baseRemarks);
-    const marker = `[Replace with new]`;
-    const suffix = buildRemarksSuffix();
-    return cleaned ? `${cleaned} ${marker} ${suffix}` : `${marker} ${suffix}`;
-  }
-
   function formatPhoneValue(raw) {
     let digits = String(raw || "").replace(/\D/g, "");
     if (digits.startsWith("63")) digits = digits.slice(2);
@@ -235,6 +167,115 @@ const ReserveBurialModal = (() => {
     return `${yy}-${mm}-${dd}`;
   }
 
+  // ==================================================================
+  // remarks hint UI (subtle floating pill over empty textarea)
+  // ==================================================================
+  function injectRemarksHintStyles() {
+    if (document.getElementById("remarksHintStyles")) return;
+    const style = document.createElement("style");
+    style.id = "remarksHintStyles";
+    style.textContent = `
+      .remarksFloatHint {
+        position: absolute;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 10px;
+        font-size: 11.5px;
+        font-weight: 500;
+        line-height: 1.35;
+        color: #8a6d3b;
+        background: #fdf6e3;
+        border: 1px dashed #e8d9a8;
+        border-radius: 999px;
+        white-space: nowrap;
+        user-select: none;
+        pointer-events: none;
+        opacity: 0.85;
+        z-index: 2;
+      }
+      .remarksFloatHint i {
+        font-size: 10px;
+        opacity: 0.7;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  function ensureRemarksHint() {
+    if (!modalEl) return;
+    const remarksField = modalEl.querySelector("#remarks");
+    if (!remarksField) return;
+
+    if (remarksField._remarksHint) {
+      if (typeof remarksField._remarksHintUpdate === "function") {
+        remarksField._remarksHintUpdate();
+      }
+      return;
+    }
+
+    const parent = remarksField.parentElement;
+    if (!parent) return;
+
+    injectRemarksHintStyles();
+
+    if (window.getComputedStyle(parent).position === "static") {
+      parent.style.position = "relative";
+    }
+
+    const hint = document.createElement("span");
+    hint.className = "remarksFloatHint";
+    hint.setAttribute("aria-hidden", "true");
+    hint.innerHTML =
+      '<i class="fas fa-pen-to-square"></i>Add remarks if possible';
+    hint.style.display = "none";
+
+    parent.appendChild(hint);
+
+    const positionHint = () => {
+      if (hint.style.display === "none") return;
+      const fieldRect = remarksField.getBoundingClientRect();
+      const parentRect = parent.getBoundingClientRect();
+      if (!fieldRect.width || !parentRect.width) return;
+      hint.style.top = fieldRect.top - parentRect.top + 8 + "px";
+      hint.style.right = parentRect.right - fieldRect.right + 12 + "px";
+    };
+
+    const update = () => {
+      if (submissionSucceeded || currentMode === "view") {
+        hint.style.display = "none";
+        return;
+      }
+      const val = (remarksField.value || "").trim();
+      if (val === "") {
+        hint.style.display = "inline-flex";
+        requestAnimationFrame(positionHint);
+      } else {
+        hint.style.display = "none";
+      }
+    };
+
+    remarksField.addEventListener("input", update);
+    remarksField.addEventListener("change", update);
+
+    remarksField._remarksHint = hint;
+    remarksField._remarksHintUpdate = update;
+    update();
+  }
+
+  function refreshRemarksHint() {
+    if (!modalEl) return;
+    const remarksField = modalEl.querySelector("#remarks");
+    if (!remarksField || typeof remarksField._remarksHintUpdate !== "function") {
+      ensureRemarksHint();
+      return;
+    }
+    remarksField._remarksHintUpdate();
+  }
+
+  // ==================================================================
+  // dynamic mode helpers (unchanged)
+  // ==================================================================
   const INTERMENT_FIELD_IDS = ["date_buried", "date_interment"];
   const EXPIRATION_FIELD_IDS = ["lease_expiration_date", "expiration_date"];
 
@@ -352,10 +393,6 @@ const ReserveBurialModal = (() => {
     }
   }
 
-  // ------------------------------------------------------------------
-  // Refresh the placeholder text of location dropdowns without
-  // re-rendering them. Keeps current selections intact.
-  // ------------------------------------------------------------------
   function refreshLocationPlaceholderText() {
     if (!modalEl) return;
     const statusVal = modalEl.querySelector("#status")?.value || "";
@@ -363,7 +400,6 @@ const ReserveBurialModal = (() => {
     const isView = currentMode === "view" && wizardMode !== "old";
     const hidePlaceholder = isView || statusVal !== "Active";
 
-    // burial_block
     const typeSel = modalEl.querySelector("#burial_block");
     if (typeSel && typeSel.tagName === "SELECT" && typeSel.options.length) {
       const ph = typeSel.options[0];
@@ -378,7 +414,6 @@ const ReserveBurialModal = (() => {
       }
     }
 
-    // block
     const blockSel = modalEl.querySelector("#block");
     if (blockSel && blockSel.tagName === "SELECT" && blockSel.options.length) {
       const ph = blockSel.options[0];
@@ -389,7 +424,6 @@ const ReserveBurialModal = (() => {
       }
     }
 
-    // grave_code
     const graveSel = modalEl.querySelector("#grave_code");
     if (graveSel && graveSel.tagName === "SELECT" && graveSel.options.length) {
       const ph = graveSel.options[0];
@@ -427,10 +461,6 @@ const ReserveBurialModal = (() => {
     updateSelectedSlotFromGraveSelect();
   }
 
-  // ------------------------------------------------------------------
-  // Apply burial type from a snapshot value. FIX: no fallback —
-  // snapshot is the source of truth. Empty snapshot = empty dropdown.
-  // ------------------------------------------------------------------
   function applyBurialTypeFromSnapshot(snapshotValue) {
     const typeEl = modalEl?.querySelector("#burial_block");
     if (!typeEl) return;
@@ -450,9 +480,6 @@ const ReserveBurialModal = (() => {
     }
   }
 
-  // ------------------------------------------------------------------
-  // Bulletproof field restore for old occupant.
-  // ------------------------------------------------------------------
   function forceRestoreOldOccupantFields() {
     if (!modalEl) return;
     const src = oldOccupantOriginal || {};
@@ -521,17 +548,14 @@ const ReserveBurialModal = (() => {
 
     setOne("status", V("status") || "Active");
 
-    // FIX: no fallback. If snapshot's burial_block is empty (e.g.
-    // user set O to Inactive), leave the dropdown empty.
     applyBurialTypeFromSnapshot(snap.burial_block);
 
     const statusEl = modalEl.querySelector("#status");
     toggleLocationFields(statusEl && statusEl.value !== "Active");
+
+    refreshRemarksHint();
   }
 
-  // ------------------------------------------------------------------
-  // Bulletproof field restore for new occupant.
-  // ------------------------------------------------------------------
   function forceRestoreNewOccupantFields() {
     if (!modalEl) return;
     const snap = newModeSnapshot || {};
@@ -584,13 +608,11 @@ const ReserveBurialModal = (() => {
 
     setOne("status", snap.status || "Pending");
 
-    // FIX: snapshot only. If user set N to Inactive, burial type stays empty.
     applyBurialTypeFromSnapshot(snap.burial_block);
+
+    refreshRemarksHint();
   }
 
-  // ------------------------------------------------------------------
-  // Header helpers.
-  // ------------------------------------------------------------------
   function refreshOldOccupantHeader() {
     if (!modalEl) return;
     const nameEl = modalEl.querySelector("#deceased_name");
@@ -673,7 +695,6 @@ const ReserveBurialModal = (() => {
         el.classList.remove("inactive-readonly");
       }
     });
-    // Keep the placeholder text in sync (shows "Inactive" while locked).
     refreshLocationPlaceholderText();
   }
 
@@ -1328,6 +1349,7 @@ const ReserveBurialModal = (() => {
       if (el.tagName === "SELECT") el.style.pointerEvents = "none";
       el.style.cursor = "not-allowed";
     });
+    refreshRemarksHint();
   }
 
   function unlockFields() {
@@ -1358,6 +1380,7 @@ const ReserveBurialModal = (() => {
     if (cancelBtn) cancelBtn.style.display = "none";
 
     updateWizardButtons();
+    refreshRemarksHint();
 
     console.log("[reserve_modal] submission succeeded — modal locked.");
   }
@@ -1404,6 +1427,7 @@ const ReserveBurialModal = (() => {
         el.value = val;
       }
     });
+    refreshRemarksHint();
   }
 
   function setIfPresent(id, value) {
@@ -1467,9 +1491,9 @@ const ReserveBurialModal = (() => {
     setIfPresent("transfer_permit_issued_by", src.transfer_permit_issued_by);
     setIfPresent("exhumation_permit_number", src.exhumation_permit_number);
 
-    // Dated, non-accumulating automated remark for old occupant.
+    // Show ORIGINAL remarks only. No auto-generated markers, no suffix.
     const oldBaseRemarks = pick(src.interment_remarks, src.remarks);
-    setIfPresent("remarks", buildDatedReplaceRemark(oldBaseRemarks));
+    setIfPresent("remarks", oldBaseRemarks);
 
     setIfPresent("status", "Active");
     setIfPresent("block", "");
@@ -1489,6 +1513,8 @@ const ReserveBurialModal = (() => {
       pick(src.deceased_name, "this occupant"),
       currentInfo,
     );
+
+    refreshRemarksHint();
   }
 
   function populateNewOccupantForm(target) {
@@ -1523,40 +1549,7 @@ const ReserveBurialModal = (() => {
     ensurePendingInStatus();
     setIfPresent("status", "Pending");
 
-    if (activeOldIntermentId) {
-      // Replacing an existing occupant.
-      const oldName = pick(
-        oldOccupantOriginal?.deceased_name,
-        oldOccupantDraft?.current?.deceased_name,
-        viewSnapshot?.deceased_name,
-        "previous occupant",
-      );
-      const oldGrave = pick(
-        oldOccupantOriginal?.grave_code,
-        activeOriginalValues.grave_code,
-        viewSnapshot?.grave_code,
-        viewSnapshot?.plan_grave_code,
-      );
-      const atPart = oldGrave ? ` at grave ${oldGrave}` : "";
-      setIfPresent(
-        "remarks",
-        `Replace: ${oldName}${atPart} ${buildRemarksSuffix()}`,
-      );
-    } else {
-      // Vacant grave — no old occupant to replace.
-      const vacantGrave = pick(
-        target.grave_code,
-        addOriginalGraveCode,
-        viewSnapshot?.grave_code,
-        activeOriginalValues.grave_code,
-      );
-      setIfPresent(
-        "remarks",
-        vacantGrave
-          ? `Assign at: ${vacantGrave} ${buildRemarksSuffix()}`
-          : `Assign ${buildRemarksSuffix()}`,
-      );
-    }
+    // remarks is intentionally left empty — no auto-generated text.
 
     if (rawType) setBurialTypeFromBlockType(rawType);
     setIfPresent("block", blockNameForType);
@@ -1565,6 +1558,8 @@ const ReserveBurialModal = (() => {
     if (expField) expField.value = "";
 
     updateLocationHeaderText("the incoming person", "");
+
+    refreshRemarksHint();
   }
 
   function captureOldOccupant() {
@@ -1803,6 +1798,7 @@ const ReserveBurialModal = (() => {
       updateBurialTypePlaceholder();
       updateWizardButtons();
       refreshNewOccupantHeader();
+      refreshRemarksHint();
       return;
     }
 
@@ -1928,6 +1924,8 @@ const ReserveBurialModal = (() => {
         selectGraveByCode(targetGraveCode, targetGraveId);
       }
     }
+
+    refreshRemarksHint();
   }
 
   async function handleBackClick() {
@@ -1985,6 +1983,7 @@ const ReserveBurialModal = (() => {
       toggleLocationFields(statusEl && statusEl.value !== "Active");
 
       refreshOldOccupantHeader();
+      refreshRemarksHint();
       return;
     }
 
@@ -2008,8 +2007,6 @@ const ReserveBurialModal = (() => {
       applyFormFields(toApply);
     }
 
-    // FIX: burial type from snapshot only. If O was set to Inactive,
-    // snapshot.burial_block is '' → dropdown stays empty.
     applyBurialTypeFromSnapshot(oldModeSnapshot?.burial_block);
 
     const blockEl = modalEl.querySelector("#block");
@@ -2042,6 +2039,7 @@ const ReserveBurialModal = (() => {
     toggleLocationFields(statusEl && statusEl.value !== "Active");
 
     refreshOldOccupantHeader();
+    refreshRemarksHint();
   }
 
   // ==================================================================
@@ -2242,6 +2240,9 @@ const ReserveBurialModal = (() => {
     await ensureLoaded();
     if (!modalEl) return;
 
+    // NEW: create the remarks hint wrapper on first open.
+    ensureRemarksHint();
+
     const sameSession =
       modalEl.classList.contains("active") &&
       activeOldIntermentId &&
@@ -2374,6 +2375,8 @@ const ReserveBurialModal = (() => {
 
     modalEl.style.display = "block";
     modalEl.classList.add("active");
+
+    refreshRemarksHint();
   }
 
   function populateFields(data) {
@@ -2474,6 +2477,8 @@ const ReserveBurialModal = (() => {
         ),
       ),
     );
+
+    // Raw remarks — whatever's in the DB. No stripping, no auto-add.
     setV(
       "remarks",
       pick(data.plan_remarks, data.interment_remarks, data.remarks),
@@ -2509,7 +2514,6 @@ const ReserveBurialModal = (() => {
     field.style.pointerEvents = "none";
     field.style.cursor = "default";
 
-    // Remove dropdown arrow
     field.style.appearance = "none";
     field.style.webkitAppearance = "none";
     field.style.backgroundImage = "none";
@@ -2520,6 +2524,7 @@ const ReserveBurialModal = (() => {
       lockFieldsOnly();
       updateBurialTypePlaceholder();
       updateWizardButtons();
+      refreshRemarksHint();
       return;
     }
 
@@ -2533,7 +2538,6 @@ const ReserveBurialModal = (() => {
         field.removeAttribute("tabindex");
         field.removeAttribute("aria-readonly");
 
-        // Restore dropdown arrow
         field.style.appearance = "";
         field.style.webkitAppearance = "";
         field.style.backgroundImage = "";
@@ -2584,6 +2588,7 @@ const ReserveBurialModal = (() => {
 
     updateBurialTypePlaceholder();
     updateWizardButtons();
+    refreshRemarksHint();
   }
 
   function handleSubmit(event) {
@@ -2741,11 +2746,9 @@ const ReserveBurialModal = (() => {
       if (payload.old_new_status === "Active") {
         payload.old_new_grave_code = (cur.old_new_grave_code || "").trim();
       }
-      // ▼ ADDED: send O's planned assistance type (only meaningful when Active)
       if (payload.old_new_status === "Active" && cur.assistance_type) {
         payload.old_new_assistance_type = cur.assistance_type;
       }
-      // ▲ ADDED
       const diff = computeOldDiff(cur, oldOccupantDraft.original);
       if (Object.keys(diff).length) payload.old_edited_fields = diff;
     } else if (isInactive) {

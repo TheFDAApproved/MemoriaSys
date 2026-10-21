@@ -81,6 +81,36 @@ const MonitorBurialModal = (() => {
     };
 
     // ==================================================================
+    // Raw-error sanitization
+    // Prevents ngrok/proxy HTML pages, bare HTTP status codes, JSON parse
+    // failures, and network failures from reaching showAlertTOP or the
+    // shared confirm modal's error display.
+    // ==================================================================
+    const GENERIC_ERROR = 'Something went wrong. Please try again.';
+
+    const looksRawMessage = (text) => {
+        if (!text) return true;
+        const t = String(text).trim();
+        if (!t) return true;
+        if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true;                          // HTML body
+        if (/ERR_NGROK_|ngrok/i.test(t)) return true;                            // ngrok
+        if (/^HTTP\s+\d{3}/i.test(t)) return true;                               // bare "HTTP 502"
+        if (/^Save failed \(\d{3}\)$/i.test(t)) return true;                     // our own fallback
+        if (/non-JSON|Unexpected token|is not valid JSON|Unexpected end of JSON/i.test(t)) return true;
+        if (/Failed to fetch|NetworkError|Load failed/i.test(t)) return true;
+        if (/^(TypeError|SyntaxError|ReferenceError|RangeError|DOMException)\b/i.test(t)) return true;
+        if (t.length > 200) return true;                                          // giant dumps
+        return false;
+    };
+
+    function friendlyMessage(raw, fallback) {
+        if (!raw) return fallback || GENERIC_ERROR;
+        const s = String(raw).trim();
+        if (!s || looksRawMessage(s)) return fallback || GENERIC_ERROR;
+        return s;
+    }
+
+    // ==================================================================
     // styles
     // ==================================================================
     function injectWizardStyles() {
@@ -146,6 +176,113 @@ const MonitorBurialModal = (() => {
             }
         `;
         document.head.appendChild(style);
+    }
+
+    // ==================================================================
+    // remarks hint UI (subtle floating pill over empty textarea)
+    // ==================================================================
+    function injectRemarksHintStyles() {
+        if (document.getElementById('remarksHintStyles')) return;
+        const style = document.createElement('style');
+        style.id = 'remarksHintStyles';
+        style.textContent = `
+            .remarksFloatHint {
+                position: absolute;
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                padding: 4px 10px;
+                font-size: 11.5px;
+                font-weight: 500;
+                line-height: 1.35;
+                color: #8a6d3b;
+                background: #fdf6e3;
+                border: 1px dashed #e8d9a8;
+                border-radius: 999px;
+                white-space: nowrap;
+                user-select: none;
+                pointer-events: none;
+                opacity: 0.85;
+                z-index: 2;
+            }
+            .remarksFloatHint i {
+                font-size: 10px;
+                opacity: 0.7;
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    function ensureRemarksHint() {
+        if (!modalEl) return;
+        const remarksField = modalEl.querySelector('#remarks');
+        if (!remarksField) return;
+
+        if (remarksField._remarksHint) {
+            if (typeof remarksField._remarksHintUpdate === 'function') {
+                remarksField._remarksHintUpdate();
+            }
+            return;
+        }
+
+        const parent = remarksField.parentElement;
+        if (!parent) return;
+
+        injectRemarksHintStyles();
+
+        if (window.getComputedStyle(parent).position === 'static') {
+            parent.style.position = 'relative';
+        }
+
+        const hint = document.createElement('span');
+        hint.className = 'remarksFloatHint';
+        hint.setAttribute('aria-hidden', 'true');
+        hint.innerHTML =
+            '<i class="fas fa-pen-to-square"></i>Add remarks if possible';
+        hint.style.display = 'none';
+
+        parent.appendChild(hint);
+
+        const positionHint = () => {
+            if (hint.style.display === 'none') return;
+            const fieldRect = remarksField.getBoundingClientRect();
+            const parentRect = parent.getBoundingClientRect();
+            if (!fieldRect.width || !parentRect.width) return;
+            hint.style.top = fieldRect.top - parentRect.top + 8 + 'px';
+            hint.style.right = parentRect.right - fieldRect.right + 12 + 'px';
+        };
+
+        const update = () => {
+            // Hidden if: submitted, no active wizard (view/initial), or has value.
+            if (submissionSucceeded || !wizardMode) {
+                hint.style.display = 'none';
+                return;
+            }
+            const val = (remarksField.value || '').trim();
+            if (val === '') {
+                hint.style.display = 'inline-flex';
+                requestAnimationFrame(positionHint);
+            } else {
+                hint.style.display = 'none';
+            }
+        };
+
+        remarksField.addEventListener('input', update);
+        remarksField.addEventListener('change', update);
+
+        remarksField._remarksHint = hint;
+        remarksField._remarksHintUpdate = update;
+        update();
+    }
+
+    function refreshRemarksHint() {
+        if (!modalEl) return;
+        const remarksField = modalEl.querySelector('#remarks');
+        if (!remarksField || typeof remarksField._remarksHintUpdate !== 'function') {
+            ensureRemarksHint();
+            return;
+        }
+        remarksField._remarksHintUpdate();
     }
 
     // ==================================================================
@@ -688,11 +825,20 @@ const MonitorBurialModal = (() => {
     // ==================================================================
     async function ensureLoaded() {
         modalEl = document.getElementById('burial_modal_overlay');
-        if (modalEl) { bindEvents(); ensureWizardButtons(); return; }
+        if (modalEl) {
+            bindEvents();
+            ensureWizardButtons();
+            ensureRemarksHint();
+            return;
+        }
         if (!loadPromise) loadPromise = loadModalHtml();
         await loadPromise;
         modalEl = document.getElementById('burial_modal_overlay');
-        if (modalEl) { bindEvents(); ensureWizardButtons(); }
+        if (modalEl) {
+            bindEvents();
+            ensureWizardButtons();
+            ensureRemarksHint();
+        }
     }
 
     async function loadModalHtml() {
@@ -1046,6 +1192,10 @@ const MonitorBurialModal = (() => {
         }
 
         updateBurialTypePlaceholder();
+
+        // ▼ ADDED: refresh remarks hint after populate
+        refreshRemarksHint();
+        // ▲ ADDED
     }
 
     function readAllFormFields() {
@@ -1083,6 +1233,10 @@ const MonitorBurialModal = (() => {
                 el.value = val;
             }
         });
+
+        // ▼ ADDED: refresh remarks hint after form restore
+        refreshRemarksHint();
+        // ▲ ADDED
     }
 
     function readField(id) {
@@ -1199,6 +1353,10 @@ const MonitorBurialModal = (() => {
 
         updateBurialTypePlaceholder();
         updateWizardButtons();
+
+        // ▼ ADDED: refresh remarks hint after applyMode changes editability
+        refreshRemarksHint();
+        // ▲ ADDED
     }
 
     function lockFieldsOnly() {
@@ -1212,6 +1370,10 @@ const MonitorBurialModal = (() => {
             el.style.background = '';
             el.style.color = '';
         });
+
+        // ▼ ADDED: refresh remarks hint after lock
+        refreshRemarksHint();
+        // ▲ ADDED
     }
 
     function unlockFields() {
@@ -1602,10 +1764,10 @@ const MonitorBurialModal = (() => {
                     );
                     const json = await res.json().catch(() => null);
                     if (!res.ok || (json && json.success === false)) {
-                        throw new Error(
-                            (json && (json.message || json.error))
-                            || `Save failed (${res.status})`
-                        );
+                        const apiMsg = json && (json.message || json.error);
+                        // Raw-error sanitization: this throw escapes into
+                        // the shared confirm modal's error display.
+                        throw new Error(friendlyMessage(apiMsg, 'Failed to save reservation.'));
                     }
                     postSucceeded = true;
                 } catch (err) {
@@ -1667,6 +1829,10 @@ const MonitorBurialModal = (() => {
         await ensureLoaded();
         if (!modalEl || !res) return;
 
+        // ▼ ADDED: ensure remarks hint is wired up before first render
+        ensureRemarksHint();
+        // ▲ ADDED
+
         reservation = res;
         submissionSucceeded = false;
         oldModeSnapshot = null;
@@ -1713,6 +1879,11 @@ const MonitorBurialModal = (() => {
 
         modalEl.style.display = 'block';
         modalEl.classList.add('active');
+
+        // ▼ ADDED: refresh remarks hint now that modal is visible, so
+        //          getBoundingClientRect can position the pill correctly.
+        refreshRemarksHint();
+        // ▲ ADDED
     }
 
     function close() {
@@ -1737,6 +1908,10 @@ const MonitorBurialModal = (() => {
             locationHeaderEl.parentNode.removeChild(locationHeaderEl);
         }
         locationHeaderEl = null;
+        // ▲ ADDED
+
+        // ▼ ADDED: hint will be hidden (wizardMode=null) — reflect that now
+        refreshRemarksHint();
         // ▲ ADDED
 
         const actions = modalEl.querySelector('.paperFormActions');

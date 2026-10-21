@@ -6,6 +6,46 @@ const EXCEL_API = "api/csv";
 
 document.addEventListener("DOMContentLoaded", () => {
   /* ============================================================
+     Raw-error sanitization
+     ------------------------------------------------------------
+     Prevents ngrok/proxy HTML pages, bare HTTP status codes, JSON
+     parse failures, and network failures from reaching showAlertTOP
+     or the shared DeleteModal's error display.
+     ============================================================ */
+  const GENERIC_ERROR = "Something went wrong. Please try again.";
+
+  function looksRawMessage(text) {
+    if (!text) return true;
+    const t = String(text).trim();
+    if (!t) return true;
+    if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true; // HTML body
+    if (/ERR_NGROK_|ngrok/i.test(t)) return true; // ngrok
+    if (/^HTTP\s+\d{3}/i.test(t)) return true; // bare "HTTP 502"
+    if (
+      /non-JSON|Unexpected token|is not valid JSON|Unexpected end of JSON/i.test(
+        t,
+      )
+    )
+      return true;
+    if (/Failed to fetch|NetworkError|Load failed/i.test(t)) return true;
+    if (
+      /^(TypeError|SyntaxError|ReferenceError|RangeError|DOMException)\b/i.test(
+        t,
+      )
+    )
+      return true;
+    if (t.length > 200) return true; // giant dumps
+    return false;
+  }
+
+  function friendlyMessage(raw, fallback) {
+    if (!raw) return fallback || GENERIC_ERROR;
+    const s = String(raw).trim();
+    if (!s || looksRawMessage(s)) return fallback || GENERIC_ERROR;
+    return s;
+  }
+
+  /* ============================================================
      REUSABLE CONFIRM DIALOG
      ------------------------------------------------------------
      Reuses the existing DeleteModal, but re-labels and restyles
@@ -284,7 +324,11 @@ document.addEventListener("DOMContentLoaded", () => {
     const result = await response.json().catch(() => ({}));
 
     if (!response.ok) {
-      throw new Error(result?.message || `HTTP ${response.status}`);
+      // Raw-error sanitization: this throw can escape into DeleteModal's
+      // error handler (password-change flow), so sanitize at the source.
+      throw new Error(
+        friendlyMessage(result?.message, "Failed to update profile"),
+      );
     }
     return result;
   }
@@ -372,7 +416,11 @@ document.addEventListener("DOMContentLoaded", () => {
       setProfileMode("view");
     } catch (err) {
       console.error("Save Changes failed:", err);
-      showAlertTOP(err.message || "Failed to update profile", "error");
+      // Raw-error sanitization.
+      showAlertTOP(
+        friendlyMessage(err?.message, "Failed to update profile"),
+        "error",
+      );
 
       /* ------------------------------------------------------------
          Highlight EVERY field the server complained about.
@@ -681,7 +729,11 @@ document.addEventListener("DOMContentLoaded", () => {
       showAlertTOP("Settings saved successfully.", "success");
     } catch (err) {
       console.error("Save Configuration failed:", err);
-      showAlertTOP(err.message || "Failed to save settings.", "error");
+      // Raw-error sanitization.
+      showAlertTOP(
+        friendlyMessage(err?.message, "Failed to save settings."),
+        "error",
+      );
 
       /* ------------------------------------------------------------
          Highlight every settings field the server complained about.
@@ -878,7 +930,8 @@ document.addEventListener("DOMContentLoaded", () => {
       showAlertTOP("Export downloaded.", "success");
     } catch (err) {
       console.error("Export failed:", err);
-      showAlertTOP(err.message || "Export failed.", "error");
+      // Raw-error sanitization.
+      showAlertTOP(friendlyMessage(err?.message, "Export failed."), "error");
     } finally {
       excelExportBtn.disabled = false;
       excelExportBtn.innerHTML = originalHTML;
@@ -1032,7 +1085,11 @@ document.addEventListener("DOMContentLoaded", () => {
     } catch (err) {
       console.error("Failed to load backups:", err);
       if (!silent && !hadList) {
-        showAlertTOP(err.message || "Failed to load backups.", "error");
+        // Raw-error sanitization.
+        showAlertTOP(
+          friendlyMessage(err?.message, "Failed to load backups."),
+          "error",
+        );
       }
       renderBackupOptions([]);
       return [];
@@ -1065,7 +1122,8 @@ document.addEventListener("DOMContentLoaded", () => {
       await loadBackups({ silent: true });
     } catch (err) {
       console.error("Backup failed:", err);
-      showAlertTOP(err.message || "Backup failed.", "error");
+      // Raw-error sanitization.
+      showAlertTOP(friendlyMessage(err?.message, "Backup failed."), "error");
     } finally {
       backupNowBtn.disabled = false;
       backupNowBtn.innerHTML = originalHTML;
@@ -1121,7 +1179,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
         const result = await res.json().catch(() => ({}));
         if (!res.ok) {
-          throw new Error(result?.message || `HTTP ${res.status}`);
+          // Raw-error sanitization: this throw escapes into DeleteModal's
+          // error handler, so sanitize at the source.
+          throw new Error(
+            friendlyMessage(result?.message, "Failed to restore database."),
+          );
         }
 
         showAlertTOP(result?.message || "Database restored.", "success");

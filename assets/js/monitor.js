@@ -111,18 +111,43 @@
     // ------------------------------------------------------------------
     // utilities
     // ------------------------------------------------------------------
+
+    // ---- raw-error sanitization ----
+    // Prevent ngrok/proxy HTML pages, bare HTTP status codes, JSON parse
+    // failures, and network failures from reaching showAlertTOP / showError.
+    const GENERIC_ERROR = 'Something went wrong. Please try again.';
+
+    const looksRawMessage = (text) => {
+        if (!text) return true;
+        const t = String(text).trim();
+        if (!t) return true;
+        if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true;                       // HTML body
+        if (/ERR_NGROK_|ngrok/i.test(t)) return true;                         // ngrok
+        if (/^HTTP\s+\d{3}/i.test(t)) return true;                            // bare "HTTP 502"
+        if (/^Request failed \(\d{3}\)$/i.test(t)) return true;               // our own fallback
+        if (/non-JSON|Unexpected token|is not valid JSON|Unexpected end of JSON/i.test(t)) return true;
+        if (/Failed to fetch|NetworkError|Load failed/i.test(t)) return true;
+        if (/^(TypeError|SyntaxError|ReferenceError|RangeError|DOMException)\b/i.test(t)) return true;
+        if (t.length > 200) return true;                                      // giant dumps
+        return false;
+    };
+
     function notify(kind, message) {
         if (!message) return;
+        const rawText = String(message);
+        const displayText = (kind === 'error' && looksRawMessage(rawText))
+            ? GENERIC_ERROR
+            : rawText;
         if (typeof window.showAlertTOP === 'function') {
             const type = kind === 'success' ? 'success'
                 : kind === 'error' ? 'error'
                     : kind === 'warning' ? 'warning'
                         : 'info';
-            window.showAlertTOP(String(message), type);
+            window.showAlertTOP(displayText, type);
             return;
         }
-        if (kind === 'error') console.error('[monitor.js]', message);
-        else console.log('[monitor.js]', message);
+        if (kind === 'error') console.error('[monitor.js]', rawText);
+        else console.log('[monitor.js]', rawText);
     }
 
     // NEW: single source of truth for the "search term is too short" warning.
@@ -256,7 +281,9 @@
 
     function showError(message) {
         if (!els.noData) return;
-        els.noData.innerHTML = `<i class="fas fa-triangle-exclamation"></i> ${escapeHtml(message)}`;
+        // Raw-error sanitization: html/ngrok/bare-status text → generic message.
+        const display = (message && !looksRawMessage(message)) ? message : GENERIC_ERROR;
+        els.noData.innerHTML = `<i class="fas fa-triangle-exclamation"></i> ${escapeHtml(display)}`;
         els.noData.style.display = '';
     }
 
@@ -647,7 +674,9 @@
                 );
                 const json = await res.json().catch(() => null);
                 if (!res.ok || (json && json.success === false)) {
-                    throw new Error((json && (json.message || json.error)) || `HTTP ${res.status}`);
+                    const apiMsg = json && (json.message || json.error);
+                    // Raw fallback: use GENERIC_ERROR instead of "HTTP 502".
+                    throw new Error((apiMsg && !looksRawMessage(apiMsg)) ? apiMsg : GENERIC_ERROR);
                 }
             },
         });
@@ -692,7 +721,9 @@
                 );
                 const json = await res.json().catch(() => null);
                 if (!res.ok || (json && json.success === false)) {
-                    throw new Error((json && (json.message || json.error)) || `HTTP ${res.status}`);
+                    const apiMsg = json && (json.message || json.error);
+                    // Raw fallback: use GENERIC_ERROR instead of "HTTP 502".
+                    throw new Error((apiMsg && !looksRawMessage(apiMsg)) ? apiMsg : GENERIC_ERROR);
                 }
             },
         });

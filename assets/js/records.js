@@ -153,9 +153,32 @@
         });
     };
 
+    // ---- raw-error sanitization ----
+    // Prevents ngrok/proxy HTML pages, bare HTTP status codes, JSON parse
+    // failures, and network failures from reaching showAlertTOP.
+    const GENERIC_ERROR = 'Something went wrong. Please try again.';
+
+    const looksRawMessage = (text) => {
+        if (!text) return true;
+        const t = String(text).trim();
+        if (!t) return true;
+        if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true;                       // HTML body
+        if (/ERR_NGROK_|ngrok/i.test(t)) return true;                         // ngrok
+        if (/^HTTP\s+\d{3}/i.test(t)) return true;                            // bare "HTTP 502"
+        if (/^Request failed \(\d{3}\)$/i.test(t)) return true;               // our own fallback
+        if (/non-JSON|Unexpected token|is not valid JSON|Unexpected end of JSON/i.test(t)) return true;
+        if (/Failed to fetch|NetworkError|Load failed/i.test(t)) return true;
+        if (/^(TypeError|SyntaxError|ReferenceError|RangeError|DOMException)\b/i.test(t)) return true;
+        if (t.length > 200) return true;                                      // giant dumps
+        return false;
+    };
+
     function notify(kind, message) {
         if (!message) return;
-        const text = String(message);
+        const rawText = String(message);
+        const displayText = (kind === 'error' && looksRawMessage(rawText))
+            ? GENERIC_ERROR
+            : rawText;
 
         const type =
             kind === 'success' ? 'success'
@@ -163,10 +186,10 @@
                     : kind === 'warning' ? 'warning'
                         : 'info';
 
-        window.showAlertTOP(text, type);
+        window.showAlertTOP(displayText, type);
 
-        if (kind === 'error') console.error('[records.js]', text);
-        else console.log('[records.js]', text);
+        if (kind === 'error') console.error('[records.js]', rawText);
+        else console.log('[records.js]', rawText);
     }
 
     // Single source of truth for the "search term is too short" warning.

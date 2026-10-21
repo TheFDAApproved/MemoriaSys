@@ -443,6 +443,13 @@ async function memoria_certificate(id) {
     setTimeout(cleanup, 120000);
   } catch (error) {
     console.error("Error generating Memoria Certificate:", error);
+    if (typeof window.showAlertTOP === "function") {
+      window.showAlertTOP(
+        "An error occurred while generating the certificate. Please try again.",
+        "error",
+      );
+      return;
+    }
     alert(
       "An error occurred while generating the certificate. Please try again.",
     );

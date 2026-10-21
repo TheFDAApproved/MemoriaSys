@@ -63,6 +63,33 @@
         };
     };
 
+    // ---- raw-error sanitization ----
+    // Prevent ngrok/proxy HTML pages, bare HTTP status codes, JSON parse
+    // failures, and network failures from reaching the empty-state block.
+    const GENERIC_ERROR = 'Something went wrong. Please try again.';
+
+    const looksRawMessage = (text) => {
+        if (!text) return true;
+        const t = String(text).trim();
+        if (!t) return true;
+        if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true;                          // HTML body
+        if (/ERR_NGROK_|ngrok/i.test(t)) return true;                            // ngrok
+        if (/^HTTP\s+\d{3}/i.test(t)) return true;                               // bare "HTTP 502"
+        if (/^Request failed \(HTTP \d{3}\)$/i.test(t)) return true;             // our own fallback
+        if (/non-JSON|Unexpected token|is not valid JSON|Unexpected end of JSON/i.test(t)) return true;
+        if (/Failed to fetch|NetworkError|Load failed/i.test(t)) return true;
+        if (/^(TypeError|SyntaxError|ReferenceError|RangeError|DOMException)\b/i.test(t)) return true;
+        if (t.length > 200) return true;                                          // giant dumps
+        return false;
+    };
+
+    const friendlyMessage = (raw, fallback) => {
+        if (!raw) return fallback || GENERIC_ERROR;
+        const s = String(raw).trim();
+        if (!s || looksRawMessage(s)) return fallback || GENERIC_ERROR;
+        return s;
+    };
+
     // ------------------------------------------------------------------ response parsing
     const extractArray = (json) => {
         if (!json) return [];
@@ -342,7 +369,8 @@
         } catch (err) {
             console.error('[logs] load error:', err);
             el.tbody.innerHTML = '';
-            showNoData(err.message || 'Unable to load logs.');
+            // Raw-error sanitization: html/ngrok/bare-status text → generic message.
+            showNoData(friendlyMessage(err && err.message, 'Unable to load logs.'));
             renderPagination();
         } finally {
             state.loading = false;

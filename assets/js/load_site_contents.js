@@ -9,7 +9,7 @@
     payment_purposes_list: "Select payment purpose",
   };
 
-  function loadSiteContent() {
+  function loadSiteContent(showerror = false) {
     fetch(API_URL, { cache: "no-store" })
       .then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -19,7 +19,7 @@
         const rows = Array.isArray(result) ? result : result?.data;
         if (!Array.isArray(rows)) {
           console.error("Invalid settings response:", result);
-          if (typeof showAlertTOP === "function") {
+          if (typeof showAlertTOP === "function" && showerror) {
             showAlertTOP("Failed to load settings: invalid response", "error");
           }
           return;
@@ -169,7 +169,7 @@
       })
       .catch((error) => {
         console.error("Error loading settings:", error);
-        if (typeof showAlertTOP === "function") {
+        if (typeof showAlertTOP === "function" && showerror) {
           showAlertTOP("Failed to load settings", "error");
         }
       });
@@ -245,7 +245,7 @@
     // user_avatar is handled separately (first two letters of name, uppercase)
   };
 
-  function loadUserContent() {
+  function loadUserContent(showerror = false) {
     fetch(USER_API, { cache: "no-store", credentials: "same-origin" })
       .then((response) => {
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -257,7 +257,7 @@
 
         if (!user || typeof user !== "object" || Array.isArray(user)) {
           console.error("Invalid user response:", result);
-          if (typeof showAlertTOP === "function") {
+          if (typeof showAlertTOP === "function" && showerror) {
             showAlertTOP("Failed to load user info: invalid response", "error");
           }
           return;
@@ -290,7 +290,7 @@
       })
       .catch((error) => {
         console.error("Error loading user:", error);
-        if (typeof showAlertTOP === "function") {
+        if (typeof showAlertTOP === "function" && showerror) {
           showAlertTOP("Failed to load user info", "error");
         }
       });

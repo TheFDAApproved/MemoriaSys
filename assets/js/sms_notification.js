@@ -323,14 +323,40 @@ html.smsNotification--open body {
         document.head.appendChild(style);
     }
 
+    // ---- raw-error sanitization ----
+    // Prevent ngrok/proxy HTML pages, bare HTTP status codes, JSON parse
+    // failures, and network failures from reaching showAlertTOP.
+    const GENERIC_ERROR = 'Something went wrong. Please try again.';
+
+    const looksRawMessage = (text) => {
+        if (!text) return true;
+        const t = String(text).trim();
+        if (!t) return true;
+        if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true;                              // HTML body
+        if (/ERR_NGROK_|ngrok/i.test(t)) return true;                                // ngrok
+        if (/^HTTP\s+\d{3}/i.test(t)) return true;                                   // bare "HTTP 502"
+        if (/^Request failed \(\d{3}\)$/i.test(t)) return true;                      // our own fallback
+        if (/^Failed to send SMS \(HTTP \d{3}\)$/i.test(t)) return true;             // our own fallback
+        if (/non-JSON|Unexpected token|is not valid JSON|Unexpected end of JSON/i.test(t)) return true;
+        if (/Failed to fetch|NetworkError|Load failed/i.test(t)) return true;
+        if (/^(TypeError|SyntaxError|ReferenceError|RangeError|DOMException)\b/i.test(t)) return true;
+        if (t.length > 200) return true;                                             // giant dumps
+        return false;
+    };
+
     function notify(message, type) {
         if (!message) return;
+        const rawText = String(message);
+        const displayText = ((type === 'error' || type === 'warning') && looksRawMessage(rawText))
+            ? GENERIC_ERROR
+            : rawText;
+
         if (typeof global.showAlertTOP === 'function') {
-            global.showAlertTOP(String(message), type || 'info');
+            global.showAlertTOP(displayText, type || 'info');
             return;
         }
-        if (type === 'error' || type === 'warning') console.warn('[sms]', message);
-        else console.log('[sms]', message);
+        if (type === 'error' || type === 'warning') console.warn('[sms]', rawText);
+        else console.log('[sms]', rawText);
     }
 
     function destroyInstance(instance) {

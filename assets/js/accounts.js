@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const MAX_SERVER_PAGES = 200;
     const API_URL = 'api/users.php';
     const MIN_SEARCH_LENGTH = 3;   // minimum characters required to search
+    const GENERIC_ERROR = 'Something went wrong. Please try again.';
 
     const state = {
         allUsers: [],
@@ -71,6 +72,48 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         if (t === 'error') console.error('[accounts] ' + message);
         else console.log('[accounts][' + t + '] ' + message);
+    }
+
+    /* -------- error helpers (filter "raw" infra errors) -------- */
+    function rawError(message, meta) {
+        const err = new Error(message || GENERIC_ERROR);
+        err.isRaw = true;
+        if (meta) {
+            for (const k in meta) {
+                if (Object.prototype.hasOwnProperty.call(meta, k)) err[k] = meta[k];
+            }
+        }
+        return err;
+    }
+
+    function isRawError(err) {
+        if (!err) return true;
+        if (err.isRaw) return true;
+
+        const msg = String((err && err.message) || err).trim();
+        if (!msg) return true;
+
+        // HTML body (ngrok / proxy / server 500 page)
+        if (/<\s*[a-z!][\s\S]*>/i.test(msg)) return true;
+        // ngrok tunnel / agent errors
+        if (/ERR_NGROK_|ngrok/i.test(msg)) return true;
+        // bare "HTTP 502" style
+        if (/^HTTP\s+\d{3}$/i.test(msg)) return true;
+        // JSON-parse noise from an HTML / non-JSON body
+        if (/non-JSON|Unexpected token|is not valid JSON|Unexpected end of JSON/i.test(msg)) return true;
+        // fetch() network failure (TypeError: Failed to fetch, etc.)
+        if (err instanceof TypeError) return true;
+        if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) return true;
+        // Giant messages are dumps, not user-facing text
+        if (msg.length > 200) return true;
+
+        return false;
+    }
+
+    function friendlyMessage(err) {
+        if (isRawError(err)) return GENERIC_ERROR;
+        const msg = err && err.message ? String(err.message).trim() : '';
+        return msg || GENERIC_ERROR;
     }
 
     /* -------- confirm helper (uses confirm_ui.js when available) -------- */
@@ -155,18 +198,35 @@ document.addEventListener('DOMContentLoaded', function () {
             if (state.appliedRole && state.appliedRole !== 'all') params.set('role', state.appliedRole);
             if (state.appliedStatus && state.appliedStatus !== 'all') params.set('status', state.appliedStatus);
 
-            const res = await fetch(API_URL + '?' + params.toString());
+            let res;
+            try {
+                res = await fetch(API_URL + '?' + params.toString());
+            } catch (netErr) {
+                throw rawError('Network request failed', { cause: netErr });
+            }
+
             const text = await res.text();
             let data;
-            try { data = JSON.parse(text); }
-            catch (parseErr) {
-                throw new Error('Server returned non-JSON (status ' + res.status + '): ' + text.slice(0, 300));
+            try {
+                data = JSON.parse(text);
+            } catch (parseErr) {
+                // Non-JSON body: ngrok HTML page, proxy 502 page, etc.
+                throw rawError('Server returned non-JSON (status ' + res.status + ')', {
+                    status: res.status,
+                    body: text
+                });
             }
-            if (!res.ok) throw new Error(data.message || data.error || ('HTTP ' + res.status));
 
-            const payload = data.data || data;
-            const users = Array.isArray(payload.users) ? payload.users : [];
-            const pagination = payload.pagination || {};
+            if (!res.ok) {
+                // Only surface the API's own message; otherwise keep it raw.
+                const msg = data && (data.message || data.error);
+                if (typeof msg === 'string' && msg.trim()) throw new Error(msg);
+                throw rawError('HTTP ' + res.status, { status: res.status });
+            }
+
+            const payload = data && data.data ? data.data : data;
+            const users = payload && Array.isArray(payload.users) ? payload.users : [];
+            const pagination = (payload && payload.pagination) || {};
 
             for (let i = 0; i < users.length; i++) all.push(users[i]);
             totalServerPages = Math.max(1, parseInt(pagination.total_pages, 10) || 1);
@@ -228,7 +288,7 @@ document.addEventListener('DOMContentLoaded', function () {
             state.lastRenderKey = '';
             console.error('[accounts] failed to load accounts:', e);
             renderTable(false);
-            notify('Failed to load accounts. Please try again.', 'error');
+            notify(friendlyMessage(e), 'error');
         }
     }
 
@@ -535,8 +595,22 @@ document.addEventListener('DOMContentLoaded', function () {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ role: toDbRole(newRole), status: newStatus })
                 });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.message || data.error || 'Update failed');
+
+                const text = await res.text();
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch (parseErr) {
+                    throw rawError('Server returned non-JSON (status ' + res.status + ')', {
+                        status: res.status, body: text
+                    });
+                }
+
+                if (!res.ok) {
+                    const msg = data && (data.message || data.error);
+                    if (typeof msg === 'string' && msg.trim()) throw new Error(msg);
+                    throw rawError('HTTP ' + res.status, { status: res.status });
+                }
 
                 state.editingId = null;
 
@@ -562,7 +636,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 clearPending();
                 renderTable(false);
                 console.error('[accounts] update failed:', err);
-                notify(err.message || 'Update failed', 'error');
+                notify(friendlyMessage(err), 'error');
             }
             return;
         }
@@ -585,8 +659,22 @@ document.addEventListener('DOMContentLoaded', function () {
 
             try {
                 const res = await fetch(API_URL + '/' + userId, { method: 'DELETE' });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.message || data.error || 'Delete failed');
+
+                const text = await res.text();
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch (parseErr) {
+                    throw rawError('Server returned non-JSON (status ' + res.status + ')', {
+                        status: res.status, body: text
+                    });
+                }
+
+                if (!res.ok) {
+                    const msg = data && (data.message || data.error);
+                    if (typeof msg === 'string' && msg.trim()) throw new Error(msg);
+                    throw rawError('HTTP ' + res.status, { status: res.status });
+                }
 
                 state.allUsers = state.allUsers.filter(function (u) {
                     return Number(u.user_id) !== userId;
@@ -600,7 +688,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 clearPending();
                 renderTable(false);
                 console.error('[accounts] delete failed:', err);
-                notify(err.message || 'Delete failed', 'error');
+                notify(friendlyMessage(err), 'error');
             }
         }
     });
