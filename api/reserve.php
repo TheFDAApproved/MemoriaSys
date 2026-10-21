@@ -62,6 +62,14 @@
  *     date_buried     (historical)
  *     lease_expiration_date (historical)
  *
+ * ROLE SCOPING
+ *   ADMIN / OFFICE : full access (GET + POST).
+ *   GROUNDS        : view-only (GET). Sensitive interment data
+ *                    (deceased identity, contacts, addresses, permits,
+ *                    certificates, dates) is redacted from responses,
+ *                    and the search_term cannot be matched against
+ *                    those fields.
+ *
  * TIMESTAMPS
  *   created_at / updated_at are maintained by the database.  This file
  *   never writes them.
@@ -76,9 +84,18 @@ require_once 'reusable_functions.php';
 $userData = checkuser();
 $method   = $_SERVER['REQUEST_METHOD'] ?? null;
 
-$role = $userData['role'] ?? null;
-if (!in_array($role, [ROLE_ADMIN, ROLE_OFFICE], true)) {
+// -----------------------------------------------------------------------------
+// Role gate
+//   ADMIN / OFFICE : full access (GET + POST)
+//   GROUNDS        : read-only — GET only
+// -----------------------------------------------------------------------------
+$role         = $userData['role'] ?? null;
+$allowedRoles = [ROLE_ADMIN, ROLE_OFFICE, ROLE_GROUNDS];
+if (!in_array($role, $allowedRoles, true)) {
     Response::error("Forbidden. You do not have permission to perform this action.", 403);
+}
+if ($role === ROLE_GROUNDS && $method !== 'GET') {
+    Response::error("Forbidden. ROLE_GROUNDS has view-only access and may only perform GET requests.", 403);
 }
 
 // Hybrid input parser (JSON + form)
@@ -140,6 +157,32 @@ $formatItem = function (array $row): array {
             'remarks'                         => $row['interment_remarks'],
         ] : null,
     ];
+};
+
+// -----------------------------------------------------------------------------
+// ROLE_GROUNDS redaction
+//   Grounds staff only need to locate graves and see why a grave is
+//   eligible. Deceased identity, contact details, addresses, permit
+//   numbers, certificates and birth/death dates are stripped before the
+//   response leaves the server.
+//
+//   Response shape is preserved (fields become null) so frontends that
+//   already handle "interment: null" for vacant graves need no changes.
+//
+//   To let grounds see the deceased's name (e.g. for on-site
+//   identification), add 'deceased_name' to $keep below.
+// -----------------------------------------------------------------------------
+$redactForGrounds = function (array $item): array {
+    if ($item['interment'] === null) {
+        return $item; // vacant grave — no interment fields to redact
+    }
+    $keep = ['interment_id', 'current_grave_id', 'status', 'lease_expiration_date'];
+    foreach ($item['interment'] as $k => $v) {
+        if (!in_array($k, $keep, true)) {
+            $item['interment'][$k] = null;
+        }
+    }
+    return $item;
 };
 
 // -----------------------------------------------------------------------------
@@ -241,7 +284,11 @@ if ($method === 'GET') {
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($row) {
-            Response::success('Eligible grave retrieved', ['item' => $formatItem($row)]);
+            $item = $formatItem($row);
+            if ($role === ROLE_GROUNDS) {
+                $item = $redactForGrounds($item);
+            }
+            Response::success('Eligible grave retrieved', ['item' => $item]);
         } else {
             Response::error('Grave not found or not eligible for a reservation.', 404);
         }
@@ -298,29 +345,37 @@ if ($method === 'GET') {
         $expiringSearchSQL = '';
         if ($searchTerm !== '') {
             $like = '%' . $searchTerm . '%';
-            $cols = [
-                'i.control_number',
-                'i.deceased_name',
-                'i.deceased_sex',
-                'i.last_known_address',
-                'i.death_certificate',
-                'i.contact_person_name',
-                'i.contact_person_phone_number',
-                'i.contact_person_email',
-                'i.contact_person_address',
-                'i.contact_person_address_barangay',
-                'i.assistance_type',
-                'i.burial_permit_number',
-                'i.transfer_permit_number',
-                'i.transfer_permit_issued_by',
-                'i.exhumation_permit_number',
-                'i.remarks',
-                'g.grave_code',
-                'g.status',
-                'g.remarks',
-                'b.block_name',
-                'b.block_type',
-            ];
+            if ($role === ROLE_GROUNDS) {
+                // Grounds may only search grave-side fields. Otherwise they
+                // could confirm the existence of a person by name / phone /
+                // email even though those values are redacted from the
+                // response (an existence oracle).
+                $cols = ['g.grave_code', 'g.status', 'g.remarks', 'b.block_name', 'b.block_type'];
+            } else {
+                $cols = [
+                    'i.control_number',
+                    'i.deceased_name',
+                    'i.deceased_sex',
+                    'i.last_known_address',
+                    'i.death_certificate',
+                    'i.contact_person_name',
+                    'i.contact_person_phone_number',
+                    'i.contact_person_email',
+                    'i.contact_person_address',
+                    'i.contact_person_address_barangay',
+                    'i.assistance_type',
+                    'i.burial_permit_number',
+                    'i.transfer_permit_number',
+                    'i.transfer_permit_issued_by',
+                    'i.exhumation_permit_number',
+                    'i.remarks',
+                    'g.grave_code',
+                    'g.status',
+                    'g.remarks',
+                    'b.block_name',
+                    'b.block_type',
+                ];
+            }
             $parts = [];
             foreach ($cols as $c) {
                 $parts[] = "$c LIKE ?";
@@ -388,6 +443,9 @@ if ($method === 'GET') {
     $rows = $pageStmt->fetchAll(PDO::FETCH_ASSOC);
 
     $items = array_map($formatItem, $rows);
+    if ($role === ROLE_GROUNDS) {
+        $items = array_map($redactForGrounds, $items);
+    }
 
     $payload = [
         'pagination' => [
