@@ -7,16 +7,29 @@ declare(strict_types=1);
  *
  * Supported reports:
  *   - capacity     : Overall cemetery occupancy summary + breakdown by block.
+ *                    Now also returns the chart-ready datasets
+ *                    (grave_status_distribution for pie, monthly_lease_expiration
+ *                    for line) so the frontend can drop in charts later without
+ *                    another API change.
  *   - expirations  : Active interments with expired leases, and those expiring in N days.
- *   - graves       : All graves registry (filterable by status).
+ *   - graves       : All graves registry, filterable by enriched category
+ *                    (Vacant | Occupied | Expiring | Expired | Reserved | Other).
  *   - interments   : Interment directory (filterable by address, gender, year, contact).
  *   - years        : Distinct years present in interment data (for filter dropdowns).
+ *   - payments     : Payment ledger.
+ *   - payment_options : Filter options for payment report.
  *
  * Stacked filters are passed as f[key]=value, e.g.:
  *   ?report=interments&f[address]=Tipolo&f[gender]=Male&f[year]=2025
  *
  * All reports exclude soft-deleted records (deleted_at IS NOT NULL).
  * Authentication required: only Admin and Office staff can access.
+ *
+ * NOTE: The "category" logic used in capacity/graves mirrors the dashboard's
+ * per-grave classification. A grave's category is its MOST URGENT state:
+ *   Expired  >  Expiring  >  Occupied  >  Reserved  >  Vacant
+ * Co-interments are resolved via MIN(lease_expiration_date) — one expired
+ * occupant is enough to flag the grave as 'Expired'.
  */
 
 define('ITS_ME_JUSTTOVERIFY', true);
@@ -100,6 +113,86 @@ if (!function_exists('report_get_filters')) {
     }
 }
 
+if (!function_exists('report_categorized_graves_sql')) {
+    /**
+     * Returns a SQL snippet producing ONE ROW PER non-deleted grave with:
+     *
+     *   block_id                  (int)
+     *   grave_id                  (int)
+     *   category                  'Vacant' | 'Occupied' | 'Expiring' | 'Expired' | 'Reserved' | 'Other'
+     *   min_exp_date              earliest lease_expiration_date among active interments
+     *   has_active_reservation    1 if there is an active row in `reservations`
+     *   active_interments_count   number of active, non-deleted interments
+     *
+     * Mirrors the dashboard's per-grave classification so both endpoints
+     * agree on counts. Do not change the CASE ordering — it defines the
+     * priority when a grave is in multiple states at once.
+     *
+     * NOTE: `Pending` interments cannot have a `current_grave_id` (enforced
+     * by `chk_status_grave`), so "is this grave reserved?" must be answered
+     * via the `reservations` table — not by scanning `interments`.
+     */
+    function report_categorized_graves_sql(): string
+    {
+        return "
+            SELECT
+                gc.block_id,
+                gc.grave_id,
+                CASE
+                    WHEN gc.min_exp_date IS NOT NULL
+                         AND gc.min_exp_date <= CURDATE() THEN 'Expired'
+                    WHEN gc.min_exp_date IS NOT NULL
+                         AND gc.min_exp_date <= DATE_ADD(CURDATE(), INTERVAL 30 DAY) THEN 'Expiring'
+                    WHEN gc.min_exp_date IS NOT NULL THEN 'Occupied'
+                    WHEN gc.has_active_reservation = 1 THEN 'Reserved'
+                    WHEN gc.grave_status = 'Vacant' THEN 'Vacant'
+                    ELSE 'Other'
+                END AS category,
+                gc.min_exp_date,
+                gc.has_active_reservation,
+                gc.active_interments_count
+            FROM (
+                SELECT
+                    g.block_id,
+                    g.grave_id,
+                    g.status AS grave_status,
+                    MIN(i.lease_expiration_date) AS min_exp_date,
+                    COUNT(DISTINCT i.interment_id) AS active_interments_count,
+                    EXISTS (
+                        SELECT 1 FROM reservations r
+                        WHERE r.target_grave_id = g.grave_id
+                          AND r.reservation_state = 'Active'
+                    ) AS has_active_reservation
+                FROM graves g
+                LEFT JOIN interments i
+                    ON g.grave_id = i.current_grave_id
+                    AND i.status = 'Active'
+                    AND i.deleted_at IS NULL
+                WHERE g.deleted_at IS NULL
+                GROUP BY g.grave_id
+            ) AS gc
+        ";
+    }
+}
+
+if (!function_exists('report_empty_category_distribution')) {
+    /**
+     * Canonical, ordered category map used for the pie chart payload and
+     * for filling in zeroes for categories with no rows. Keep the order
+     * consistent with the frontend's `colorFor` / `transformGraveDistribution`.
+     */
+    function report_empty_category_distribution(): array
+    {
+        return [
+            'Vacant'   => 0,
+            'Occupied' => 0,
+            'Expiring' => 0,
+            'Expired'  => 0,
+            'Reserved' => 0,
+        ];
+    }
+}
+
 /* -------------------------------------------------------------------------
  * Request parsing
  * ------------------------------------------------------------------------- */
@@ -154,36 +247,137 @@ try {
 
         // =================================================================
         // 1. CAPACITY
+        //
+        // Overview report. Returns:
+        //   - summary              : enriched category counts
+        //   - grave_status_distribution  : pie-chart ready {cat => count}
+        //   - lease_status_by_interment  : per-interment complement to above
+        //   - monthly_lease_expiration   : line-chart ready {YYYY-MM => count}
+        //   - co_interment_graves_count  : graves with 2+ active interments
+        //   - active_reservations_count  : active reservations in the table
+        //   - by_block             : same enriched shape, grouped per block
         // =================================================================
         case 'capacity':
-            $summaryStmt = $pdo->prepare("
+            // ---- Top-level summary + pie chart data ----------------------
+            $summaryStmt = $pdo->query("
                 SELECT
                     COUNT(*) AS total_graves,
-                    SUM(CASE WHEN status = 'Occupied' THEN 1 ELSE 0 END) AS occupied,
-                    SUM(CASE WHEN status = 'Vacant' THEN 1 ELSE 0 END) AS vacant
-                FROM graves
-                WHERE deleted_at IS NULL
+                    COALESCE(SUM(CASE WHEN category = 'Occupied' THEN 1 ELSE 0 END), 0) AS occupied,
+                    COALESCE(SUM(CASE WHEN category = 'Vacant'   THEN 1 ELSE 0 END), 0) AS vacant,
+                    COALESCE(SUM(CASE WHEN category = 'Expiring' THEN 1 ELSE 0 END), 0) AS expiring,
+                    COALESCE(SUM(CASE WHEN category = 'Expired'  THEN 1 ELSE 0 END), 0) AS expired,
+                    COALESCE(SUM(CASE WHEN category = 'Reserved' THEN 1 ELSE 0 END), 0) AS reserved
+                FROM (" . report_categorized_graves_sql() . ") AS cg
             ");
-            $summaryStmt->execute();
-            $summary = $summaryStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+            $summaryRow = $summaryStmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
-            $blockStmt = $pdo->prepare("
+            // Pie chart: always return the canonical order with zero-fills so
+            // the frontend legend stays stable even when a category is empty.
+            $distribution = report_empty_category_distribution();
+            $distStmt = $pdo->query("
+                SELECT category, COUNT(*) AS count
+                FROM (" . report_categorized_graves_sql() . ") AS cg
+                GROUP BY category
+            ");
+            while ($row = $distStmt->fetch(PDO::FETCH_ASSOC)) {
+                $cat = (string)($row['category'] ?? '');
+                if (array_key_exists($cat, $distribution)) {
+                    $distribution[$cat] = (int)($row['count'] ?? 0);
+                }
+            }
+
+            // ---- Per-interment lease status (co-interment aware) ---------
+            // Complements the per-grave numbers: a co-interment grave with
+            // one expired + one healthy occupant contributes 1 to each bucket
+            // here, but counts only once (as 'Expired') in grave_status_distribution.
+            $leaseStmt = $pdo->query("
+                SELECT
+                    SUM(lease_expiration_date <= CURDATE()) AS expired,
+                    SUM(lease_expiration_date > CURDATE()
+                        AND lease_expiration_date <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)) AS expiring,
+                    SUM(lease_expiration_date > DATE_ADD(CURDATE(), INTERVAL 30 DAY)) AS occupied,
+                    SUM(lease_expiration_date IS NULL) AS unknown,
+                    COUNT(*) AS total
+                FROM interments
+                WHERE status = 'Active' AND deleted_at IS NULL
+            ");
+            $leaseRow = $leaseStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+            $leaseStatus = [
+                'Expired'  => (int)($leaseRow['expired']  ?? 0),
+                'Expiring' => (int)($leaseRow['expiring'] ?? 0),
+                'Occupied' => (int)($leaseRow['occupied'] ?? 0),
+                'Unknown'  => (int)($leaseRow['unknown']  ?? 0),
+                'Total'    => (int)($leaseRow['total']    ?? 0),
+            ];
+
+            // ---- Monthly lease expiration (line chart) -------------------
+            // Current-year months, always 12 keys so the x-axis is stable.
+            $monthlyStmt = $pdo->query("
+                SELECT DATE_FORMAT(lease_expiration_date, '%Y-%m') AS exp_month,
+                       COUNT(*) AS count
+                FROM interments
+                WHERE status = 'Active'
+                  AND deleted_at IS NULL
+                  AND YEAR(lease_expiration_date) = YEAR(CURDATE())
+                GROUP BY exp_month
+                ORDER BY exp_month ASC
+            ");
+            $rawMonthly = $monthlyStmt->fetchAll(PDO::FETCH_KEY_PAIR) ?: [];
+
+            $monthlyExpiration = [];
+            $currentYear = date('Y');
+            for ($m = 1; $m <= 12; $m++) {
+                $monthKey = $currentYear . '-' . str_pad((string)$m, 2, '0', STR_PAD_LEFT);
+                $monthlyExpiration[$monthKey] = (int)($rawMonthly[$monthKey] ?? 0);
+            }
+
+            // ---- Auxiliary counts ----------------------------------------
+            $coStmt = $pdo->query("
+                SELECT COUNT(*) FROM (
+                    SELECT current_grave_id
+                    FROM interments
+                    WHERE status = 'Active'
+                      AND deleted_at IS NULL
+                      AND current_grave_id IS NOT NULL
+                    GROUP BY current_grave_id
+                    HAVING COUNT(*) > 1
+                ) AS co
+            ");
+            $coIntermentCount = (int)$coStmt->fetchColumn();
+
+            $resvStmt = $pdo->query("
+                SELECT COUNT(*) FROM reservations WHERE reservation_state = 'Active'
+            ");
+            $activeReservationsCount = (int)$resvStmt->fetchColumn();
+
+            // ---- By-block breakdown (enriched) ---------------------------
+            $blockStmt = $pdo->query("
                 SELECT
                     b.block_id,
                     b.block_name,
                     b.block_type,
-                    COUNT(g.grave_id) AS total_graves,
-                    SUM(CASE WHEN g.status = 'Occupied' THEN 1 ELSE 0 END) AS occupied,
-                    SUM(CASE WHEN g.status = 'Vacant' THEN 1 ELSE 0 END) AS vacant
+                    COALESCE(agg.total_graves, 0) AS total_graves,
+                    COALESCE(agg.occupied, 0)     AS occupied,
+                    COALESCE(agg.vacant, 0)       AS vacant,
+                    COALESCE(agg.expiring, 0)     AS expiring,
+                    COALESCE(agg.expired, 0)      AS expired,
+                    COALESCE(agg.reserved, 0)     AS reserved
                 FROM blocks b
-                LEFT JOIN graves g
-                    ON g.block_id = b.block_id
-                   AND g.deleted_at IS NULL
+                LEFT JOIN (
+                    SELECT
+                        cg.block_id,
+                        COUNT(*) AS total_graves,
+                        SUM(CASE WHEN cg.category = 'Occupied' THEN 1 ELSE 0 END) AS occupied,
+                        SUM(CASE WHEN cg.category = 'Vacant'   THEN 1 ELSE 0 END) AS vacant,
+                        SUM(CASE WHEN cg.category = 'Expiring' THEN 1 ELSE 0 END) AS expiring,
+                        SUM(CASE WHEN cg.category = 'Expired'  THEN 1 ELSE 0 END) AS expired,
+                        SUM(CASE WHEN cg.category = 'Reserved' THEN 1 ELSE 0 END) AS reserved
+                    FROM (" . report_categorized_graves_sql() . ") AS cg
+                    GROUP BY cg.block_id
+                ) AS agg ON agg.block_id = b.block_id
                 WHERE b.deleted_at IS NULL
-                GROUP BY b.block_id, b.block_name, b.block_type
                 ORDER BY b.block_name ASC
             ");
-            $blockStmt->execute();
 
             $byBlock = array_map(static function (array $row): array {
                 return [
@@ -193,17 +387,30 @@ try {
                     'total_graves' => (int)($row['total_graves'] ?? 0),
                     'occupied'     => (int)($row['occupied'] ?? 0),
                     'vacant'       => (int)($row['vacant'] ?? 0),
+                    'expiring'     => (int)($row['expiring'] ?? 0),
+                    'expired'      => (int)($row['expired'] ?? 0),
+                    'reserved'     => (int)($row['reserved'] ?? 0),
                 ];
             }, $blockStmt->fetchAll(PDO::FETCH_ASSOC) ?: []);
 
             $payload = $basePayload;
             $payload['summary'] = [
-                'total_graves' => (int)($summary['total_graves'] ?? 0),
-                'occupied'     => (int)($summary['occupied'] ?? 0),
-                'vacant'       => (int)($summary['vacant'] ?? 0),
+                // Legacy keys preserved for backwards compatibility.
+                'total_graves' => (int)($summaryRow['total_graves'] ?? 0),
+                'occupied'     => (int)($summaryRow['occupied'] ?? 0),
+                'vacant'       => (int)($summaryRow['vacant'] ?? 0),
+                // Enriched keys.
+                'expiring'     => (int)($summaryRow['expiring'] ?? 0),
+                'expired'      => (int)($summaryRow['expired'] ?? 0),
+                'reserved'     => (int)($summaryRow['reserved'] ?? 0),
             ];
-            $payload['by_block']      = $byBlock;
-            $payload['total_records'] = count($byBlock);
+            $payload['grave_status_distribution']   = $distribution;          // <- pie chart
+            $payload['lease_status_by_interment']   = $leaseStatus;
+            $payload['monthly_lease_expiration']    = $monthlyExpiration;     // <- line chart
+            $payload['co_interment_graves_count']   = $coIntermentCount;
+            $payload['active_reservations_count']   = $activeReservationsCount;
+            $payload['by_block']                    = $byBlock;
+            $payload['total_records']               = count($byBlock);
 
             Response::success("Cemetery capacity summary retrieved", $payload);
             break;
@@ -301,26 +508,38 @@ try {
             break;
 
         // =================================================================
-        // 4. ALL GRAVES REGISTRY
+        // 4. ALL GRAVES REGISTRY (enriched)
+        //
+        // Filter by enriched category (f[status]):
+        //   Vacant | Occupied | Expiring | Expired | Reserved | Other
+        //
+        // Each row now also carries the per-grave category + lease context
+        // so the frontend can render badges, sort by urgency, and (later)
+        // derive its own pie chart without a second call.
         // =================================================================
         case 'graves':
+            $validCategories = ['Vacant', 'Occupied', 'Expiring', 'Expired', 'Reserved', 'Other'];
+
             $params       = [];
-            $whereClauses = ["g.deleted_at IS NULL"];
+            $whereClauses = [];
 
             if (!empty($filters['status'])) {
-                $status = report_normalize_enum($filters['status'], ['Vacant', 'Occupied']);
+                $status = report_normalize_enum($filters['status'], $validCategories);
                 if ($status === null) {
-                    Response::error("Invalid status filter", 400);
+                    Response::error(
+                        "Invalid status filter. Allowed: " . implode(', ', $validCategories),
+                        400
+                    );
                 }
-                $whereClauses[]    = "g.status = :status";
+                $whereClauses[]    = "cg.category = :status";
                 $params[':status'] = $status;
             }
 
-            $whereSql = "WHERE " . implode(" AND ", $whereClauses);
+            $whereSql = $whereClauses ? ('WHERE ' . implode(' AND ', $whereClauses)) : '';
 
             $countStmt = $pdo->prepare("
                 SELECT COUNT(*)
-                FROM graves g
+                FROM (" . report_categorized_graves_sql() . ") AS cg
                 {$whereSql}
             ");
             $countStmt->execute($params);
@@ -328,15 +547,23 @@ try {
 
             $sql = "
                 SELECT
-                    g.grave_id,
+                    cg.grave_id,
+                    cg.category,
+                    cg.min_exp_date,
+                    cg.has_active_reservation,
+                    cg.active_interments_count,
                     g.grave_code,
-                    g.status,
+                    g.status AS raw_status,
                     g.remarks,
                     g.row_num,
                     g.col_num,
                     b.block_name,
-                    b.block_type
-                FROM graves g
+                    b.block_type,
+                    DATEDIFF(cg.min_exp_date, CURDATE()) AS days_until_expiration
+                FROM (" . report_categorized_graves_sql() . ") AS cg
+                INNER JOIN graves g
+                    ON g.grave_id = cg.grave_id
+                   AND g.deleted_at IS NULL
                 LEFT JOIN blocks b
                     ON b.block_id = g.block_id
                    AND b.deleted_at IS NULL
@@ -354,15 +581,21 @@ try {
 
             $payload = $basePayload;
             $payload['rows'] = array_map(static function (array $row): array {
+                $days = $row['days_until_expiration'];
                 return [
-                    'grave_id'   => (int)($row['grave_id'] ?? 0),
-                    'grave_code' => $row['grave_code'] ?? 'N/A',
-                    'status'     => $row['status'] ?? 'Unknown',
-                    'remarks'    => $row['remarks'] ?? '',
-                    'row_num'    => isset($row['row_num']) ? (int)$row['row_num'] : null,
-                    'col_num'    => isset($row['col_num']) ? (int)$row['col_num'] : null,
-                    'block_name' => $row['block_name'] ?? 'N/A',
-                    'block_type' => $row['block_type'] ?? 'N/A',
+                    'grave_id'                => (int)($row['grave_id'] ?? 0),
+                    'grave_code'              => $row['grave_code'] ?? 'N/A',
+                    'status'                  => $row['raw_status'] ?? 'Unknown',   // raw DB status
+                    'category'                => $row['category'] ?? 'Other',       // enriched
+                    'remarks'                 => $row['remarks'] ?? '',
+                    'row_num'                 => isset($row['row_num']) ? (int)$row['row_num'] : null,
+                    'col_num'                 => isset($row['col_num']) ? (int)$row['col_num'] : null,
+                    'block_name'              => $row['block_name'] ?? 'N/A',
+                    'block_type'              => $row['block_type'] ?? 'N/A',
+                    'min_lease_expiration'    => $row['min_exp_date'] ?? null,
+                    'days_until_expiration'   => ($days === null) ? null : (int)$days,
+                    'has_active_reservation'  => (bool)(int)($row['has_active_reservation'] ?? 0),
+                    'active_interments_count' => (int)($row['active_interments_count'] ?? 0),
                 ];
             }, $rows);
 

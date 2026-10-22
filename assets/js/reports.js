@@ -480,11 +480,54 @@ function updateGenerationDate() {
    6. RENDER FUNCTIONS
    ------------------------------------------------------------------------- */
 
+// ---- Chart instance registry -------------------------------------------
+// Re-rendering (via filter change, report switch, or print re-fetch) would
+// otherwise leak Chart.js instances and cause ResizeObserver noise, so we
+// destroy any tracked instance before rebuilding the same canvas.
+const reportCharts = Object.create(null);
+
+function destroyReportCharts(...keys) {
+  for (const key of keys) {
+    if (reportCharts[key]) {
+      try {
+        reportCharts[key].destroy();
+      } catch (_) {
+        /* noop */
+      }
+      delete reportCharts[key];
+    }
+  }
+}
+
+// Canonical category palette — mirrors the dashboard's color mapping so
+// capacity/graves visually agree with the home dashboard.
+const CATEGORY_ORDER = [
+  "Vacant",
+  "Occupied",
+  "Expiring",
+  "Expired",
+  "Reserved",
+];
+
+const CATEGORY_COLORS = {
+  Vacant: "#10b981",
+  Occupied: "#6366f1",
+  Expiring: "#f59e0b",
+  Expired: "#ef4444",
+  Reserved: "#8b5cf6",
+  Other: "#64748b",
+};
+
 function renderCapacity(data, container) {
+  destroyReportCharts("capacityPie", "capacityLine");
+
   const summary = data.summary || {};
   const total = Number(summary.total_graves) || 0;
   const occupied = Number(summary.occupied) || 0;
   const vacant = Number(summary.vacant) || 0;
+  const expiring = Number(summary.expiring) || 0;
+  const expired = Number(summary.expired) || 0;
+  const reserved = Number(summary.reserved) || 0;
 
   const pct = (n) => (total ? ((n / total) * 100).toFixed(1) : "0.0");
 
@@ -502,8 +545,21 @@ function renderCapacity(data, container) {
         <tr><td><strong>Total Graves</strong></td><td>${total}</td><td>100.0%</td></tr>
         <tr><td><strong>Occupied</strong></td><td>${occupied}</td><td>${pct(occupied)}%</td></tr>
         <tr><td><strong>Vacant</strong></td><td>${vacant}</td><td>${pct(vacant)}%</td></tr>
+        <tr><td><strong>Expiring (within 30 days)</strong></td><td>${expiring}</td><td>${pct(expiring)}%</td></tr>
+        <tr><td><strong>Expired</strong></td><td>${expired}</td><td>${pct(expired)}%</td></tr>
+        <tr><td><strong>Reserved</strong></td><td>${reserved}</td><td>${pct(reserved)}%</td></tr>
       </tbody>
     </table>
+
+    <div class="docBlockHeader">Grave Status Distribution</div>
+    <div style="display:grid;grid-template-columns:minmax(220px,1fr) minmax(280px,2fr);gap:16px;align-items:stretch;margin-bottom:16px;">
+      <div style="position:relative;min-height:260px;">
+        <canvas id="capacity-status-pie"></canvas>
+      </div>
+      <div style="position:relative;min-height:260px;">
+        <canvas id="capacity-monthly-line"></canvas>
+      </div>
+    </div>
 
     <div class="docBlockHeader">Breakdown by Block</div>
     <table class="cleanTable">
@@ -514,13 +570,16 @@ function renderCapacity(data, container) {
           <th>Total</th>
           <th>Occupied</th>
           <th>Vacant</th>
+          <th>Expiring</th>
+          <th>Expired</th>
+          <th>Reserved</th>
         </tr>
       </thead>
       <tbody>`;
 
   const blocks = Array.isArray(data.by_block) ? data.by_block : [];
   if (blocks.length === 0) {
-    html += `<tr><td colspan="5" style="text-align:center;color:#94a3b8;">No blocks on record.</td></tr>`;
+    html += `<tr><td colspan="8" style="text-align:center;color:#94a3b8;">No blocks on record.</td></tr>`;
   } else {
     for (const b of blocks) {
       html += `<tr>
@@ -529,12 +588,233 @@ function renderCapacity(data, container) {
         <td>${Number(b.total_graves) || 0}</td>
         <td>${Number(b.occupied) || 0}</td>
         <td>${Number(b.vacant) || 0}</td>
+        <td>${Number(b.expiring) || 0}</td>
+        <td>${Number(b.expired) || 0}</td>
+        <td>${Number(b.reserved) || 0}</td>
       </tr>`;
     }
   }
 
   html += `</tbody></table>`;
+
   container.innerHTML = html;
+
+  // Canvases are now in the DOM — build the charts.
+  renderCapacityPieChart(data.grave_status_distribution || {});
+  renderCapacityBarChart(data.monthly_lease_expiration || {});
+}
+
+function renderCapacityPieChart(distribution) {
+  const canvas = document.getElementById("capacity-status-pie");
+  if (!canvas) return;
+
+  const wrap = canvas.parentElement;
+
+  if (typeof Chart === "undefined") {
+    if (wrap) {
+      wrap.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;min-height:220px;color:#94a3b8;font-size:12px;text-align:center;padding:12px;">Charts require Chart.js to be loaded on this page.</div>`;
+    }
+    return;
+  }
+
+  const labels = [];
+  const values = [];
+  const colors = [];
+  for (const key of CATEGORY_ORDER) {
+    const n = Number(distribution[key]) || 0;
+    if (n > 0) {
+      labels.push(key);
+      values.push(n);
+      colors.push(CATEGORY_COLORS[key] || "#cbd5e1");
+    }
+  }
+
+  if (labels.length === 0) {
+    if (wrap) {
+      wrap.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;min-height:220px;color:#94a3b8;font-size:12px;">No grave status data available.</div>`;
+    }
+    return;
+  }
+
+  reportCharts.capacityPie = new Chart(canvas.getContext("2d"), {
+    type: "pie",
+    data: {
+      labels,
+      datasets: [
+        {
+          data: values,
+          backgroundColor: colors,
+          borderColor: "#ffffff",
+          borderWidth: 2,
+          hoverOffset: 8,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      // Static render → safe for the print pipeline (no mid-animation capture).
+      animation: false,
+      plugins: {
+        legend: {
+          position: "bottom",
+          labels: {
+            boxWidth: 12,
+            boxHeight: 12,
+            padding: 10,
+            font: { size: 11 },
+          },
+        },
+        tooltip: {
+          callbacks: {
+            label(ctx) {
+              const v = Number(ctx.parsed) || 0;
+              const sum = values.reduce((s, x) => s + x, 0) || 0;
+              const p = sum ? ((v / sum) * 100).toFixed(1) : "0.0";
+              return ` ${ctx.label}: ${v} (${p}%)`;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+function renderCapacityBarChart(monthly) {
+  const canvas = document.getElementById("capacity-monthly-line");
+  if (!canvas) return;
+
+  const wrap = canvas.parentElement;
+
+  if (typeof Chart === "undefined") {
+    if (wrap) {
+      wrap.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;min-height:220px;color:#94a3b8;font-size:12px;text-align:center;padding:12px;">Charts require Chart.js to be loaded on this page.</div>`;
+    }
+    return;
+  }
+
+  const keys = Object.keys(monthly || {}).sort();
+  if (keys.length === 0) {
+    if (wrap) {
+      wrap.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;min-height:220px;color:#94a3b8;font-size:12px;">No monthly lease data available.</div>`;
+    }
+    return;
+  }
+
+  const labels = keys.map((k) => {
+    const [y, m] = k.split("-");
+    const yN = Number(y);
+    const mN = Number(m);
+    if (!yN || !mN) return k;
+    return new Date(yN, mN - 1, 1).toLocaleString("en-US", { month: "short" });
+  });
+  const values = keys.map((k) => Number(monthly[k]) || 0);
+  const hasAny = values.some((v) => v > 0);
+
+  // "Today" cutoff — lexicographic comparison works for YYYY-MM keys.
+  const now = new Date();
+  const currentKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const isPastKey = (k) => k < currentKey;
+
+  // Reuse the same palette as the rest of the app.
+  const COLOR_EXPIRED = "#ef4444";
+  const COLOR_EXPIRED_DARK = "#dc2626";
+  const COLOR_EXPIRING = "#f59e0b";
+  const COLOR_EXPIRING_DARK = "#d97706";
+
+  const backgroundColors = keys.map((k) =>
+    isPastKey(k) ? COLOR_EXPIRED : COLOR_EXPIRING,
+  );
+  const borderColors = keys.map((k) =>
+    isPastKey(k) ? COLOR_EXPIRED_DARK : COLOR_EXPIRING_DARK,
+  );
+  const hoverBackgroundColors = borderColors.slice();
+  const hoverBorderColors = borderColors.slice();
+
+  // Tooltip clarifies past / current / future so the two-color meaning
+  // never has to be inferred from color alone.
+  const describeKey = (k) => {
+    if (k < currentKey) return "overdue";
+    if (k === currentKey) return "this month";
+    return "upcoming";
+  };
+
+  reportCharts.capacityLine = new Chart(canvas.getContext("2d"), {
+    type: "bar",
+    data: {
+      labels,
+      datasets: [
+        {
+          label: "Lease Expirations",
+          data: values,
+          backgroundColor: backgroundColors,
+          borderColor: borderColors,
+          borderWidth: 1,
+          borderRadius: 6,
+          borderSkipped: false,
+          maxBarThickness: 32,
+          hoverBackgroundColor: hoverBackgroundColors,
+          hoverBorderColor: hoverBorderColors,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        legend: { display: false },
+        title: hasAny
+          ? undefined
+          : {
+              display: true,
+              text: "No expirations scheduled this year",
+              color: "#94a3b8",
+              font: { size: 11, weight: "600" },
+            },
+        subtitle: hasAny
+          ? {
+              display: true,
+              text: "Red = overdue  •  Amber = current & upcoming",
+              color: "#64748b",
+              font: { size: 10, weight: "500" },
+              padding: { top: 6 },
+              position: "bottom",
+            }
+          : undefined,
+        tooltip: {
+          callbacks: {
+            label: (ctx) =>
+              ` ${Number(ctx.parsed.y) || 0} expiring (${describeKey(keys[ctx.dataIndex])})`,
+          },
+        },
+      },
+      interaction: { mode: "index", intersect: false },
+      scales: {
+        x: {
+          grid: { display: false },
+          border: { display: false },
+          ticks: {
+            color: "#94a3b8",
+            font: { size: 11, weight: "600" },
+            maxRotation: 0,
+            autoSkip: false,
+          },
+        },
+        y: {
+          beginAtZero: true,
+          ticks: {
+            color: "#94a3b8",
+            font: { size: 11 },
+            precision: 0,
+            stepSize: 1,
+          },
+          grid: { color: "#f1f5f9" },
+          border: { display: false },
+        },
+      },
+    },
+  });
 }
 
 function renderExpirations(data, container) {
@@ -641,13 +921,47 @@ function renderGraves(data, container) {
     return;
   }
 
-  const colors = { Vacant: "#16a34a", Occupied: "#2563eb" };
   const total = Number(data.total_records) || rows.length;
 
+  // Compute per-category counts for the chips row.
+  const counts = Object.create(null);
+  for (const it of rows) {
+    const cat = it.category || it.status || "Other";
+    counts[cat] = (counts[cat] || 0) + 1;
+  }
+  const chipOrder = [
+    "Expired",
+    "Expiring",
+    "Occupied",
+    "Reserved",
+    "Vacant",
+    "Other",
+  ];
+  const presentCats = chipOrder.filter((c) => counts[c]);
+
+  let chipsHtml = "";
+  if (presentCats.length > 0) {
+    chipsHtml =
+      `<div style="display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px;">` +
+      presentCats
+        .map((c) => {
+          const color = CATEGORY_COLORS[c] || "#64748b";
+          return `<span style="display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:${color}15;color:${color};font-size:11px;font-weight:600;border:1px solid ${color}40;letter-spacing:0.02em;">
+            <span style="width:8px;height:8px;border-radius:50%;background:${color};"></span>
+            ${esc(c)}: ${counts[c]}
+          </span>`;
+        })
+        .join("") +
+      `</div>`;
+  }
+
   let html = `<div class="docBlockHeader">Grave Registry — ${rows.length} of ${total} record${total === 1 ? "" : "s"}</div>`;
+  html += chipsHtml;
 
   for (const it of rows) {
-    const color = colors[it.status] || "#64748b";
+    const cat = it.category || it.status || "Other";
+    const color = CATEGORY_COLORS[cat] || "#64748b";
+
     const blockLine =
       it.block_name && it.block_name !== "N/A"
         ? `${esc(it.block_name)} (${esc(it.block_type || "N/A")})`
@@ -658,13 +972,44 @@ function renderGraves(data, container) {
         ? `Row ${it.row_num ?? "—"} / Column ${it.col_num ?? "—"}`
         : null;
 
+    // Lease context (only when the backend provides it).
+    let leaseLine = "";
+    if (it.min_lease_expiration) {
+      const days = it.days_until_expiration;
+      let daysLabel = "";
+      if (typeof days === "number" && Number.isFinite(days)) {
+        if (days < 0) {
+          const d = Math.abs(days);
+          daysLabel = ` (${d} day${d === 1 ? "" : "s"} overdue)`;
+        } else if (days === 0) {
+          daysLabel = " (today)";
+        } else {
+          daysLabel = ` (${days} day${days === 1 ? "" : "s"} left)`;
+        }
+      }
+      leaseLine = `<strong>Earliest Lease Expiration:</strong> ${fmtDate(it.min_lease_expiration)}${esc(daysLabel)}<br />`;
+    }
+
+    const activeCount = Number(it.active_interments_count) || 0;
+    const coLine =
+      activeCount > 1
+        ? `<strong>Active Interments:</strong> ${activeCount} (co-interment grave)<br />`
+        : "";
+
+    const reservedLine = it.has_active_reservation
+      ? `<strong>Reservation:</strong> Active reservation on file<br />`
+      : "";
+
     html += `<div class="bulletItem">
       <strong>Grave Code: ${esc(it.grave_code || "N/A")}</strong>
       <div class="itemDetailBlock">
-        <strong>Status:</strong> <span style="color:${color};font-weight:600;">${esc(it.status || "Unknown")}</span><br />
+        <strong>Status:</strong> <span style="color:${color};font-weight:600;">${esc(cat)}</span><br />
         <strong>Block Section:</strong> ${blockLine}<br />
         ${position ? `<strong>Position:</strong> ${esc(position)}<br />` : ""}
-        <strong>Remarks:</strong> ${esc(it.remarks || "None on file")}
+        ${leaseLine}
+        ${coLine}
+        ${reservedLine}
+        <strong>Remarks in the graves:</strong> ${esc(it.remarks || "None on file")}
       </div>
     </div>`;
   }
@@ -875,6 +1220,44 @@ async function loadPaymentOptions() {
   }
 }
 
+/**
+ * Ensures the graves status filter dropdown offers the enriched category
+ * set (Vacant / Occupied / Expiring / Expired / Reserved / Other) rather
+ * than just Vacant/Occupied. Preserves the first "any"/placeholder option
+ * and the currently selected value; skips the rebuild entirely if the
+ * dropdown is already fully populated.
+ */
+function loadGravesCategoryOptions() {
+  const select = document.getElementById("graves-input-status");
+  if (!select) return;
+
+  const categories = [
+    "Vacant",
+    "Occupied",
+    "Expiring",
+    "Expired",
+    "Reserved",
+    "Other",
+  ];
+  const existingValues = Array.from(select.options).map((o) => o.value);
+  const allPresent = categories.every((c) => existingValues.includes(c));
+  if (allPresent) return;
+
+  const prev = select.value;
+  const firstOpt = select.options[0];
+  const anyLabel = firstOpt
+    ? firstOpt.textContent || "Any status"
+    : "Any status";
+  const anyValue = firstOpt ? firstOpt.value || "" : "";
+
+  select.innerHTML = [
+    `<option value="${esc(anyValue)}">${esc(anyLabel)}</option>`,
+    ...categories.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`),
+  ].join("");
+
+  if (categories.includes(prev)) select.value = prev;
+}
+
 /* -------------------------------------------------------------------------
    8. BOOTSTRAP
    ------------------------------------------------------------------------- */
@@ -894,6 +1277,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   loadReportBranding();
   loadYearOptions();
+  loadGravesCategoryOptions();
 
   reportLoad.catch((err) => console.error("Initial report load failed:", err));
 });
