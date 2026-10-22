@@ -147,12 +147,12 @@
   color: #94a3b8;
 }
 
-/* ── CANVAS ──────────────────────────────────────────────── */
+/* ── CANVAS (x24 MARGINS APPLIED) ────────────────────────── */
 .mapCanvas {
-  width: calc(100% - 3rem);
+  width: calc(100% - 48px) !important;
+  margin: 0 24px !important;
   height: 440px;
   background-color: #e2e8f0;
-  margin: 0 1.5rem;
   border-radius: 12px;
   position: relative;
   overflow: hidden;
@@ -162,6 +162,7 @@
   top: 0;
   left: 0;
   display: block;
+  z-index: 1;
 }
 .mapHint {
   position: absolute;
@@ -178,6 +179,7 @@
   backdrop-filter: blur(2px);
   max-width: 90%;
   text-align: center;
+  z-index: 2;
 }
 .mapLoading {
   position: absolute;
@@ -189,6 +191,8 @@
   color: #64748b;
   background: #e2e8f0;
   border-radius: 12px;
+  pointer-events: none;
+  z-index: 10;
 }
 
 /* ── LEGEND ──────────────────────────────────────────────── */
@@ -231,7 +235,7 @@
   border-radius: 12px;
   border: 1px solid #e2e8f0;
   padding: 1.5rem;
-  width: 600px;
+  width: 720px;
   max-width: 92vw;
   max-height: 88vh;
   overflow-y: auto;
@@ -366,4 +370,99 @@
 }
 .modalNote a:hover {
   text-decoration: underline;
+}
+
+/* ── VIEW BLOCK MODAL: GRAVE GRID ── */
+.grave-grid-container {
+  margin-top: 16px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 12px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.grave-grid-header {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.grave-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+.grave-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.grave-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px dashed #cbd5e1;
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+}
+.grave-code {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e3a5f;
+}
+.grave-status {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+.grave-status.vacant { background: #dcfce7; color: #166534; }
+.grave-status.occupied { background: #fee2e2; color: #991b1b; }
+.grave-status.other { background: #f1f5f9; color: #475569; }
+.grave-occupant {
+  font-size: 12px;
+  color: #0f172a;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.grave-meta {
+  font-size: 11px;
+  color: #64748b;
+}
+.grave-remarks-input {
+  width: 100%;
+  font-size: 11px;
+  padding: 5px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  margin-top: 2px;
+  outline: none;
+  color: #334155;
+  transition: 0.2s;
+  box-sizing: border-box;
+}
+.grave-remarks-input:focus {
+  border-color: #3b82f6;
+  background: #fff;
+}
+
+/* ── MOBILE ──────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .mapCanvas {
+    width: calc(100% - 48px) !important;
+    margin: 0 24px !important;
+  }
+  .grave-grid {
+    grid-template-columns: 1fr;
+  }
 }

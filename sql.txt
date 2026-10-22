@@ -135,7 +135,7 @@ CREATE TABLE blocks (
         'Mass Grave', 'Cluster', 'Block'
     ) NOT NULL,
     image_link TEXT,
-    coordinates_canvas JSON, -- for mapping visuals in the UI
+    coordinates LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(coordinates)),
     `rows` INT NOT NULL DEFAULT 0,
     `cols` INT NOT NULL DEFAULT 0,
     shape VARCHAR(50) DEFAULT 'rectangle',
@@ -158,7 +158,7 @@ CREATE TABLE blocks (
     FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
 
-INSERT INTO `blocks` (`block_id`, `block_name`, `block_type`, `image_link`, `coordinates_canvas`, `rows`, `cols`, `shape`, `custom`, `remarks`, `created_at`, `updated_at`, `deleted_at`, `created_by`, `updated_by`) VALUES
+INSERT INTO `blocks` (`block_id`, `block_name`, `block_type`, `image_link`, `coordinates`, `rows`, `cols`, `shape`, `custom`, `remarks`, `created_at`, `updated_at`, `deleted_at`, `created_by`, `updated_by`) VALUES
 (1, 'Santa Cecelia', 'Niche', '', NULL, 5, 5, 'rectangle', 0, '', '2026-10-11 15:18:34', '2026-10-11 15:18:34', NULL, 1, 1);
 
 
