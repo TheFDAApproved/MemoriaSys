@@ -887,3 +887,139 @@ body {
     }
   }
 }
+
+/* ================================================================
+   RESPONSIVE — Settings / Profile
+   ================================================================ */
+
+/* ---- Large monitors: cap the card width so forms stay readable ---- */
+@media (min-width: 1200px) {
+    .settingsContent {
+        max-width: 1100px;
+        margin: 0 auto;
+    }
+}
+
+/* ---- Tablet (<=1024px) ---- */
+@media (max-width: 1024px) {
+    .settingsContent {
+        padding: 20px;
+        gap: 20px;
+    }
+
+    .settingsContent .settingsCard {
+        padding: 20px;
+    }
+}
+
+/* ---- Large phone (<=768px) ---- */
+@media (max-width: 768px) {
+    .settingsContent {
+        padding: 16px;
+        gap: 16px;
+    }
+
+    .settingsContent .settingsCard {
+        padding: 18px;
+    }
+
+    .settingsContent .sectionTitle {
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+
+    .settingsContent .sectionTitle i {
+        font-size: 24px;
+    }
+
+    .settingsContent .sectionTitle h2 {
+        font-size: 18px;
+    }
+
+    .settingsContent .sectionTitle p {
+        font-size: 13px;
+    }
+
+    /* Stack the button row */
+    .settingsContent .saveRow {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+        margin-top: 20px;
+    }
+
+    .settingsContent .saveRow .btn {
+        width: 100%;
+        justify-content: center;
+        height: 44px;
+    }
+
+    .settingsContent .editModeNotice {
+        max-width: none;
+        font-size: 13px;
+        padding: 10px 14px;
+    }
+}
+
+/* ---- Small phone (<=480px) ---- */
+@media (max-width: 480px) {
+    .settingsContent {
+        padding: 12px;
+        gap: 14px;
+    }
+
+    .settingsContent .settingsCard {
+        padding: 14px;
+    }
+
+    .settingsContent .sectionTitle {
+        gap: 10px;
+        margin-bottom: 18px;
+    }
+
+    .settingsContent .sectionTitle i {
+        font-size: 22px;
+    }
+
+    .settingsContent .sectionTitle h2 {
+        font-size: 17px;
+    }
+
+    .settingsContent .sectionTitle p {
+        font-size: 12.5px;
+    }
+
+    .settingsContent .formGroup label {
+        font-size: 13px;
+    }
+
+    .settingsContent input[type="text"],
+    .settingsContent input[type="email"],
+    .settingsContent input[type="tel"],
+    .settingsContent input[type="password"] {
+        height: 40px;
+        font-size: 13.5px;
+    }
+
+    .settingsContent .saveRow .btn {
+        height: 42px;
+        font-size: 13.5px;
+    }
+}
+
+/* ---- Very small phone (<=360px) ---- */
+@media (max-width: 360px) {
+    .settingsContent {
+        padding: 10px;
+        gap: 12px;
+    }
+
+    .settingsContent .settingsCard {
+        padding: 12px;
+    }
+
+    .settingsContent .saveRow .btn {
+        height: 40px;
+        font-size: 13px;
+    }
+}

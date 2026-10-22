@@ -408,4 +408,95 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     loadDashboard({ showLoading: true });
+
+    // ============================================================
+    // Payments Card  (added block — existing code above untouched)
+    // ------------------------------------------------------------
+    // Populates the "Payments" stat card on the shared dashboard.
+    //
+    // The PHP endpoint (api/dashboard.php) returns role-specific
+    // payment fields:
+    //
+    //   Admin / Office : data.payments {
+    //                       total_count,
+    //                       unconfirmed_count,
+    //                       fully_confirmed_count,
+    //                       unconfirmed_by_office_count,
+    //                       unconfirmed_by_grounds_count,
+    //                       ...
+    //                     }
+    //   Grounds        : data.payments_awaiting_my_confirmation
+    //
+    // We show "unconfirmed_count" (payments still awaiting at
+    // least one confirmation — the existing Office/Grounds
+    // workflow) for Admin/Office, and Grounds staff fall back to
+    // their personal action queue.
+    //
+    // The card refreshes whenever the other stat cards re-render
+    // (cache-first render, fresh fetch, manual refresh, or the
+    // dashboard:invalidated event) by observing one sibling
+    // stat value and reading the already-written skeleton cache.
+    // No existing function is overridden, wrapped, or redefined.
+    // ============================================================
+    (function initPaymentsCard() {
+        const paymentsEl =
+            document.getElementById('stat_payments') ||
+            document.getElementById('stat_pending_payments');
+        if (!paymentsEl) return;
+
+        const SkeletonRef = window.DashboardSkeleton;
+
+        function pickPaymentCount(data) {
+            if (!data || typeof data !== 'object') return null;
+
+            const p = data.payments;
+            if (p && typeof p === 'object') {
+                if (p.unconfirmed_count != null) return p.unconfirmed_count;
+                if (p.total_count != null)       return p.total_count;
+            }
+
+            if (data.payments_awaiting_my_confirmation != null) {
+                return data.payments_awaiting_my_confirmation;
+            }
+
+            return null;
+        }
+
+        function renderFromCache() {
+            if (!SkeletonRef || typeof SkeletonRef.readCache !== 'function') return;
+            const cache = SkeletonRef.readCache();
+            if (!cache) return;
+
+            const value = pickPaymentCount(cache);
+            const next =
+                (value === null || value === undefined || Number.isNaN(value))
+                    ? '—'
+                    : value;
+
+            if (paymentsEl.textContent !== String(next)) {
+                paymentsEl.textContent = next;
+            }
+        }
+
+        // (1) Cache-first render may have already run before this
+        //     block executes — sync immediately so the card shows
+        //     the cached value on warm loads.
+        renderFromCache();
+
+        // (2) Follow every subsequent render. applyStats() writes the
+        //     sibling stat, loadDashboard() writes the skeleton cache
+        //     synchronously right after renderAll(), so reading it
+        //     from the observer always sees fresh data.
+        const watchTarget =
+            document.getElementById('stat_available_graves') ||
+            document.getElementById('stat_expiring_leases');
+
+        if (watchTarget && typeof MutationObserver !== 'undefined') {
+            new MutationObserver(renderFromCache).observe(watchTarget, {
+                childList: true,
+                characterData: true,
+                subtree: true,
+            });
+        }
+    })();
 });

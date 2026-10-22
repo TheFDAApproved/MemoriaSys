@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Memoria</title>
 
     <meta name="description" content="Management system for the Cemetery. Locate plots, monitor leases, and manage notifications.">
@@ -35,6 +35,17 @@
     <script src="assets/js/check_user.js"></script>
 </head>
 <body>
+    <button type="button"
+            class="mobileHamburger"
+            id="mobileHamburger"
+            aria-label="Open navigation"
+            aria-controls="sidebar"
+            aria-expanded="false">
+        <i class="fas fa-bars" aria-hidden="true"></i>
+    </button>
+
+    <div class="sidebarBackdrop" id="sidebarBackdrop" aria-hidden="true"></div>
+
     <div class="sidebar" id="sidebar">
         <script>
             (function () {
@@ -56,14 +67,14 @@
 
         <div class="sidebarNav">
             <div class="sidebarSection">Main</div>
-            <a href="dashboard.html" class="menu" target="contentFrame"><i class="fas fa-chart-pie"></i><span>Dashboard</span></a>
+            <a href="grounds_dashboard.html" class="menu" target="contentFrame"><i class="fas fa-chart-pie"></i><span>Dashboard</span></a>
 
             <div class="sidebarSection">Management</div>
-            <a href="reserve.html" class="menu" target="contentFrame"><i class="fas fa-thumbtack"></i><span>Reserve</span></a>
-            <a href="payments.html" class="menu" target="contentFrame"><i class="fa-solid fa-receipt"></i><span>Payments</span></a>
+            <a href="grounds_reserve.html" class="menu" target="contentFrame"><i class="fas fa-thumbtack"></i><span>Reserve</span></a>
+            <a href="grounds_payments.html" class="menu" target="contentFrame"><i class="fa-solid fa-receipt"></i><span>Payments</span></a>
 
             <div class="sidebarSection">System</div>
-            <a href="settings.html" class="menu" target="contentFrame"><i class="fas fa-cog"></i><span>Settings</span></a>
+            <a href="user_profile.html" class="menu" target="contentFrame"><i class="fas fa-cog"></i><span>Settings</span></a>
         </div>
 
         <div class="sidebarFooter">
@@ -78,7 +89,7 @@
                     <span class="userRole" id="user_role"></span>
                 </div>
 
-                <button class="logout" id="logoutBtn">
+                <button class="logout" id="logoutBtn" aria-label="Log out">
                     <i class="fas fa-sign-out-alt"></i>
                 </button>
             </div>
@@ -86,9 +97,10 @@
     </div>
 
     <main class="mainContent">
-        <iframe name="contentFrame" src="dashboard.html" title="Main Content Area"></iframe>
+        <iframe name="contentFrame" src="grounds_dashboard.html" title="Main Content Area"></iframe>
     </main>
 
+    <script src="assets/js/confirm_ui.js"></script>
     <script src="assets/js/sidebar.js"></script>
 </body>
 </html>
