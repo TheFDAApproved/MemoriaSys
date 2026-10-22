@@ -300,3 +300,229 @@ body {
         }
     }
 }
+
+/* ================================================================
+   RESPONSIVE — Grounds Dashboard
+   Desktop (>1024px) is unchanged. Tablet, phone, and very-large
+   monitors get dedicated adjustments.
+   ================================================================ */
+
+/* ---- Large monitors: cap content width so cards/charts don't stretch ---- */
+@media (min-width: 1800px) {
+    .dashboardContent {
+        max-width: 1700px;
+        margin: 0 auto;
+    }
+}
+
+/* ---- Tablet (<=1024px): allow page scroll, stack charts ---- */
+@media (max-width: 1024px) {
+    html {
+        height: auto;
+    }
+
+    body {
+        height: auto;
+        min-height: 100vh;
+        min-height: 100dvh;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+
+    .dashboardContent {
+        height: auto;
+        min-height: 100vh;
+        min-height: 100dvh;
+        grid-template-rows: auto auto;
+        overflow: visible;
+        padding: 20px;
+        gap: 20px;
+    }
+
+    /* Stats: still 3 columns on tablet, slightly tighter */
+    .dashboardContent .statsGrid.grid3 {
+        gap: 14px;
+    }
+
+    .dashboardContent .statsGrid .statCard {
+        padding: 16px;
+    }
+
+    /* Charts: stack vertically */
+    .dashboardContent .chartsGrid {
+        grid-template-columns: 1fr;
+        gap: 20px;
+        overflow: visible;
+    }
+
+    .dashboardContent .chartsGrid .pieChartCard,
+    .dashboardContent .chartsGrid .barChartCard {
+        padding: 18px 20px;
+    }
+
+    /* Pie: chart beside legend on tablet to preserve vertical space */
+    .dashboardContent .pieChartBody {
+        flex-direction: row;
+        gap: 20px;
+        align-items: stretch;
+    }
+
+    .dashboardContent .pieCanvasWrap {
+        flex: 1 1 55%;
+        min-height: 240px;
+        height: 240px;
+    }
+
+    .dashboardContent .pieLegend {
+        flex: 1 1 45%;
+        justify-content: center;
+    }
+
+    /* Bar chart: fixed height so Chart.js has room */
+    .dashboardContent .barChartCard .chartWrapper {
+        min-height: 260px;
+        height: 260px;
+    }
+}
+
+/* ---- Large phone (<=768px): 1-column stats, stacked pie ---- */
+@media (max-width: 768px) {
+    .dashboardContent {
+        padding: 16px;
+        gap: 16px;
+    }
+
+    .dashboardContent .statsGrid.grid3 {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .dashboardContent .statsGrid .statCard {
+        padding: 16px;
+        min-height: 88px;
+    }
+
+    .dashboardContent .statsGrid .statCard .statBottom .statValue {
+        font-size: 24px;
+    }
+
+    .dashboardContent .chartsGrid .pieChartCard,
+    .dashboardContent .chartsGrid .barChartCard {
+        padding: 16px 18px;
+    }
+
+    /* Pie: stack chart + legend */
+    .dashboardContent .pieChartBody {
+        flex-direction: column;
+        gap: 14px;
+    }
+
+    .dashboardContent .pieCanvasWrap {
+        flex: none;
+        min-height: 240px;
+        height: 240px;
+    }
+
+    .dashboardContent .pieLegend {
+        flex: none;
+    }
+
+    .dashboardContent .barChartCard .chartWrapper {
+        min-height: 240px;
+        height: 240px;
+    }
+}
+
+/* ---- Small phone (<=480px): compact everything ---- */
+@media (max-width: 480px) {
+    .dashboardContent {
+        padding: 12px;
+        gap: 14px;
+    }
+
+    .dashboardContent .statsGrid.grid3 {
+        gap: 10px;
+    }
+
+    .dashboardContent .statsGrid .statCard {
+        padding: 14px;
+    }
+
+    .dashboardContent .statsGrid .statCard .statTop .statTitle {
+        font-size: 12px;
+    }
+
+    .dashboardContent .statsGrid .statCard .statTop .iconBadge {
+        width: 34px;
+        height: 34px;
+        font-size: 14px;
+    }
+
+    .dashboardContent .statsGrid .statCard .statBottom .statValue {
+        font-size: 22px;
+    }
+
+    .dashboardContent .statsGrid .statCard .statBottom .badge {
+        font-size: 10px;
+        padding: 3px 7px;
+    }
+
+    .dashboardContent .chartsGrid {
+        gap: 14px;
+    }
+
+    .dashboardContent .chartsGrid .pieChartCard,
+    .dashboardContent .chartsGrid .barChartCard {
+        padding: 14px 14px 16px;
+    }
+
+    .dashboardContent .chartsGrid .chartHeader h3 {
+        font-size: 14px;
+    }
+
+    .dashboardContent .chartsGrid .chartHeader .chartSubtext {
+        font-size: 11.5px;
+    }
+
+    .dashboardContent .pieCanvasWrap {
+        min-height: 210px;
+        height: 210px;
+    }
+
+    .dashboardContent .barChartCard .chartWrapper {
+        min-height: 220px;
+        height: 220px;
+    }
+
+    .dashboardContent .pieLegend li {
+        font-size: 12px;
+        gap: 8px;
+    }
+
+    .dashboardContent .pieLegend li .legendDot {
+        width: 8px;
+        height: 8px;
+    }
+}
+
+/* ---- Very small phones (<=360px) ---- */
+@media (max-width: 360px) {
+    .dashboardContent {
+        padding: 10px;
+        gap: 12px;
+    }
+
+    .dashboardContent .statsGrid .statCard {
+        padding: 12px;
+    }
+
+    .dashboardContent .pieCanvasWrap {
+        min-height: 190px;
+        height: 190px;
+    }
+
+    .dashboardContent .barChartCard .chartWrapper {
+        min-height: 200px;
+        height: 200px;
+    }
+}

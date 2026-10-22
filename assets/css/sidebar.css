@@ -366,3 +366,209 @@ body {
         animation-duration: 1.8s;
     }
 }
+
+/* ================================================================
+   RESPONSIVE — Sidebar, hamburger, backdrop, main content
+   ----------------------------------------------------------------
+   Desktop (>1024px) keeps the current behavior exactly.
+   Tablet & phone (<=1024px) hide the sidebar off-screen, surface a
+   hamburger, and slide the sidebar in as an overlay. Content is
+   pushed down by a small header strip so the hamburger never covers
+   page content.
+   ================================================================ */
+
+/* --- Hamburger button --- */
+.mobileHamburger {
+    display: none;
+    position: fixed;
+    top: 12px;
+    left: 12px;
+    z-index: 1001;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    border: none;
+    border-radius: 10px;
+    background: var(--mainColor, #1e293b);
+    color: #ffffff;
+    font-size: 17px;
+    line-height: 1;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 10px rgba(15, 23, 42, 0.18);
+    transition: background 0.2s ease, transform 0.15s ease;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.mobileHamburger:hover {
+    filter: brightness(1.08);
+}
+
+.mobileHamburger:active {
+    transform: scale(0.96);
+}
+
+.mobileHamburger:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.55), 0 2px 10px rgba(15, 23, 42, 0.18);
+}
+
+/* --- Backdrop --- */
+.sidebarBackdrop {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 999;
+    background: rgba(15, 23, 42, 0.5);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.sidebarBackdrop.is-visible {
+    display: block;
+    opacity: 1;
+    pointer-events: auto;
+}
+
+/* ================================================================
+   BREAKPOINT: TABLET & PHONE (<=1024px)
+   ================================================================ */
+@media (max-width: 1024px) {
+    /* ---- Body: allow dynamic viewport height on mobile ---- */
+    body {
+        height: 100vh;
+        height: 100dvh;
+        overflow: hidden;
+    }
+
+    /* ---- Hamburger becomes visible ---- */
+    .mobileHamburger {
+        display: inline-flex;
+    }
+
+    /* ---- Sidebar slides off-screen by default ---- */
+    .sidebar {
+        transform: translateX(-100%);
+        transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s ease;
+        box-shadow: none;
+        will-change: transform;
+    }
+
+    /* ---- Open state ---- */
+    .sidebar.mobile-open {
+        transform: translateX(0);
+        box-shadow: 4px 0 24px rgba(15, 23, 42, 0.22);
+    }
+
+    /* Sidebar JS removes the .collapsed class on open, so the
+       full-width layout renders naturally. This is a belt-and-braces
+       fallback in case the class is present. */
+    .sidebar.mobile-open.collapsed {
+        width: 260px;
+    }
+
+    /* ---- Main content: full width, small top padding for hamburger ---- */
+    .mainContent {
+        margin-left: 0;
+        width: 100%;
+        height: 100vh;
+        height: 100dvh;
+        box-sizing: border-box;
+        padding-top: 56px;
+    }
+
+    /* Override the collapsed-state margin-left that would otherwise
+       squeeze content on tablets that had a collapsed sidebar stored
+       from a previous desktop session. */
+    .sidebar.collapsed ~ .mainContent {
+        margin-left: 0;
+        width: 100%;
+    }
+
+    .mainContent iframe {
+        height: 100%;
+    }
+
+    /* ---- Loader overlay: skip the 56px hamburger strip so it never
+       blocks the menu button while a page is loading ---- */
+    .frameLoader {
+        top: 56px;
+    }
+}
+
+/* ================================================================
+   BREAKPOINT: SMALL PHONES (<=480px)
+   ================================================================ */
+@media (max-width: 480px) {
+    .mobileHamburger {
+        top: 10px;
+        left: 10px;
+        width: 38px;
+        height: 38px;
+        font-size: 15px;
+    }
+
+    .mainContent {
+        padding-top: 52px;
+    }
+
+    .frameLoader {
+        top: 52px;
+    }
+}
+
+/* ================================================================
+   BREAKPOINT: VERY SMALL PHONES (<=360px)
+   ================================================================ */
+@media (max-width: 360px) {
+    .mobileHamburger {
+        width: 34px;
+        height: 34px;
+        font-size: 14px;
+        top: 8px;
+        left: 8px;
+    }
+
+    .mainContent {
+        padding-top: 48px;
+    }
+
+    .frameLoader {
+        top: 48px;
+    }
+}
+
+/* ================================================================
+   BREAKPOINT: SHORT LANDSCAPE (phones rotated)
+   ================================================================ */
+@media (max-height: 500px) and (max-width: 1024px) {
+    .mainContent {
+        padding-top: 44px;
+    }
+
+    .frameLoader {
+        top: 44px;
+    }
+
+    .mobileHamburger {
+        width: 32px;
+        height: 32px;
+        font-size: 13px;
+        top: 6px;
+        left: 8px;
+    }
+}
+
+/* ================================================================
+   Reduce motion
+   ================================================================ */
+@media (prefers-reduced-motion: reduce) {
+    .sidebar,
+    .sidebarBackdrop,
+    .mobileHamburger {
+        transition: none !important;
+    }
+}
