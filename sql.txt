@@ -1,7 +1,7 @@
-DROP DATABASE memoria_db;
-CREATE DATABASE memoria_db;
-USE memoria_db;
-
+-- DROP DATABASE memoria_db;
+-- CREATE DATABASE memoria_db;
+-- USE memoria_db;
+-- sample only above, use your database name i guess, also in the config.php so....
 --  =====================================================================
 --  CEMETERY DATABASE SCHEMA
 --  =====================================================================
