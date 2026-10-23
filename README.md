@@ -1,0 +1,6 @@
+So....
+git clone or something maybe download the zip really
+Run the sql.txt...
+create a .htacess in the root folder, copy paste on what you have basing on xampp or laragon or any other url.... adjust if needed please.. for example: localhost/yourprojectname or yourprojectname.com really... idk
+same with the notallowed.php, edit in api folder, copy paste if you are laragon or xampp, edit as much as possible okay
+config.php in api folder, copy paste the config.example.php to config.php, edit to accomadate, e.g. database name etc. etc. etc.
