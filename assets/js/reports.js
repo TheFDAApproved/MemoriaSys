@@ -507,6 +507,7 @@ const CATEGORY_ORDER = [
   "Expiring",
   "Expired",
   "Reserved",
+  "Other",
 ];
 
 const CATEGORY_COLORS = {
@@ -528,6 +529,7 @@ function renderCapacity(data, container) {
   const expiring = Number(summary.expiring) || 0;
   const expired = Number(summary.expired) || 0;
   const reserved = Number(summary.reserved) || 0;
+  const other = Number(summary.other) || 0;
 
   const pct = (n) => (total ? ((n / total) * 100).toFixed(1) : "0.0");
 
@@ -548,6 +550,7 @@ function renderCapacity(data, container) {
         <tr><td><strong>Expiring (within 30 days)</strong></td><td>${expiring}</td><td>${pct(expiring)}%</td></tr>
         <tr><td><strong>Expired</strong></td><td>${expired}</td><td>${pct(expired)}%</td></tr>
         <tr><td><strong>Reserved</strong></td><td>${reserved}</td><td>${pct(reserved)}%</td></tr>
+        <tr><td><strong>Other</strong></td><td>${other}</td><td>${pct(other)}%</td></tr>
       </tbody>
     </table>
 
@@ -573,13 +576,14 @@ function renderCapacity(data, container) {
           <th>Expiring</th>
           <th>Expired</th>
           <th>Reserved</th>
+          <th>Other</th>
         </tr>
       </thead>
       <tbody>`;
 
   const blocks = Array.isArray(data.by_block) ? data.by_block : [];
   if (blocks.length === 0) {
-    html += `<tr><td colspan="8" style="text-align:center;color:#94a3b8;">No blocks on record.</td></tr>`;
+    html += `<tr><td colspan="9" style="text-align:center;color:#94a3b8;">No blocks on record.</td></tr>`;
   } else {
     for (const b of blocks) {
       html += `<tr>
@@ -591,6 +595,7 @@ function renderCapacity(data, container) {
         <td>${Number(b.expiring) || 0}</td>
         <td>${Number(b.expired) || 0}</td>
         <td>${Number(b.reserved) || 0}</td>
+        <td>${Number(b.other) || 0}</td>
       </tr>`;
     }
   }
@@ -1324,7 +1329,8 @@ function printCurrentReport() {
       if (btn) {
         btn.dataset.busy = "0";
         btn.disabled = false;
-        const label = btn.querySelector(".printBtnLabel");
+        const label =
+          btn.querySelector(".btnLabel") || btn.querySelector(".printBtnLabel");
         if (label) label.textContent = "Export / Print PDF";
       }
     });

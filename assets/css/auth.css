@@ -552,3 +552,80 @@ header {
 .hidden {
     display: none !important;
 }
+
+/* ============================================================
+   TABLET & MOBILE RESPONSIVENESS (≤ 900px)
+   ============================================================ */
+@media (max-width: 900px) {
+    /* Allow scrolling on mobile devices so the keyboard doesn't hide the form */
+    body {
+        height: auto;
+        min-height: 100vh;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+
+    header .headerContainer {
+        padding: 0 20px;
+    }
+
+    /* Stack the split-screen image and form vertically */
+    .login {
+        flex-direction: column;
+        height: auto;
+        min-height: calc(100vh - 70px);
+    }
+
+    .login > section:nth-of-type(1) {
+        flex: none;
+        padding: 40px 20px;
+        min-height: 220px;
+        border-right: none;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .login > section:nth-of-type(2) {
+        flex: 1;
+        padding: 40px 20px;
+        align-items: flex-start;
+    }
+
+    .inputWrapper {
+        padding: 0; 
+        margin: 0 auto;
+    }
+}
+
+/* ============================================================
+   COMPACT MOBILE (≤ 600px)
+   ============================================================ */
+@media (max-width: 600px) {
+    header .logoSection img {
+        height: 35px;
+    }
+
+    header .headerText h1 {
+        font-size: 13px;
+    }
+
+    header .headerText h2 {
+        font-size: 9px;
+    }
+
+    .banner img {
+        height: 55px;
+    }
+
+    .banner p {
+        font-size: 1.15rem;
+    }
+
+    .termsAndConditions .termsContainer {
+        padding: 30px 20px 20px 20px;
+    }
+
+    .termsAndConditions .closeCornerBtn {
+        top: 15px;
+        right: 15px;
+    }
+}

@@ -135,10 +135,9 @@ CREATE TABLE blocks (
         'Mass Grave', 'Cluster', 'Block'
     ) NOT NULL,
     image_link TEXT,
-    coordinates LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(coordinates)),
+    coordinates JSON,
     `rows` INT NOT NULL DEFAULT 0,
     `cols` INT NOT NULL DEFAULT 0,
-    shape VARCHAR(50) DEFAULT 'rectangle',
     custom TINYINT(1) NOT NULL DEFAULT 0,
     remarks TEXT,
 

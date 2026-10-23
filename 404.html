@@ -5,6 +5,31 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>404 — Lost in the Void</title>
 
+    <meta
+      name="description"
+      content="Management system for the Cemetery. Locate plots, monitor leases, and manage notifications."
+    />
+    <meta name="author" content="Team DND" />
+    <meta name="theme-color" content="#2f3136" />
+    <meta name="robots" content="index, follow" />
+
+    <meta name="geo.region" content="PH-CEB" />
+    <meta name="geo.placename" content="Mandaue City" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="/" />
+    <meta property="og:site_name" content="Memoria" />
+    <meta property="og:title" content="Memoria | Cemetery Management System" />
+    <meta
+      property="og:description"
+      content="Efficiently manage and locate records within the Cemetery."
+    />
+    <meta
+      property="og:image"
+      content="https://cdn1.iconfinder.com/data/icons/government-buildings-5/504/cemetery-graveyard-tombstone-burial-memorial-512.png"
+    />
+
+    <meta name="twitter:card" content="summary_large_image" />
     <style>
       * {
         box-sizing: border-box;
@@ -641,7 +666,7 @@
     </style>
   </head>
 
-  <body>
+  <body data-app-root="">
     <div class="color-wash"></div>
     <div class="noise"></div>
 
@@ -675,7 +700,8 @@
         </p>
 
         <div class="actions">
-          <a href="/" class="btn btn-home"> 🏠 TAKE ME HOME </a>
+          <!-- id="homeLink" lets the script below fix this href at runtime -->
+          <a href="/" id="homeLink" class="btn btn-home"> 🏠 TAKE ME HOME </a>
 
           <button class="btn btn-random" id="randomBtn">
             🎲 MAKE IT WORSE
@@ -689,6 +715,70 @@
     </main>
 
     <script>
+      /* ============================================================
+   FIX "TAKE ME HOME" LINK  —  works on Laragon, XAMPP, and live
+   ------------------------------------------------------------
+   Rules (evaluated top-to-bottom, first match wins):
+
+     1. data-app-root on <body>     -> use it verbatim
+     2. file:// (opened from disk)  -> link to index.html
+     3. no path segments            -> "/"
+     4. one segment that looks like -> "/"  (server-root file)
+        a file (has a dot)
+     5. localhost / 127.0.0.1 /     -> "/<first-segment>/"
+        private IP / [::1]
+     6. anything else               -> "/"  (vhost, app at root)
+
+   Examples:
+     capstone.test/whatever/missing       -> "/"
+     localhost/capstone/whatever/missing  -> "/capstone/"
+     localhost/capstone/404.html          -> "/capstone/"
+     localhost/404.html                   -> "/"
+     mysite.com/app/missing               -> "/"  (use data-app-root)
+============================================================ */
+      (function fixHomeLink() {
+        var link = document.getElementById("homeLink");
+        if (!link) return;
+
+        var override = document.body.getAttribute("data-app-root");
+        if (override) {
+          link.href = override;
+          return;
+        }
+
+        if (location.protocol === "file:") {
+          link.href = "index.html";
+          return;
+        }
+
+        var segments = location.pathname.split("/").filter(Boolean);
+
+        if (segments.length === 0) {
+          link.href = "/";
+          return;
+        }
+
+        var first = segments[0];
+        var firstLooksLikeFile = /\.[a-z0-9]{1,8}$/i.test(first);
+
+        if (segments.length === 1 && firstLooksLikeFile) {
+          link.href = "/";
+          return;
+        }
+
+        var host = location.hostname;
+        var isLocalhost =
+          host === "localhost" ||
+          host === "127.0.0.1" ||
+          host === "[::1]" ||
+          host === "0.0.0.0" ||
+          /^192\.168\.\d{1,3}\.\d{1,3}$/.test(host) ||
+          /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host) ||
+          /^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/.test(host);
+
+        link.href = isLocalhost ? "/" + first + "/" : "/";
+      })();
+
       /* ============================================================
    CHAOS ENGINE
 ============================================================ */

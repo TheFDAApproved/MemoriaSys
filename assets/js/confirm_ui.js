@@ -8,6 +8,14 @@
  *       danger: true
  *   });
  *
+ *   // OK-only dialog (no cancel button). 4th arg = nocancelbutton.
+ *   // Confirm label defaults to "OK" unless opts.confirmText is given.
+ *   await confirm_ui('Session expired.', { title: 'Notice' }, false, true);
+ *
+ *   // Force the user to click the button: no backdrop click, no Esc.
+ *   // 5th arg = taptheokbuttontoexit (true => must tap the button).
+ *   await confirm_ui('Please read this.', {}, false, true, true);
+ *
  *   // "keep open" mode (3rd arg = true):
  *   // after clicking confirm the dialog STAYS on screen with a loading
  *   // spinner and cannot be dismissed (no Esc, no backdrop, no cancel).
@@ -19,6 +27,8 @@
  *   confirm_ui.close();
  *
  *   // opts.keepOpen: true is an equivalent alternative to the 3rd arg.
+ *   // opts.noCancelButton: true is an equivalent alternative to the 4th arg.
+ *   // opts.taptheokbuttontoexit: true is an equivalent alternative to the 5th.
  *   // Optional: opts.loadingText adds a label next to the spinner.
  */
 (function (global) {
@@ -112,6 +122,11 @@
     return overlay && overlay.dataset.locked === "1";
   }
 
+  // "pinned" => backdrop click / Esc must NOT close; only the button may.
+  function isPinned(overlay) {
+    return overlay && overlay.dataset.pinned === "1";
+  }
+
   function close(result) {
     if (!activeOverlay) return;
     var overlay = activeOverlay;
@@ -151,6 +166,11 @@
     }
 
     if (e.key === "Escape") {
+      // Pinned dialogs can only be closed via the button (or confirm_ui.close).
+      if (isPinned(activeOverlay)) {
+        e.preventDefault();
+        return;
+      }
       e.preventDefault();
       close(false);
       return;
@@ -185,7 +205,7 @@
     if (w > 0) confirmBtn.style.minWidth = w + "px";
 
     confirmBtn.disabled = true;
-    cancelBtn.disabled = true;
+    if (cancelBtn) cancelBtn.disabled = true;
 
     confirmBtn.textContent = "";
     var spinner = document.createElement("span");
@@ -212,23 +232,48 @@
   /**
    * @param {string} message
    * @param {object} [options]
-   * @param {boolean} [keepOpen=false]  true => on confirm, stay open with a
-   *                                    spinner instead of closing.
+   * @param {boolean} [keepOpen]              true => on confirm, stay open with
+   *                                          a spinner instead of closing.
+   * @param {boolean} [nocancelbutton=false]  true => no Cancel button; a single
+   *                                          OK/confirm button (label defaults
+   *                                          to "OK" unless opts.confirmText).
+   * @param {boolean} [taptheokbuttontoexit=false]
+   *                                          false => tapping the backdrop (or
+   *                                          pressing Esc) dismisses with false.
+   *                                          true  => the ONLY way out is the
+   *                                          button (or confirm_ui.close()).
    * @returns {Promise<boolean>}
    */
-  function confirm_ui(message, options, keepOpen) {
+  function confirm_ui(
+    message,
+    options,
+    keepOpen,
+    nocancelbutton,
+    taptheokbuttontoexit,
+  ) {
     injectStyles();
 
     var opts = options || {};
     var title = opts.title === undefined ? "Confirm" : opts.title;
     var showTitle = opts.showTitle !== false && title !== null && title !== "";
-    var confirmText = opts.confirmText || "Confirm";
-    var cancelText = opts.cancelText || "Cancel";
     var danger = !!opts.danger;
     var loadingText = opts.loadingText == null ? "" : String(opts.loadingText);
 
-    // 3rd argument wins; opts.keepOpen is an equivalent alternative.
+    // Positional args win; the opts.* equivalents are alternatives.
     var stayOpen = keepOpen === undefined ? !!opts.keepOpen : !!keepOpen;
+    var hideCancel =
+      nocancelbutton === undefined
+        ? !!(opts.noCancelButton || opts.hideCancelButton)
+        : !!nocancelbutton;
+    var mustTapButton =
+      taptheokbuttontoexit === undefined
+        ? !!opts.taptheokbuttontoexit
+        : !!taptheokbuttontoexit;
+
+    // With no cancel button there is nothing to "cancel", so the single
+    // button reads "OK" by default.
+    var confirmText = opts.confirmText || (hideCancel ? "OK" : "Confirm");
+    var cancelText = opts.cancelText || "Cancel";
 
     if (activeOverlay) close(false);
 
@@ -239,6 +284,7 @@
       overlay.className = "confirmUi-overlay";
       overlay.setAttribute("role", "dialog");
       overlay.setAttribute("aria-modal", "true");
+      if (mustTapButton) overlay.dataset.pinned = "1";
 
       var dialog = document.createElement("div");
       dialog.className = "confirmUi-dialog";
@@ -258,10 +304,15 @@
       var actions = document.createElement("div");
       actions.className = "confirmUi-actions";
 
-      var cancelBtn = document.createElement("button");
-      cancelBtn.type = "button";
-      cancelBtn.className = "confirmUi-btn confirmUi-btn--cancel";
-      cancelBtn.textContent = cancelText;
+      // Cancel button is optional.
+      var cancelBtn = null;
+      if (!hideCancel) {
+        cancelBtn = document.createElement("button");
+        cancelBtn.type = "button";
+        cancelBtn.className = "confirmUi-btn confirmUi-btn--cancel";
+        cancelBtn.textContent = cancelText;
+        actions.appendChild(cancelBtn);
+      }
 
       var confirmBtn = document.createElement("button");
       confirmBtn.type = "button";
@@ -270,7 +321,6 @@
         (danger ? "confirmUi-btn--danger" : "confirmUi-btn--confirm");
       confirmBtn.textContent = confirmText;
 
-      actions.appendChild(cancelBtn);
       actions.appendChild(confirmBtn);
       dialog.appendChild(actions);
       overlay.appendChild(dialog);
@@ -279,10 +329,12 @@
       activeOverlay = overlay;
       activeResolve = resolve;
 
-      cancelBtn.addEventListener("click", function () {
-        if (isLocked(overlay)) return;
-        close(false);
-      });
+      if (cancelBtn) {
+        cancelBtn.addEventListener("click", function () {
+          if (isLocked(overlay)) return;
+          close(false);
+        });
+      }
 
       confirmBtn.addEventListener("click", function () {
         if (isLocked(overlay)) return;
@@ -300,7 +352,10 @@
       });
 
       overlay.addEventListener("mousedown", function (e) {
-        if (e.target === overlay && !isLocked(overlay)) close(false);
+        if (e.target !== overlay) return;
+        if (isLocked(overlay)) return;
+        if (isPinned(overlay)) return; // must tap the button
+        close(false);
       });
 
       document.addEventListener("keydown", onKeydown, true);

@@ -24,12 +24,16 @@ const ReserveBurialModal = (() => {
   let blockOptions = [];
   let selectedSlot = null;
 
+  // Cache for the barangay_options settings fetch (idempotent, retries on error).
+  let barangayOptionsPromise = null;
+
   let blockChangeTimer = null;
   let gravesToken = 0;
 
   const BLOCK_CHANGE_DEBOUNCE_MS = 250;
   const BLOCKS_API = "api/blocks.php";
   const GRAVES_API = "api/graves.php";
+  const SETTINGS_API = "api/settings";
 
   // ---------- wizard state ----------
   let wizardMode = null;
@@ -2043,12 +2047,122 @@ const ReserveBurialModal = (() => {
   }
 
   // ==================================================================
+  // barangay_options
+  // ==================================================================
+  // Normalise the stored JSON value into [{ value, label }, ...].
+  function normalizeBarangayOptions(data) {
+    const pairs = [];
+    if (Array.isArray(data)) {
+      data.forEach((item) => {
+        if (item === null || item === undefined) return;
+        if (typeof item === "object") {
+          const v = item.value ?? item.id ?? item.key ?? item.name ?? "";
+          const l = item.label ?? item.text ?? item.title ?? item.name ?? v;
+          if (String(v) !== "" || String(l) !== "") {
+            pairs.push({ value: String(v), label: String(l) });
+          }
+        } else {
+          pairs.push({ value: String(item), label: String(item) });
+        }
+      });
+    } else if (data && typeof data === "object") {
+      for (const [v, l] of Object.entries(data)) {
+        pairs.push({ value: String(v), label: String(l) });
+      }
+    }
+    return pairs;
+  }
+
+  // Fetch api/settings once, pull the barangay_options value, and
+  // repopulate #contact_person_address_barangay. On any failure we
+  // silently fall back to whatever is already in burial_modal.html.
+  async function loadBarangayOptions() {
+    if (barangayOptionsPromise) return barangayOptionsPromise;
+
+    barangayOptionsPromise = (async () => {
+      if (!modalEl) return;
+      const select = modalEl.querySelector("#contact_person_address_barangay");
+      if (!select || select.tagName !== "SELECT") return;
+
+      let rows;
+      try {
+        const res = await fetch(SETTINGS_API, {
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+        });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        const result = await res.json();
+        rows = Array.isArray(result) ? result : result?.data;
+        if (!Array.isArray(rows)) {
+          // Well-formed response, just nothing usable — don't retry.
+          return;
+        }
+      } catch (err) {
+        // Network / HTTP failure — leave the HTML defaults alone,
+        // but reset so a later open can retry.
+        console.warn(
+          "[reserve_modal] Unable to load barangay_options:",
+          err,
+        );
+        barangayOptionsPromise = null;
+        return;
+      }
+
+      const row = rows.find(
+        (r) => String(r?.setting_key ?? r?.key ?? "") === "barangay_options",
+      );
+      if (!row) return;
+
+      const rawValue = row?.setting_value ?? row?.value ?? "";
+      let parsed;
+      try {
+        parsed = JSON.parse(rawValue);
+      } catch {
+        // Invalid JSON — keep whatever burial_modal.html had.
+        return;
+      }
+
+      const pairs = normalizeBarangayOptions(parsed);
+      if (!pairs.length) return;
+
+      // Preserve whatever is currently selected, if it still exists.
+      const current = select.value;
+
+      select.innerHTML = "";
+
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.disabled = true;
+      placeholder.selected = true;
+      placeholder.defaultSelected = true;
+      placeholder.textContent = "Select Barangay...";
+      select.appendChild(placeholder);
+
+      pairs.forEach(({ value, label }) => {
+        const opt = document.createElement("option");
+        opt.value = value;
+        opt.textContent = label;
+        select.appendChild(opt);
+      });
+
+      if (current && pairs.some((p) => p.value === current)) {
+        select.value = current;
+      } else {
+        select.value = "";
+      }
+    })();
+
+    return barangayOptionsPromise;
+  }
+
+  // ==================================================================
   // load & bind
   // ==================================================================
   async function ensureLoaded() {
     modalEl = document.getElementById("burial_modal_overlay");
     if (modalEl) {
       bindEvents();
+      await loadBarangayOptions();
       return;
     }
 
@@ -2056,7 +2170,10 @@ const ReserveBurialModal = (() => {
     await loadPromise;
 
     modalEl = document.getElementById("burial_modal_overlay");
-    if (modalEl) bindEvents();
+    if (modalEl) {
+      bindEvents();
+      await loadBarangayOptions();
+    }
   }
 
   async function loadModalHtml() {

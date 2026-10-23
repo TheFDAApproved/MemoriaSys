@@ -11,448 +11,590 @@
        page never depends on payments.js injecting styles at runtime.
    ===================================================================== */
 
-@import url('payments.css');
+@import url("payments.css");
 
 /* -------------------- Tab header shell -------------------- */
 
 .tableHeader {
-    padding: 8px 12px;
+  padding: 8px 12px;
 }
 
 .subnav {
-    display: flex;
-    gap: 4px;
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow-x: auto;
-    scrollbar-width: none;
+  display: flex;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 
-.subnav::-webkit-scrollbar { display: none; }
+.subnav::-webkit-scrollbar {
+  display: none;
+}
 
 .subnavBtn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 14px;
-    min-height: 36px;
-    font-family: inherit;
-    font-size: 13px;
-    font-weight: 600;
-    color: #606770;
-    background: transparent;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    white-space: nowrap;
-    flex: 0 0 auto;
-    transition: background 0.15s ease, color 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  min-height: 36px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: #606770;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex: 0 0 auto;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
-.subnavBtn i { font-size: 12px; line-height: 1; }
-.subnavBtn:hover { background: #f8fafc; color: #1c1e21; }
-.subnavBtn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.15); }
-.subnavBtn.is-active { background: var(--mainColor); color: #ffffff; }
+.subnavBtn i {
+  font-size: 12px;
+  line-height: 1;
+}
+.subnavBtn:hover {
+  background: #f8fafc;
+  color: #1c1e21;
+}
+.subnavBtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.15);
+}
+.subnavBtn.is-active {
+  background: var(--mainColor);
+  color: #ffffff;
+}
 
 .subnavCount {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 22px;
-    padding: 2px 6px;
-    border-radius: 999px;
-    font-size: 11px;
-    font-weight: 700;
-    line-height: 1;
-    background: rgba(0, 0, 0, 0.08);
-    color: inherit;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  background: rgba(0, 0, 0, 0.08);
+  color: inherit;
 }
-.subnavCount:empty { display: none; }
-.subnavBtn.is-active .subnavCount { background: rgba(255, 255, 255, 0.25); }
+.subnavCount:empty {
+  display: none;
+}
+.subnavBtn.is-active .subnavCount {
+  background: rgba(255, 255, 255, 0.25);
+}
 
 .pageInfoText {
-    flex-shrink: 0;
-    white-space: nowrap;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 /* -------------------- Read-only banner -------------------- */
 
 .readOnlyNoticeRow td {
-    padding: 0 !important;
-    border-bottom: 1px solid #e5e7eb;
-    background: #f8fafc;
+  padding: 0 !important;
+  border-bottom: 1px solid #e5e7eb;
+  background: #f8fafc;
 }
 
 .readOnlyNotice {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 18px;
-    font-size: 12.5px;
-    line-height: 1.4;
-    color: #475569;
-    border-left: 3px solid #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: #475569;
+  border-left: 3px solid #94a3b8;
 }
 
-.readOnlyNotice i { font-size: 13px; color: #64748b; flex: 0 0 auto; }
-.readOnlyNotice strong { color: #1c1e21; font-weight: 700; }
+.readOnlyNotice i {
+  font-size: 13px;
+  color: #64748b;
+  flex: 0 0 auto;
+}
+.readOnlyNotice strong {
+  color: #1c1e21;
+  font-weight: 700;
+}
 
-.readOnlyNoticeRow.is-office td { background: #fef3c7; }
-.readOnlyNoticeRow.is-office .readOnlyNotice { color: #78350f; border-left-color: #f59e0b; }
-.readOnlyNoticeRow.is-office .readOnlyNotice i { color: #b45309; }
+.readOnlyNoticeRow.is-office td {
+  background: #fef3c7;
+}
+.readOnlyNoticeRow.is-office .readOnlyNotice {
+  color: #78350f;
+  border-left-color: #f59e0b;
+}
+.readOnlyNoticeRow.is-office .readOnlyNotice i {
+  color: #b45309;
+}
 
 /* -------------------- Cell helpers -------------------- */
 
-.muted { color: #9ca3af; }
-
-.proofThumb {
-    display: inline-block;
-    max-width: 56px;
-    max-height: 56px;
-    border-radius: 4px;
-    object-fit: cover;
-    border: 1px solid #e5e7eb;
-    background: #f9fafb;
-    vertical-align: middle;
-    transition: transform 0.15s ease, box-shadow 0.15s ease;
+.muted {
+  color: #9ca3af;
 }
 
-.proofLink { display: inline-flex; align-items: center; justify-content: center; }
+.proofThumb {
+  display: inline-block;
+  max-width: 56px;
+  max-height: 56px;
+  border-radius: 4px;
+  object-fit: cover;
+  border: 1px solid #e5e7eb;
+  background: #f9fafb;
+  vertical-align: middle;
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.proofLink {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
 .proofLink:hover .proofThumb {
-    transform: scale(1.03);
-    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.12);
+  transform: scale(1.03);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.12);
 }
 
 /* -------------------- pm* status badge -------------------- */
 
 .pmStatusBadge {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 4px 10px;
-    border-radius: 6px;
-    font-size: 12px;
-    font-weight: 600;
-    line-height: 1;
-    white-space: nowrap;
-    border: 1px solid transparent;
-    vertical-align: middle;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  border: 1px solid transparent;
+  vertical-align: middle;
 }
-.pmStatusBadge i { font-size: 11px; }
+.pmStatusBadge i {
+  font-size: 11px;
+}
 
-.pmStatus--pendingOffice  { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
-.pmStatus--pendingGrounds { background: #ffedd5; color: #9a3412; border-color: #fed7aa; }
-.pmStatus--completed      { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
+.pmStatus--pendingOffice {
+  background: #fee2e2;
+  color: #991b1b;
+  border-color: #fecaca;
+}
+.pmStatus--pendingGrounds {
+  background: #ffedd5;
+  color: #9a3412;
+  border-color: #fed7aa;
+}
+.pmStatus--completed {
+  background: #dcfce7;
+  color: #166534;
+  border-color: #bbf7d0;
+}
 
 /* -------------------- pm* action column -------------------- */
 
 .paymentsTable td:last-child,
 .paymentsTable th:last-child {
-    white-space: nowrap;
-    width: 1%;
+  white-space: nowrap;
+  width: 1%;
 }
 .paymentsTable td:last-child {
-    vertical-align: middle;
-    text-align: center;
+  vertical-align: middle;
+  text-align: center;
 }
 
 .pmActionGroup {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    flex-wrap: nowrap;
-    white-space: nowrap;
-    line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  line-height: 1;
 }
 
 .pmActionBtn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    margin: 0;
-    font-size: 13px;
-    font-family: inherit;
-    color: #606770;
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 8px;
-    cursor: pointer;
-    flex: 0 0 auto;
-    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  margin: 0;
+  font-size: 13px;
+  font-family: inherit;
+  color: #606770;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
 }
-.pmActionBtn i { line-height: 1; pointer-events: none; }
-.pmActionBtn:hover { background: #f8fafc; border-color: #e5e7eb; color: #1c1e21; }
-.pmActionBtn:active { transform: translateY(1px); }
-.pmActionBtn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.15); }
+.pmActionBtn i {
+  line-height: 1;
+  pointer-events: none;
+}
+.pmActionBtn:hover {
+  background: #f8fafc;
+  border-color: #e5e7eb;
+  color: #1c1e21;
+}
+.pmActionBtn:active {
+  transform: translateY(1px);
+}
+.pmActionBtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.15);
+}
 .pmActionBtn--verify:hover,
 .pmActionBtn--verify:focus-visible {
-    background: #eff6ff;
-    border-color: #dbeafe;
-    color: #2563eb;
+  background: #eff6ff;
+  border-color: #dbeafe;
+  color: #2563eb;
 }
 
 /* -------------------- Verified pill -------------------- */
 
 .pmVerifiedPill {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    height: 32px;
-    padding: 0 12px;
-    border-radius: 8px;
-    font-size: 12.5px;
-    font-weight: 600;
-    line-height: 1;
-    white-space: nowrap;
-    background: #16a34a;
-    color: #ffffff;
-    cursor: default;
-    user-select: none;
-    flex: 0 0 auto;
-    vertical-align: middle;
-    border: 1px solid #16a34a;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  background: #16a34a;
+  color: #ffffff;
+  cursor: default;
+  user-select: none;
+  flex: 0 0 auto;
+  vertical-align: middle;
+  border: 1px solid #16a34a;
 }
-.pmVerifiedPill i { font-size: 13px; line-height: 1; }
+.pmVerifiedPill i {
+  font-size: 13px;
+  line-height: 1;
+}
 
 /* -------------------- pm* remarks cell -------------------- */
 
 .pmRemarksCell {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    max-width: 280px;
-    min-width: 200px;
-    text-align: left;
-    font-size: 12px;
-    line-height: 1.35;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 280px;
+  min-width: 200px;
+  text-align: left;
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .pmRemarkRow {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 2px 4px;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background 0.15s ease;
-    white-space: nowrap;
-    overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  white-space: nowrap;
+  overflow: hidden;
 }
-.pmRemarkRow:hover { background: #f1f5f9; }
+.pmRemarkRow:hover {
+  background: #f1f5f9;
+}
 .pmRemarkRow:focus-visible {
-    outline: none;
-    background: #eff6ff;
-    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
+  outline: none;
+  background: #eff6ff;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25);
 }
 
 .pmRemarkLabel {
-    font-weight: 700;
-    color: #6b7280;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-    flex: 0 0 auto;
-    min-width: 52px;
+  font-weight: 700;
+  color: #6b7280;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  flex: 0 0 auto;
+  min-width: 52px;
 }
 
 .pmRemarkPreview {
-    color: #1c1e21;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1 1 auto;
+  color: #1c1e21;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
 }
-.pmRemarkPreview.is-empty { color: #9ca3af; font-style: italic; font-weight: 500; }
+.pmRemarkPreview.is-empty {
+  color: #9ca3af;
+  font-style: italic;
+  font-weight: 500;
+}
 
 /* -------------------- Remarks modal -------------------- */
 
 .pmRemarksBackdrop {
-    position: fixed;
-    inset: 0;
-    background: rgba(15, 18, 28, 0.5);
-    -webkit-backdrop-filter: blur(2px);
-    backdrop-filter: blur(2px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    z-index: 9999;
-    opacity: 0;
-    transition: opacity 0.2s ease;
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 18, 28, 0.5);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 9999;
+  opacity: 0;
+  transition: opacity 0.2s ease;
 }
-.pmRemarksBackdrop.pmVisible { opacity: 1; }
+.pmRemarksBackdrop.pmVisible {
+  opacity: 1;
+}
 
 .pmRemarksCard {
-    width: 100%;
-    max-width: 540px;
-    max-height: calc(100vh - 40px);
-    background: #ffffff;
-    border: 1px solid #e5e7eb;
-    border-radius: 14px;
-    box-shadow: 0 20px 50px rgba(15, 18, 28, 0.20);
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    transform: translateY(10px) scale(0.98);
-    transition: transform 0.2s ease;
-    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  width: 100%;
+  max-width: 540px;
+  max-height: calc(100vh - 40px);
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  box-shadow: 0 20px 50px rgba(15, 18, 28, 0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform: translateY(10px) scale(0.98);
+  transition: transform 0.2s ease;
+  font-family:
+    "Inter",
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    sans-serif;
 }
-.pmRemarksBackdrop.pmVisible .pmRemarksCard { transform: translateY(0) scale(1); }
+.pmRemarksBackdrop.pmVisible .pmRemarksCard {
+  transform: translateY(0) scale(1);
+}
 
 .pmRemarksHeader {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 16px 20px;
-    background: #f9fafb;
-    border-bottom: 1px solid #eef0f3;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  background: #f9fafb;
+  border-bottom: 1px solid #eef0f3;
 }
 
 .pmRemarksTitle {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    margin: 0;
-    font-size: 15px;
-    font-weight: 700;
-    color: #111827;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+  color: #111827;
 }
 
 .pmRemarksClose {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    border: 1px solid transparent;
-    border-radius: 8px;
-    background: transparent;
-    color: #606770;
-    font-size: 13px;
-    cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: #606770;
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
 }
-.pmRemarksClose:hover { background: #fef2f2; border-color: #fee2e2; color: #dc2626; }
-.pmRemarksClose:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.15); }
+.pmRemarksClose:hover {
+  background: #fef2f2;
+  border-color: #fee2e2;
+  color: #dc2626;
+}
+.pmRemarksClose:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.15);
+}
 
 .pmRemarksBody {
-    padding: 16px 20px 20px;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
+  padding: 16px 20px 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .pmRemarkSection {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 6px 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px 2px;
 }
 
 .pmRemarkSectionHeader {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .pmRemarkSectionLabel {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 11.5px;
-    font-weight: 700;
-    color: #374151;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #374151;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
-.pmRemarkSectionLabel i { font-size: 11px; }
+.pmRemarkSectionLabel i {
+  font-size: 11px;
+}
 
 .pmRemarkSectionValue {
-    font-size: 13.5px;
-    line-height: 1.55;
-    color: #1c1e21;
-    white-space: pre-wrap;
-    word-break: break-word;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: #1c1e21;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
-.pmRemarkSectionValue.is-empty { color: #9ca3af; font-style: italic; }
+.pmRemarkSectionValue.is-empty {
+  color: #9ca3af;
+  font-style: italic;
+}
 
 .pmRemarkEditBtn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    padding: 0;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    background: transparent;
-    color: #606770;
-    font-size: 12px;
-    cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: #606770;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease;
 }
-.pmRemarkEditBtn:hover { background: #eff6ff; border-color: #dbeafe; color: #2563eb; }
-.pmRemarkEditBtn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.15); }
+.pmRemarkEditBtn:hover {
+  background: #eff6ff;
+  border-color: #dbeafe;
+  color: #2563eb;
+}
+.pmRemarkEditBtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.15);
+}
 
 .pmRemarkTextarea {
-    width: 100%;
-    min-height: 90px;
-    resize: vertical;
-    padding: 10px 12px;
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    font-family: inherit;
-    font-size: 13.5px;
-    line-height: 1.5;
-    color: #1c1e21;
-    background: #ffffff;
-    outline: none;
-    box-sizing: border-box;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  width: 100%;
+  min-height: 90px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #1c1e21;
+  background: #ffffff;
+  outline: none;
+  box-sizing: border-box;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
-.pmRemarkTextarea:focus { border-color: var(--mainColor, #2563eb); }
+.pmRemarkTextarea:focus {
+  border-color: var(--mainColor, #2563eb);
+}
 
 .pmRemarkEditActions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .pmRemarkEditActions[hidden],
 .pmRemarkTextarea[hidden],
 .pmRemarkSectionValue[hidden] {
-    display: none !important;
+  display: none !important;
 }
 
 .pmRemarkBtn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 14px;
-    min-height: 34px;
-    font-family: inherit;
-    font-size: 13px;
-    font-weight: 600;
-    line-height: 1;
-    border-radius: 8px;
-    border: 1px solid transparent;
-    cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, filter 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  min-height: 34px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    border-color 0.15s ease,
+    filter 0.15s ease;
 }
-.pmRemarkBtn--ghost { background: #ffffff; border-color: #e5e7eb; color: #4b5563; }
-.pmRemarkBtn--ghost:hover { background: #f3f4f6; border-color: #d1d5db; color: #1c1e21; }
-.pmRemarkBtn--primary { background: var(--mainColor, #2563eb); border-color: var(--mainColor, #2563eb); color: #ffffff; }
-.pmRemarkBtn--primary:hover { filter: brightness(0.94); }
-.pmRemarkBtn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.30); }
-.pmRemarkBtn:disabled { opacity: 0.6; cursor: not-allowed; }
+.pmRemarkBtn--ghost {
+  background: #ffffff;
+  border-color: #e5e7eb;
+  color: #4b5563;
+}
+.pmRemarkBtn--ghost:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+  color: #1c1e21;
+}
+.pmRemarkBtn--primary {
+  background: var(--mainColor, #2563eb);
+  border-color: var(--mainColor, #2563eb);
+  color: #ffffff;
+}
+.pmRemarkBtn--primary:hover {
+  filter: brightness(0.94);
+}
+.pmRemarkBtn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.3);
+}
+.pmRemarkBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 
 /* -------------------- Hide Action column on read-only tabs -------------------- */
 
@@ -461,24 +603,49 @@
    the remaining 11 columns redistribute the freed width automatically. */
 .tableScrollWrapper.hideActionCol thead th:nth-child(12),
 .tableScrollWrapper.hideActionCol tbody td:nth-child(12) {
-    display: none;
+  display: none;
 }
 
 /* -------------------- Responsive -------------------- */
 
 @media (max-width: 640px) {
-    .paymentsContainer { padding: 16px; }
-    .searchBox { flex: 1 1 100%; max-width: none; }
-    .tableHeader { padding: 6px 8px; gap: 8px; }
-    .subnavBtn { padding: 6px 12px; font-size: 12.5px; min-height: 32px; }
-    .subnavBtn span:not(.subnavCount) {
-        max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    .pageInfoText { font-size: 12px; }
-    .carouselViewport { max-width: 220px; }
-    .pmRemarksHeader { padding: 14px 16px; }
-    .pmRemarksBody   { padding: 14px 16px 18px; }
-    .pmRemarksCard   { max-width: 100%; }
+  .paymentsContainer {
+    padding: 16px;
+  }
+  .searchBox {
+    flex: 1 1 100%;
+    max-width: none;
+  }
+  .tableHeader {
+    padding: 6px 8px;
+    gap: 8px;
+  }
+  .subnavBtn {
+    padding: 6px 12px;
+    font-size: 12.5px;
+    min-height: 32px;
+  }
+  .subnavBtn span:not(.subnavCount) {
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pageInfoText {
+    font-size: 12px;
+  }
+  .carouselViewport {
+    max-width: 220px;
+  }
+  .pmRemarksHeader {
+    padding: 14px 16px;
+  }
+  .pmRemarksBody {
+    padding: 14px 16px 18px;
+  }
+  .pmRemarksCard {
+    max-width: 100%;
+  }
 }
 
 /* ================================================================
@@ -487,159 +654,159 @@
 
 /* ---- Large monitors: cap table width so columns don't stretch ---- */
 @media (min-width: 1920px) {
-    .paymentsContainer {
-        max-width: 1900px;
-        margin: 0 auto;
-    }
+  .paymentsContainer {
+    max-width: 1900px;
+    margin: 0 auto;
+  }
 }
 
 /* ---- Tablet (<=1024px) ---- */
 @media (max-width: 1024px) {
-    .paymentsContainer {
-        padding: 18px;
-    }
+  .paymentsContainer {
+    padding: 18px;
+  }
 
-    .tableHeader {
-        flex-wrap: wrap;
-        gap: 8px;
-    }
+  .tableHeader {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
 
-    .subnav {
-        flex: 1 1 100%;
-        width: 100%;
-    }
+  .subnav {
+    flex: 1 1 100%;
+    width: 100%;
+  }
 
-    .pageInfoText {
-        flex: 1 1 100%;
-        width: 100%;
-        text-align: right;
-    }
+  .pageInfoText {
+    flex: 1 1 100%;
+    width: 100%;
+    text-align: right;
+  }
 
-    .carouselViewport {
-        max-width: 260px;
-    }
+  .carouselViewport {
+    max-width: 260px;
+  }
 }
 
 /* ---- Large phone (<=768px) ---- */
 @media (max-width: 768px) {
-    .paymentsContainer {
-        padding: 14px;
-    }
+  .paymentsContainer {
+    padding: 14px;
+  }
 
-    .tableHeader {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 10px;
-    }
+  .tableHeader {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
 
-    .pageInfoText {
-        text-align: left;
-        font-size: 12px;
-    }
+  .pageInfoText {
+    text-align: left;
+    font-size: 12px;
+  }
 
-    .searchBox {
-        flex: 1 1 100%;
-        max-width: none;
-    }
+  .searchBox {
+    flex: 1 1 100%;
+    max-width: none;
+  }
 
-    /* Column widths inside the horizontal scroller stay readable */
-    .paymentsTable {
-        min-width: 960px;
-    }
+  /* Column widths inside the horizontal scroller stay readable */
+  .paymentsTable {
+    min-width: 960px;
+  }
 
-    .pmRemarksCell {
-        min-width: 180px;
-        max-width: 220px;
-    }
+  .pmRemarksCell {
+    min-width: 180px;
+    max-width: 220px;
+  }
 
-    .pmRemarksCard {
-        max-width: 100%;
-    }
+  .pmRemarksCard {
+    max-width: 100%;
+  }
 
-    .carouselViewport {
-        max-width: 200px;
-    }
+  .carouselViewport {
+    max-width: 200px;
+  }
 }
 
 /* ---- Small phone (<=480px) ---- */
 @media (max-width: 480px) {
-    .paymentsContainer {
-        padding: 10px;
-    }
+  .paymentsContainer {
+    padding: 10px;
+  }
 
-    .subnavBtn {
-        padding: 6px 10px;
-        font-size: 12px;
-        min-height: 32px;
-        gap: 4px;
-    }
+  .subnavBtn {
+    padding: 6px 10px;
+    font-size: 12px;
+    min-height: 32px;
+    gap: 4px;
+  }
 
-    .subnavBtn i {
-        font-size: 11px;
-    }
+  .subnavBtn i {
+    font-size: 11px;
+  }
 
-    .subnavBtn span:not(.subnavCount) {
-        max-width: 110px;
-    }
+  .subnavBtn span:not(.subnavCount) {
+    max-width: 110px;
+  }
 
-    .subnavCount {
-        min-width: 18px;
-        padding: 2px 5px;
-        font-size: 10px;
-    }
+  .subnavCount {
+    min-width: 18px;
+    padding: 2px 5px;
+    font-size: 10px;
+  }
 
-    .paymentsTable {
-        min-width: 900px;
-        font-size: 12.5px;
-    }
+  .paymentsTable {
+    min-width: 900px;
+    font-size: 12.5px;
+  }
 
-    .pmRemarksHeader {
-        padding: 12px 14px;
-    }
+  .pmRemarksHeader {
+    padding: 12px 14px;
+  }
 
-    .pmRemarksBody {
-        padding: 12px 14px 16px;
-    }
+  .pmRemarksBody {
+    padding: 12px 14px 16px;
+  }
 
-    .pmRemarkSectionValue {
-        font-size: 13px;
-    }
+  .pmRemarkSectionValue {
+    font-size: 13px;
+  }
 
-    .pmRemarkTextarea {
-        font-size: 13px;
-    }
+  .pmRemarkTextarea {
+    font-size: 13px;
+  }
 
-    .readOnlyNotice {
-        padding: 10px 14px;
-        font-size: 12px;
-    }
+  .readOnlyNotice {
+    padding: 10px 14px;
+    font-size: 12px;
+  }
 
-    .carouselViewport {
-        max-width: 170px;
-    }
+  .carouselViewport {
+    max-width: 170px;
+  }
 
-    .pageNavBtn {
-        width: 32px;
-        height: 32px;
-    }
+  .pageNavBtn {
+    width: 32px;
+    height: 32px;
+  }
 }
 
 /* ---- Very small phone (<=360px) ---- */
 @media (max-width: 360px) {
-    .paymentsContainer {
-        padding: 8px;
-    }
+  .paymentsContainer {
+    padding: 8px;
+  }
 
-    .subnavBtn {
-        padding: 5px 8px;
-        font-size: 11.5px;
-    }
+  .subnavBtn {
+    padding: 5px 8px;
+    font-size: 11.5px;
+  }
 
-    .subnavBtn span:not(.subnavCount) {
-        max-width: 88px;
-    }
+  .subnavBtn span:not(.subnavCount) {
+    max-width: 88px;
+  }
 
-    .carouselViewport {
-        max-width: 140px;
-    }
+  .carouselViewport {
+    max-width: 140px;
+  }
 }

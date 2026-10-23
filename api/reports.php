@@ -27,9 +27,13 @@ declare(strict_types=1);
  *
  * NOTE: The "category" logic used in capacity/graves mirrors the dashboard's
  * per-grave classification. A grave's category is its MOST URGENT state:
- *   Expired  >  Expiring  >  Occupied  >  Reserved  >  Vacant
+ *   Expired  >  Expiring  >  Occupied  >  Reserved  >  Vacant  >  Other
  * Co-interments are resolved via MIN(lease_expiration_date) — one expired
- * occupant is enough to flag the grave as 'Expired'.
+ * occupant is enough to flag the grave as 'Expired'. A grave falls into
+ * 'Other' when it has no active interment, no active reservation, and its
+ * raw `graves.status` is neither 'Vacant' nor 'Occupied' (e.g. the explicit
+ * 'other' enum value) — or when it's in an inconsistent state such as
+ * status='occupied' with no live interment linking to it.
  */
 
 define('ITS_ME_JUSTTOVERIFY', true);
@@ -179,7 +183,8 @@ if (!function_exists('report_empty_category_distribution')) {
     /**
      * Canonical, ordered category map used for the pie chart payload and
      * for filling in zeroes for categories with no rows. Keep the order
-     * consistent with the frontend's `colorFor` / `transformGraveDistribution`.
+     * consistent with the frontend's `CATEGORY_ORDER` /
+     * `transformGraveDistribution`.
      */
     function report_empty_category_distribution(): array
     {
@@ -189,6 +194,7 @@ if (!function_exists('report_empty_category_distribution')) {
             'Expiring' => 0,
             'Expired'  => 0,
             'Reserved' => 0,
+            'Other'    => 0,
         ];
     }
 }
@@ -266,7 +272,8 @@ try {
                     COALESCE(SUM(CASE WHEN category = 'Vacant'   THEN 1 ELSE 0 END), 0) AS vacant,
                     COALESCE(SUM(CASE WHEN category = 'Expiring' THEN 1 ELSE 0 END), 0) AS expiring,
                     COALESCE(SUM(CASE WHEN category = 'Expired'  THEN 1 ELSE 0 END), 0) AS expired,
-                    COALESCE(SUM(CASE WHEN category = 'Reserved' THEN 1 ELSE 0 END), 0) AS reserved
+                    COALESCE(SUM(CASE WHEN category = 'Reserved' THEN 1 ELSE 0 END), 0) AS reserved,
+                    COALESCE(SUM(CASE WHEN category = 'Other'    THEN 1 ELSE 0 END), 0) AS other
                 FROM (" . report_categorized_graves_sql() . ") AS cg
             ");
             $summaryRow = $summaryStmt->fetch(PDO::FETCH_ASSOC) ?: [];
@@ -361,7 +368,8 @@ try {
                     COALESCE(agg.vacant, 0)       AS vacant,
                     COALESCE(agg.expiring, 0)     AS expiring,
                     COALESCE(agg.expired, 0)      AS expired,
-                    COALESCE(agg.reserved, 0)     AS reserved
+                    COALESCE(agg.reserved, 0)     AS reserved,
+                    COALESCE(agg.other, 0)        AS other
                 FROM blocks b
                 LEFT JOIN (
                     SELECT
@@ -371,7 +379,8 @@ try {
                         SUM(CASE WHEN cg.category = 'Vacant'   THEN 1 ELSE 0 END) AS vacant,
                         SUM(CASE WHEN cg.category = 'Expiring' THEN 1 ELSE 0 END) AS expiring,
                         SUM(CASE WHEN cg.category = 'Expired'  THEN 1 ELSE 0 END) AS expired,
-                        SUM(CASE WHEN cg.category = 'Reserved' THEN 1 ELSE 0 END) AS reserved
+                        SUM(CASE WHEN cg.category = 'Reserved' THEN 1 ELSE 0 END) AS reserved,
+                        SUM(CASE WHEN cg.category = 'Other'    THEN 1 ELSE 0 END) AS other
                     FROM (" . report_categorized_graves_sql() . ") AS cg
                     GROUP BY cg.block_id
                 ) AS agg ON agg.block_id = b.block_id
@@ -390,6 +399,7 @@ try {
                     'expiring'     => (int)($row['expiring'] ?? 0),
                     'expired'      => (int)($row['expired'] ?? 0),
                     'reserved'     => (int)($row['reserved'] ?? 0),
+                    'other'        => (int)($row['other'] ?? 0),
                 ];
             }, $blockStmt->fetchAll(PDO::FETCH_ASSOC) ?: []);
 
@@ -403,6 +413,7 @@ try {
                 'expiring'     => (int)($summaryRow['expiring'] ?? 0),
                 'expired'      => (int)($summaryRow['expired'] ?? 0),
                 'reserved'     => (int)($summaryRow['reserved'] ?? 0),
+                'other'        => (int)($summaryRow['other'] ?? 0),
             ];
             $payload['grave_status_distribution']   = $distribution;          // <- pie chart
             $payload['lease_status_by_interment']   = $leaseStatus;

@@ -7,5 +7,4 @@
 /api/test.php
 /api/backups
 .htaccess
-/api/notallowed.php 
-/assets/images/*
+/api/notallowed.php

@@ -1,97 +1,125 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Memoria</title>
 
-    <meta name="description" content="Grounds Staff view of available, expiring, and expired burial spaces.">
-    <meta name="author" content="Team DND">
-    <meta name="theme-color" content="#2f3136">
-    <meta name="robots" content="noindex, nofollow">
+    <meta
+      name="description"
+      content="Grounds Staff view of available, expiring, and expired burial spaces."
+    />
+    <meta name="author" content="Team DND" />
+    <meta name="theme-color" content="#2f3136" />
+    <meta name="robots" content="noindex, nofollow" />
 
-    <meta name="geo.region" content="PH-CEB">
-    <meta name="geo.placename" content="Mandaue City">
+    <meta name="geo.region" content="PH-CEB" />
+    <meta name="geo.placename" content="Mandaue City" />
 
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+    />
 
-    <link rel="stylesheet" href="assets/css/root.css">
-    <link rel="stylesheet" href="api/rootcolors.php" onerror="console.error('Failed to load custom colors. Using default theme.')">
-    <link rel="stylesheet" href="assets/css/grounds_reserve.css">
+    <link rel="stylesheet" href="assets/css/root.css" />
+    <link
+      rel="stylesheet"
+      href="api/rootcolors.php"
+      onerror="
+        console.error('Failed to load custom colors. Using default theme.')
+      "
+    />
+    <link rel="stylesheet" href="assets/css/grounds_reserve.css" />
 
     <script src="assets/js/check_user.js"></script>
-</head>
-<body>
+  </head>
+  <body>
     <div class="reserveContent">
-        <div class="tableControls">
-            <div class="searchBox">
-                <i class="fas fa-search"></i>
-                <input type="text" id="user_search" placeholder="Search...">
-            </div>
-
-            <div class="controlItem">
-                <select id="status_filter" class="mainSelect">
-                    <option value="all">All Status</option>
-                    <option value="vacant">Available</option>
-                    <option value="expiring">Expiring</option>
-                    <option value="expired">Expired</option>
-                </select>
-            </div>
-
-            <button type="button" class="filterActionBtn" id="filter_btn">
-                <i class="fas fa-filter"></i>
-                <span>Filter</span>
-            </button>
+      <div class="tableControls">
+        <div class="searchBox">
+          <i class="fas fa-search"></i>
+          <input type="text" id="user_search" placeholder="Search..." />
         </div>
 
-        <div class="table">
-            <div class="tableHeader">
-                <h3>Available Burial Spaces</h3>
-                <span class="pageInfoText">Page <strong id="current_page_num">1</strong> of <span id="total_pages_num">1</span></span>
-            </div>
+        <div class="controlItem">
+          <select id="status_filter" class="mainSelect">
+            <option value="all">All Status</option>
+            <option value="vacant">Available</option>
+            <option value="expiring">Expiring</option>
+            <option value="expired">Expired</option>
+          </select>
         </div>
 
-        <div class="tableWrapper">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Block</th>
-                        <th>Grave Code</th>
-                        <th>Expiration Date</th>
-                        <th>Status</th>
-                    </tr>
-                </thead>
-                <tbody id="reservation"></tbody>
-            </table>
+        <button type="button" class="filterActionBtn" id="filter_btn">
+          <i class="fas fa-filter"></i>
+          <span>Filter</span>
+        </button>
+      </div>
 
-            <p class="noData" id="reservation_no_data">
-                <i class="fas fa-inbox"></i>
-                No data found
-            </p>
+      <div class="table">
+        <div class="tableHeader">
+          <h3>Available Burial Spaces</h3>
+          <span class="pageInfoText"
+            >Page <strong id="current_page_num">1</strong> of
+            <span id="total_pages_num">1</span></span
+          >
         </div>
+      </div>
 
-        <div class="paginationContainer">
-            <div class="paginationControls">
-                <button type="button" class="pageNavBtn" id="prev_page_btn" title="Previous Page">
-                    <i class="fas fa-chevron-left"></i>
-                </button>
+      <div class="tableWrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Block</th>
+              <th>Grave Code</th>
+              <th>Expiration Date</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="reservation"></tbody>
+        </table>
 
-                <div class="carouselViewport" id="carousel_viewport">
-                    <div class="carouselTrack" id="carousel_track"></div>
-                </div>
+        <p class="noData" id="reservation_no_data">
+          <i class="fas fa-inbox"></i>
+          No data found
+        </p>
+      </div>
 
-                <button type="button" class="pageNavBtn" id="next_page_btn" title="Next Page">
-                    <i class="fas fa-chevron-right"></i>
-                </button>
-            </div>
+      <div class="paginationContainer">
+        <div class="paginationControls">
+          <button
+            type="button"
+            class="pageNavBtn"
+            id="prev_page_btn"
+            title="Previous Page"
+          >
+            <i class="fas fa-chevron-left"></i>
+          </button>
+
+          <div class="carouselViewport" id="carousel_viewport">
+            <div class="carouselTrack" id="carousel_track"></div>
+          </div>
+
+          <button
+            type="button"
+            class="pageNavBtn"
+            id="next_page_btn"
+            title="Next Page"
+          >
+            <i class="fas fa-chevron-right"></i>
+          </button>
         </div>
+      </div>
     </div>
 
     <script src="assets/js/alert.js"></script>
     <script src="assets/js/grounds_reserve.js"></script>
-</body>
+  </body>
 </html>

@@ -7,7 +7,33 @@
   const SELECT_SETTINGS = {
     payment_channels_list: "Select payment method",
     payment_purposes_list: "Select payment purpose",
+    barangay_options: "Select barangay",
   };
+
+  // Dropdowns rendered as editable .list containers: setting_key -> input class
+  const DROPDOWN_INPUT_CLASSES = {
+    payment_channels_list: "channelInput",
+    payment_purposes_list: "purposeInput",
+    barangay_options: "barangayInput",
+  };
+
+  /* ------------------------------------------------------------------
+   * Address settings: the value is a plain address string.
+   * If a matching element is a link (<a>), its href is pointed at
+   * Google Maps:  https://maps.google.com/?q=<address with + for spaces>
+   * e.g. "Department of General Services Mandaue"
+   *      -> https://maps.google.com/?q=Department+of+General+Services+Mandaue
+   * ------------------------------------------------------------------ */
+  const MAPS_ADDRESS_KEYS = new Set(["cemetery_address", "office_address"]);
+  const MAPS_BASE_URL = "https://maps.google.com/";
+
+  /* ------------------------------------------------------------------
+   * Contact settings: the value is a plain email / phone string.
+   * If a matching element is a link (<a>), its href becomes:
+   *   contact_email -> mailto:<email>
+   *   contact_phone -> tel:<phone>  (whitespace / parentheses stripped)
+   * ------------------------------------------------------------------ */
+  const CONTACT_LINK_KEYS = new Set(["contact_email", "contact_phone"]);
 
   function loadSiteContent(showerror = false) {
     fetch(API_URL, { cache: "no-store" })
@@ -18,7 +44,7 @@
       .then((result) => {
         const rows = Array.isArray(result) ? result : result?.data;
         if (!Array.isArray(rows)) {
-          console.error("Invalid settings response:", result);
+          // console.error("Invalid settings response:", result);
           if (typeof showAlertTOP === "function" && showerror) {
             showAlertTOP("Failed to load settings: invalid response", "error");
           }
@@ -44,7 +70,7 @@
 
           // Safe key check for CSS selector
           if (!/^[A-Za-z0-9_-]+$/.test(key)) {
-            console.warn(`Skipping unsafe setting key: "${key}"`);
+            // console.warn(`Skipping unsafe setting key: "${key}"`);
             continue;
           }
 
@@ -57,7 +83,7 @@
           });
 
           if (targets.length === 0) {
-            console.warn(`No element found with id starting with "${key}"`);
+            // console.warn(`No element found with id starting with "${key}"`);
             continue;
           }
 
@@ -67,7 +93,7 @@
             try {
               options = JSON.parse(value);
             } catch {
-              console.warn(`Invalid JSON for ${key}:`, value);
+              // console.warn(`Invalid JSON for ${key}:`, value);
               continue;
             }
 
@@ -83,9 +109,7 @@
               // Our editable list container (e.g. <div class="list" id="...">)
               if (el.classList.contains("list")) {
                 const inputClass =
-                  key === "payment_channels_list"
-                    ? "channelInput"
-                    : "purposeInput";
+                  DROPDOWN_INPUT_CLASSES[key] ?? "purposeInput";
 
                 // Normalise to an array of strings (rebuildDropdownList expects strings)
                 const items = Array.isArray(options)
@@ -103,15 +127,15 @@
                 if (typeof window.rebuildDropdownList === "function") {
                   window.rebuildDropdownList(key, items, inputClass);
                 } else {
-                  console.warn("rebuildDropdownList not defined yet");
+                  // console.warn("rebuildDropdownList not defined yet");
                 }
                 return;
               }
 
-              console.warn(
-                `Element for "${key}" is not a <select> or .list`,
-                el,
-              );
+              // console.warn(
+              //   `Element for "${key}" is not a <select> or .list`,
+              //   el,
+              // );
             });
 
             continue;
@@ -133,7 +157,7 @@
               const iframe =
                 el.tagName === "IFRAME" ? el : el.querySelector("iframe");
               if (!iframe) {
-                console.warn(`No iframe found for #${el.id}`);
+                // console.warn(`No iframe found for #${el.id}`);
                 return;
               }
 
@@ -142,12 +166,96 @@
                 if (url.protocol === "http:" || url.protocol === "https:") {
                   iframe.src = url.href;
                 } else {
-                  console.warn("Invalid map URL protocol:", value);
+                  // console.warn("Invalid map URL protocol:", value);
                 }
               } catch {
-                console.warn("Invalid map URL:", value);
+                // console.warn("Invalid map URL:", value);
               }
             });
+            continue;
+          }
+
+          // ---------- Addresses -> Google Maps links ----------
+          // cemetery_address / office_address:
+          //   <a id="cemetery_address">     -> text + href = maps link
+          //   <input id="office_address">   -> plain address (as before)
+          //   anything else                 -> text content (as before)
+          if (MAPS_ADDRESS_KEYS.has(key)) {
+            const address =
+              value === null || value === undefined ? "" : String(value).trim();
+
+            targets.forEach((el) => {
+              // Editable fields keep the plain address text
+              if (["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName)) {
+                if (el.type === "checkbox") {
+                  el.checked = /^(1|true|yes|on)$/i.test(address);
+                } else if (el.type === "file" || el.type === "radio") {
+                  return; // cannot be set programmatically — skip
+                } else {
+                  el.value = address;
+                }
+                return;
+              }
+
+              // Links: point them at Google Maps
+              if (el.tagName === "A") {
+                el.textContent = address;
+
+                if (address) {
+                  el.setAttribute("href", buildMapsHref(address));
+                } else {
+                  el.removeAttribute("href"); // don't leave a stale link
+                }
+                return;
+              }
+
+              // Fallback: plain text (same behaviour as other settings)
+              el.textContent = address;
+            });
+
+            continue;
+          }
+
+          // ---------- Contact links (mailto: / tel:) ----------
+          // contact_email / contact_phone:
+          //   <a id="contact_email">     -> text + href = mailto:<email>
+          //   <a id="contact_phone">     -> text + href = tel:<phone>
+          //   <input id="contact_email"> -> plain value (as before)
+          //   anything else              -> text content (as before)
+          if (CONTACT_LINK_KEYS.has(key)) {
+            const contact =
+              value === null || value === undefined ? "" : String(value).trim();
+
+            targets.forEach((el) => {
+              // Editable fields keep the plain value
+              if (["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName)) {
+                if (el.type === "checkbox") {
+                  el.checked = /^(1|true|yes|on)$/i.test(contact);
+                } else if (el.type === "file" || el.type === "radio") {
+                  return; // cannot be set programmatically — skip
+                } else {
+                  el.value = contact;
+                }
+                return;
+              }
+
+              // Links: point them at mailto: / tel:
+              if (el.tagName === "A") {
+                el.textContent = contact;
+
+                const href = buildContactHref(key, contact);
+                if (href) {
+                  el.setAttribute("href", href);
+                } else {
+                  el.removeAttribute("href"); // don't leave a stale link
+                }
+                return;
+              }
+
+              // Fallback: plain text (same behaviour as other settings)
+              el.textContent = contact;
+            });
+
             continue;
           }
 
@@ -168,11 +276,46 @@
         }
       })
       .catch((error) => {
-        console.error("Error loading settings:", error);
+        // console.error("Error loading settings:", error);
         if (typeof showAlertTOP === "function" && showerror) {
           showAlertTOP("Failed to load settings", "error");
         }
       });
+  }
+
+  /**
+   * Build a Google Maps search URL for an address string.
+   * "Department of General Services Mandaue"
+   *   -> "https://maps.google.com/?q=Department+of+General+Services+Mandaue"
+   * Returns "" when the address is empty.
+   */
+  function buildMapsHref(address) {
+    const text = String(address ?? "").trim();
+    if (!text) return "";
+    // URLSearchParams encodes spaces as "+" and escapes the rest safely
+    return `${MAPS_BASE_URL}?${new URLSearchParams({ q: text }).toString()}`;
+  }
+
+  /**
+   * Build a mailto: / tel: URI for a contact value.
+   *   buildContactHref("contact_email", "info@example.com")
+   *     -> "mailto:info@example.com"
+   *   buildContactHref("contact_phone", "+63 (917) 123-4567")
+   *     -> "tel:+63917123-4567"
+   * Returns "" when the value is empty.
+   */
+  function buildContactHref(key, value) {
+    const text = String(value ?? "").trim();
+    if (!text) return "";
+
+    if (key === "contact_email") {
+      return `mailto:${text}`;
+    }
+
+    // tel: strip whitespace and parentheses so the URI is clean,
+    // but keep digits, "+" and visual separators like "-" / "."
+    const phone = text.replace(/[\s()]/g, "");
+    return phone ? `tel:${phone}` : "";
   }
 
   // Helper: fill a <select> with options from JSON data
@@ -256,7 +399,7 @@
         const user = result?.data ?? result;
 
         if (!user || typeof user !== "object" || Array.isArray(user)) {
-          console.error("Invalid user response:", result);
+          // console.error("Invalid user response:", result);
           if (typeof showAlertTOP === "function" && showerror) {
             showAlertTOP("Failed to load user info: invalid response", "error");
           }
@@ -289,7 +432,7 @@
         }
       })
       .catch((error) => {
-        console.error("Error loading user:", error);
+        // console.error("Error loading user:", error);
         if (typeof showAlertTOP === "function" && showerror) {
           showAlertTOP("Failed to load user info", "error");
         }
@@ -314,7 +457,7 @@
   /** All elements whose id starts with `prefix`, skipping claimed ones. */
   function collectTargets(prefix, claimed) {
     if (!/^[A-Za-z0-9_-]+$/.test(prefix)) {
-      console.warn(`Skipping unsafe id prefix: "${prefix}"`);
+      // console.warn(`Skipping unsafe id prefix: "${prefix}"`);
       return [];
     }
     const found = [];

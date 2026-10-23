@@ -79,6 +79,7 @@ $graveDistribution = [
     'Occupied' => 0,
     'Expiring' => 0,
     'Reserved' => 0,
+    'Other'    => 0,
 ];
 
 while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {

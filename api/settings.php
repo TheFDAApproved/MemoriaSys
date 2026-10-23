@@ -422,7 +422,46 @@ try {
                 } catch (Exception $e) {
                     if ($pdo->inTransaction()) $pdo->rollBack();
 
+                    // Safe cleanup: only delete uploaded files that are NOT
+                    // referenced by any active setting row. Prevents:
+                    //
+                    //   1. Deleting the pre-existing image for a key whose DB
+                    //      write was just rolled back (DB still points to the
+                    //      old filename; deleting the file leaves a dangling
+                    //      reference).
+                    //
+                    //   2. Deleting a file that a concurrent request just
+                    //      uploaded and committed under the same key
+                    //      (replaceIfExists=true means both target <key>.png).
+                    //      Their committed DB row would point to a missing file.
+                    //
+                    // If the DB check fails (e.g. connection dropped), we err
+                    // on the side of NOT deleting — an orphan file is
+                    // harmless, a dangling reference is not. A periodic
+                    // cleanup job can sweep unreferenced images later.
                     foreach ($uploadedFiles as $file) {
+                        try {
+                            $refCheck = $pdo->prepare("
+                                SELECT 1 FROM settings 
+                                WHERE setting_value = :v AND deleted_at IS NULL 
+                                LIMIT 1
+                            ");
+                            $refCheck->execute([':v' => $file]);
+                            if ($refCheck->fetchColumn()) {
+                                systemLog(
+                                    "Skipped image cleanup for {$file}: still referenced by an active setting.",
+                                    $userData['user_id']
+                                );
+                                continue;
+                            }
+                        } catch (PDOException $refErr) {
+                            systemLog(
+                                "Skipped image cleanup for {$file}: reference check failed ({$refErr->getMessage()})",
+                                $userData['user_id']
+                            );
+                            continue;
+                        }
+
                         $cleanupResult = $manager->deleteImage($file);
                         if (!$cleanupResult['success']) {
                             error_log("Could not clean up setting image {$file}: {$cleanupResult['error']}");

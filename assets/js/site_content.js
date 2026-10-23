@@ -16,11 +16,37 @@ function previewImage(input, previewId) {
   reader.readAsDataURL(input.files[0]);
 }
 
+// ---------- Per-list input class / name ----------
+// Every `kind: "list"` setting maps its container id to the input class
+// and `name` used for its rows. Unknown keys fall back to the purpose
+// list so older markup keeps working.
+const LIST_INPUT_CONFIG = {
+  payment_channels_list: {
+    inputClass: "channelInput",
+    inputName: "payment_channels[]",
+  },
+  payment_purposes_list: {
+    inputClass: "purposeInput",
+    inputName: "payment_purposes[]",
+  },
+  barangay_options: {
+    inputClass: "barangayInput",
+    inputName: "barangay_options[]",
+  },
+};
+
+function getListInputConfig(containerId) {
+  return (
+    LIST_INPUT_CONFIG[containerId] || {
+      inputClass: "purposeInput",
+      inputName: "payment_purposes[]",
+    }
+  );
+}
+
 // ---------- Core helper: create a single option item ----------
 function createOptionItem(containerId, value = "") {
-  const isChannel = containerId === "payment_channels_list";
-  const inputClass = isChannel ? "channelInput" : "purposeInput";
-  const inputName = isChannel ? "payment_channels[]" : "payment_purposes[]";
+  const { inputClass, inputName } = getListInputConfig(containerId);
 
   // <div class="listItem optionItem">
   const div = document.createElement("div");
@@ -94,6 +120,16 @@ function wireSiteContentUI() {
     addPurpose.addEventListener("click", () =>
       addOption("payment_purposes_list"),
     );
+  }
+
+  // Barangay "Add" button — accept a few likely ids so the markup can
+  // choose whichever fits. First one found wins.
+  const addBarangay =
+    document.getElementById("add_barangay_option") ||
+    document.getElementById("add_barangay") ||
+    document.getElementById("add_barangay_options");
+  if (addBarangay) {
+    addBarangay.addEventListener("click", () => addOption("barangay_options"));
   }
 
   const form = document.getElementById("site_content_form");
@@ -238,6 +274,7 @@ const SETTINGS_SPEC = {
 
   payment_channels_list: { description: "Payment Channels", kind: "list" },
   payment_purposes_list: { description: "Purposes of Payment", kind: "list" },
+  barangay_options: { description: "Barangay Dropdowns", kind: "list" },
 };
 
 // ================================================================
@@ -643,7 +680,8 @@ async function saveSiteContent(event) {
 // 2. Trim long values (URLs, JSON arrays) so rows stay readable.
 function prettySettingValue(key, value) {
   const v = String(value ?? "");
-  if (key.endsWith("_list")) {
+  // Any *_list OR barangay_options should render as "a, b, c".
+  if (key.endsWith("_list") || key === "barangay_options") {
     try {
       const arr = JSON.parse(v);
       if (Array.isArray(arr)) {

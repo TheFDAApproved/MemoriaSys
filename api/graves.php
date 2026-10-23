@@ -6,11 +6,17 @@
  * GET : List graves (filter by block_id, status, search term) or get a
  *       specific grave with its occupants.
  *
- *       When filtering by status=vacant, graves that are referenced by an
- *       Active reservation (as target or as O's destination) are excluded —
- *       they are effectively reserved and not truly available.
+ *       Admin/Office see the full grave record: status, remarks, occupants,
+ *       and can filter by status. Public sees only grave geometry
+ *       (grave_id, grave_code, row_num, col_num) plus the parent block's
+ *       id and name — no status, no remarks, no occupants, no status filter.
  *
- * PUT : Update a grave's `status` or `remarks` ONLY.
+ *       When filtering by status=vacant (Admin/Office only), graves that
+ *       are referenced by an Active reservation (as target or as O's
+ *       destination) are excluded — they are effectively reserved and not
+ *       truly available.
+ *
+ * PUT : Update a grave's `status` or `remarks` ONLY (Admin/Office only).
  *
  *       `row_num` and `col_num` are intentionally NOT editable here.
  *       Those coordinates are part of the block's grid and are owned by
@@ -53,7 +59,6 @@ $userData = checkuser(false);
 $method   = $_SERVER['REQUEST_METHOD'] ?? null;
 
 $role          = $userData['role'] ?? null;
-$isStaff       = in_array($role, [ROLE_ADMIN, ROLE_OFFICE, ROLE_GROUNDS]);
 $isAdminOffice = in_array($role, [ROLE_ADMIN, ROLE_OFFICE]);
 
 // Parse path info: /graves.php/{id}
@@ -166,11 +171,11 @@ function failWithDbError(PDOException $e, string $context): void
 // -----------------------------------------------------------------------------
 if ($method === 'GET') {
 
-    // ---- Single grave (with occupants for staff) --------------------------
+    // ---- Single grave (with occupants for Admin/Office) ------------------
     if (is_numeric($resourceId)) {
         $graveId = (int) $resourceId;
 
-        if ($isStaff) {
+        if ($isAdminOffice) {
             $sql = "
                 SELECT
                     g.grave_id, g.grave_code, g.row_num, g.col_num, g.status, g.remarks,
@@ -195,10 +200,10 @@ if ($method === 'GET') {
                 ORDER BY i.interment_id
             ";
         } else {
-            // Public: no interments, no remarks
+            // Public: geometry only. No status, no remarks, no interments.
             $sql = "
                 SELECT
-                    g.grave_id, g.grave_code, g.row_num, g.col_num, g.status,
+                    g.grave_id, g.grave_code, g.row_num, g.col_num,
                     b.block_id, b.block_name
                 FROM graves g
                 LEFT JOIN blocks b ON g.block_id = b.block_id AND b.deleted_at IS NULL
@@ -213,7 +218,7 @@ if ($method === 'GET') {
             Response::error("Grave not found.", 404);
         }
 
-        if ($isStaff) {
+        if ($isAdminOffice) {
             $grave     = null;
             $occupants = [];
             foreach ($rows as $row) {
@@ -289,12 +294,22 @@ if ($method === 'GET') {
     $limit = max(1, min((int) ($_GET['limit'] ?? 100), 500));
     $page  = max(1, (int) ($_GET['page'] ?? 1));
 
-    // ---- Status filter (vacant | occupied | other, comma-separated) ------
+    // ---- Status filter (Admin/Office only) -------------------------------
+    // Public cannot see `status` in responses, so filtering by it would
+    // leak which graves are vacant / occupied / other. Reject it outright.
     $statusRaw = $_GET['status'] ?? '';
     if (is_array($statusRaw)) {
         $statusRaw = implode(',', $statusRaw);
     }
-    $statusFilter    = strtolower(trim((string) $statusRaw));
+    $statusFilter = strtolower(trim((string) $statusRaw));
+
+    if ($statusFilter !== '' && !$isAdminOffice) {
+        Response::error(
+            "Status filtering is only available to Admin and Office.",
+            403
+        );
+    }
+
     $allowedStatuses = ['vacant', 'occupied', 'other'];
     $wantedStatuses  = [];
 
@@ -357,7 +372,7 @@ if ($method === 'GET') {
         $params[] = $like;
         $params[] = $like;
 
-        if ($isStaff) {
+        if ($isAdminOffice) {
             $parts[] = 'g.remarks LIKE ?';
             $params[] = $like;
 
@@ -417,7 +432,7 @@ if ($method === 'GET') {
     if (!empty($graveIds)) {
         $placeholders = implode(',', array_fill(0, count($graveIds), '?'));
 
-        if ($isStaff) {
+        if ($isAdminOffice) {
             $sql = "
                 SELECT
                     g.grave_id, g.grave_code, g.row_num, g.col_num, g.status, g.remarks,
@@ -428,6 +443,8 @@ if ($method === 'GET') {
                     i.last_known_address,
                     i.date_buried,
                     i.lease_expiration_date,
+                    i.deceased_date_of_birth,
+                    i.deceased_date_of_death,
                     i.contact_person_name,
                     i.contact_person_phone_number,
                     i.contact_person_email,
@@ -469,6 +486,8 @@ if ($method === 'GET') {
                         'deceased_name'               => $row['deceased_name'],
                         'last_known_address'          => $row['last_known_address'],
                         'date_buried'                 => $row['date_buried'],
+                        'deceased_date_of_birth'      => $row['deceased_date_of_birth'],
+                        'deceased_date_of_death'      => $row['deceased_date_of_death'],
                         'lease_expiration_date'       => $row['lease_expiration_date'],
                         'contact_person_name'         => $row['contact_person_name'],
                         'contact_person_phone_number' => $row['contact_person_phone_number'],
@@ -484,10 +503,10 @@ if ($method === 'GET') {
                 }
             }
         } else {
-            // Public: no interments, no remarks
+            // Public: geometry only. No status, no remarks, no interments.
             $sql = "
                 SELECT
-                    g.grave_id, g.grave_code, g.row_num, g.col_num, g.status,
+                    g.grave_id, g.grave_code, g.row_num, g.col_num,
                     b.block_id, b.block_name
                 FROM graves g
                 LEFT JOIN blocks b ON g.block_id = b.block_id AND b.deleted_at IS NULL

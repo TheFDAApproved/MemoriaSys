@@ -59,7 +59,7 @@
 
 /* Kill horizontal scrolling — rows fit the container width. */
 .logsTable .tableScrollWrapper {
-    overflow-x: hidden;
+    overflow-x: auto;
     overflow-y: auto;
 }
 

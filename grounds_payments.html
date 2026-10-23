@@ -1,134 +1,168 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Memoria</title>
 
-    <meta name="description" content="Workflow view for confirming cemetery payments across Office and Grounds stages.">
-    <meta name="author" content="Team DND">
-    <meta name="theme-color" content="#2f3136">
-    <meta name="robots" content="noindex, nofollow">
+    <meta
+      name="description"
+      content="Workflow view for confirming cemetery payments across Office and Grounds stages."
+    />
+    <meta name="author" content="Team DND" />
+    <meta name="theme-color" content="#2f3136" />
+    <meta name="robots" content="noindex, nofollow" />
 
-    <meta name="geo.region" content="PH-CEB">
-    <meta name="geo.placename" content="Mandaue City">
+    <meta name="geo.region" content="PH-CEB" />
+    <meta name="geo.placename" content="Mandaue City" />
 
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+    />
 
-    <link rel="stylesheet" href="assets/css/root.css">
-    <link rel="stylesheet" href="api/rootcolors.php" onerror="console.error('Failed to load custom colors. Using default theme.')">
-    <link rel="stylesheet" href="assets/css/grounds_payments.css">
+    <link rel="stylesheet" href="assets/css/root.css" />
+    <link
+      rel="stylesheet"
+      href="api/rootcolors.php"
+      onerror="
+        console.error('Failed to load custom colors. Using default theme.')
+      "
+    />
+    <link rel="stylesheet" href="assets/css/grounds_payments.css" />
 
     <script src="assets/js/check_user.js"></script>
-</head>
-<body>
+  </head>
+  <body>
     <div class="paymentsContainer">
+      <div class="tableControls">
+        <div class="searchBox">
+          <i class="fas fa-search"></i>
+          <input
+            type="text"
+            id="payment_search"
+            placeholder="Search..."
+            autocomplete="off"
+          />
+        </div>
+      </div>
 
-        <div class="tableControls">
-            <div class="searchBox">
-                <i class="fas fa-search"></i>
-                <input
-                    type="text"
-                    id="payment_search"
-                    placeholder="Search..."
-                    autocomplete="off">
-            </div>
+      <div class="table">
+        <div class="tableHeader">
+          <nav
+            class="subnav"
+            role="tablist"
+            aria-label="Payment workflow stages"
+          >
+            <button
+              type="button"
+              class="subnavBtn is-active"
+              data-tab="pending_grounds"
+              role="tab"
+              aria-selected="true"
+            >
+              <i class="fas fa-hourglass-half"></i>
+              <span>Awaiting Grounds Confirmation</span>
+              <span class="subnavCount" data-count-tab="pending_grounds"></span>
+            </button>
+
+            <button
+              type="button"
+              class="subnavBtn"
+              data-tab="pending_office"
+              role="tab"
+              aria-selected="false"
+            >
+              <i class="fas fa-clipboard-check"></i>
+              <span>For Confirmation</span>
+              <span class="subnavCount" data-count-tab="pending_office"></span>
+            </button>
+
+            <button
+              type="button"
+              class="subnavBtn"
+              data-tab="verified"
+              role="tab"
+              aria-selected="false"
+            >
+              <i class="fas fa-circle-check"></i>
+              <span>Completed Payments</span>
+              <span class="subnavCount" data-count-tab="verified"></span>
+            </button>
+          </nav>
+
+          <div class="pageInfoText">
+            Page <strong id="current_page_num">1</strong> of
+            <span id="total_pages_num">1</span>
+            &nbsp;·&nbsp;
+            <span id="total_records">0</span> records
+          </div>
         </div>
 
-        <div class="table">
-            <div class="tableHeader">
-                <nav class="subnav" role="tablist" aria-label="Payment workflow stages">
+        <div class="tableScrollWrapper" id="table_wrapper">
+          <table class="paymentsTable" id="payments_table">
+            <thead>
+              <tr>
+                <th>Name of Deceased</th>
+                <th>Payer's Name</th>
+                <th>Payment Channel</th>
+                <th>Reference Number</th>
+                <th>Amount (PHP)</th>
+                <th>Phone Number</th>
+                <th>Email</th>
+                <th>Purpose</th>
+                <th>Proof</th>
+                <th>Remarks</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="payments_tbody"></tbody>
+          </table>
 
-                    <button type="button"
-                            class="subnavBtn is-active"
-                            data-tab="pending_grounds"
-                            role="tab"
-                            aria-selected="true">
-                        <i class="fas fa-hourglass-half"></i>
-                        <span>Awaiting Grounds Confirmation</span>
-                        <span class="subnavCount" data-count-tab="pending_grounds"></span>
-                    </button>
-
-                    <button type="button"
-                            class="subnavBtn"
-                            data-tab="pending_office"
-                            role="tab"
-                            aria-selected="false">
-                        <i class="fas fa-clipboard-check"></i>
-                        <span>For Confirmation</span>
-                        <span class="subnavCount" data-count-tab="pending_office"></span>
-                    </button>
-
-                    <button type="button"
-                            class="subnavBtn"
-                            data-tab="verified"
-                            role="tab"
-                            aria-selected="false">
-                        <i class="fas fa-circle-check"></i>
-                        <span>Completed Payments</span>
-                        <span class="subnavCount" data-count-tab="verified"></span>
-                    </button>
-                </nav>
-
-                <div class="pageInfoText">
-                    Page <strong id="current_page_num">1</strong>
-                    of <span id="total_pages_num">1</span>
-                    &nbsp;·&nbsp;
-                    <span id="total_records">0</span> records
-                </div>
-            </div>
-
-            <div class="tableScrollWrapper" id="table_wrapper">
-                <table class="paymentsTable" id="payments_table">
-                    <thead>
-                        <tr>
-                            <th>Name of Deceased</th>
-                            <th>Payer's Name</th>
-                            <th>Payment Channel</th>
-                            <th>Reference Number</th>
-                            <th>Amount (PHP)</th>
-                            <th>Phone Number</th>
-                            <th>Email</th>
-                            <th>Purpose</th>
-                            <th>Proof</th>
-                            <th>Remarks</th>
-                            <th>Status</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody id="payments_tbody"></tbody>
-                </table>
-
-                <p class="noData" id="no_data">
-                    <i class="fas fa-inbox"></i>
-                    No records found
-                </p>
-            </div>
+          <p class="noData" id="no_data">
+            <i class="fas fa-inbox"></i>
+            No records found
+          </p>
         </div>
+      </div>
 
-        <div class="paginationContainer">
-            <div class="paginationControls">
-                <button type="button" class="pageNavBtn" id="prev_page_btn" aria-label="Previous page">
-                    <i class="fas fa-chevron-left"></i>
-                </button>
+      <div class="paginationContainer">
+        <div class="paginationControls">
+          <button
+            type="button"
+            class="pageNavBtn"
+            id="prev_page_btn"
+            aria-label="Previous page"
+          >
+            <i class="fas fa-chevron-left"></i>
+          </button>
 
-                <div class="carouselViewport" id="carousel_viewport">
-                    <div class="carouselTrack" id="carousel_track"></div>
-                </div>
+          <div class="carouselViewport" id="carousel_viewport">
+            <div class="carouselTrack" id="carousel_track"></div>
+          </div>
 
-                <button type="button" class="pageNavBtn" id="next_page_btn" aria-label="Next page">
-                    <i class="fas fa-chevron-right"></i>
-                </button>
-            </div>
+          <button
+            type="button"
+            class="pageNavBtn"
+            id="next_page_btn"
+            aria-label="Next page"
+          >
+            <i class="fas fa-chevron-right"></i>
+          </button>
         </div>
+      </div>
     </div>
 
     <script src="assets/js/alert.js"></script>
     <script src="assets/js/confirm_ui.js"></script>
     <script src="assets/js/grounds_payments.js"></script>
-</body>
+  </body>
 </html>

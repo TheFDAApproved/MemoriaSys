@@ -7,6 +7,13 @@ class ImageManager
     private $uploadDir;
     private $baseUrl;
     private $maxFileSize;
+    private $lockDir;
+
+    /**
+     * Maximum time (ms) to wait for a file lock before giving up.
+     * A timeout returns a 503 to the caller instead of hanging the worker.
+     */
+    private $lockTimeoutMs = 3000;
 
     // Allowed strict MIME types
     private $allowedMimeTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
@@ -14,10 +21,19 @@ class ImageManager
     // Max filename length (leave room for added suffixes and extension)
     private $maxFilenameLength = 150;
 
-    public function __construct($uploadDirPath = null, $baseUrlPath = null, $maxFileSize = 10485760)
+    public function __construct($uploadDirPath = null, $baseUrlPath = null, $maxFileSize = 10485760, $lockTimeoutMs = 3000)
     {
         $this->uploadDir = $uploadDirPath ?? __DIR__ . '/images/';
         $this->maxFileSize = $maxFileSize;
+        $this->lockTimeoutMs = max(100, (int)$lockTimeoutMs);
+
+        // Lock files live in a dedicated subdirectory. Keeps the images/
+        // listing clean, and makes stale-lock cleanup straightforward.
+        $baseForLocks = rtrim($this->uploadDir, '/\\') . DIRECTORY_SEPARATOR;
+        $this->lockDir = $baseForLocks . 'locks' . DIRECTORY_SEPARATOR;
+        if (!is_dir($this->lockDir)) {
+            @mkdir($this->lockDir, 0755, true);
+        }
 
         // 1. Determine the correct protocol (http vs https)
         $protocol = 'http';
@@ -208,21 +224,50 @@ class ImageManager
     }
 
     /**
-     * Get an exclusive lock on a .lock file for a given target path.
+     * Get an exclusive lock on the shared lock file for a given target path.
+     *
+     * The lock file lives in $this->lockDir with a hashed name, so the
+     * images directory stays clean and exotic caller filenames can never
+     * break the filesystem namespace.
+     *
+     * Uses a non-blocking acquire in a bounded retry loop. If the lock is
+     * held by another process for longer than $lockTimeoutMs, this returns
+     * false rather than hanging the worker forever.
+     *
      * Returns an array with handle and path on success, false on failure.
+     *
+     * Note on lock-file lifetime:
+     *   The .lock file is intentionally NOT unlinked on release. Unlinking
+     *   an open flock()'d file is racy — a third process that fopen()s the
+     *   name afterwards gets a fresh inode, so two processes can each hold
+     *   an "exclusive" lock on different inodes with the same name. This
+     *   is why locks must persist. Use cleanupStaleLocks() (below) for
+     *   periodic housekeeping instead.
      */
-    private function acquireLock($targetPath)
+    private function acquireLock($targetPath, $timeoutMs = null)
     {
-        $lockFile = $targetPath . '.lock';
+        if ($timeoutMs === null) {
+            $timeoutMs = $this->lockTimeoutMs;
+        }
+
+        // Safety net: ensure locks dir exists even if constructed strangely.
+        if (!is_dir($this->lockDir)) {
+            @mkdir($this->lockDir, 0755, true);
+        }
+
+        $lockFile = $this->lockDir . sha1($targetPath) . '.lock';
         $fp = fopen($lockFile, 'c+');
         if (!$fp) {
             return false;
         }
 
-        // Try to get exclusive lock
-        if (!flock($fp, LOCK_EX)) {
-            fclose($fp);
-            return false;
+        $deadline = microtime(true) + ($timeoutMs / 1000);
+        while (!flock($fp, LOCK_EX | LOCK_NB)) {
+            if (microtime(true) >= $deadline) {
+                fclose($fp);
+                return false;
+            }
+            usleep(50000); // 50ms between attempts
         }
 
         // Return both the file pointer and the lock file path as an array
@@ -268,7 +313,14 @@ class ImageManager
                 if ($file === '.' || $file === '..') {
                     continue;
                 }
-
+                // Skip the locks subdirectory created by the constructor
+                if ($file === 'locks') {
+                    continue;
+                }
+                // Skip legacy .lock files left over from older versions
+                if (substr($file, -5) === '.lock') {
+                    continue;
+                }
                 if (stripos($file, $searchTerm) !== false) {
                     $files[] = $file;
 
@@ -305,6 +357,14 @@ class ImageManager
         } else {
             foreach ($allFiles as $file) {
                 if ($file === '.' || $file === '..') {
+                    continue;
+                }
+                // Skip the locks subdirectory created by the constructor
+                if ($file === 'locks') {
+                    continue;
+                }
+                // Skip legacy .lock files left over from older versions
+                if (substr($file, -5) === '.lock') {
                     continue;
                 }
                 if (is_file($this->uploadDir . $file)) {
@@ -681,13 +741,24 @@ class ImageManager
             ];
         }
 
-        // Lock both old and new to avoid races
-        $lockOld = $this->acquireLock($oldDestination);
-        $lockNew = $this->acquireLock($newDestination);
+        // Lock both old and new in a deterministic order to prevent ABBA deadlocks.
+        // Two concurrent renames in opposite directions (A->B and B->A) would
+        // otherwise each hold one lock and wait forever on the other's.
+        $lockPaths = [$oldDestination, $newDestination];
+        sort($lockPaths, SORT_STRING);
 
-        if (!$lockOld || !$lockNew) {
-            if ($lockOld) $this->releaseLock($lockOld);
-            if ($lockNew) $this->releaseLock($lockNew);
+        $lockA = $this->acquireLock($lockPaths[0]);
+        if (!$lockA) {
+            return [
+                'success' => false,
+                'error' => 'Could not obtain file lock. Please try again.',
+                'status_code' => 503
+            ];
+        }
+
+        $lockB = $this->acquireLock($lockPaths[1]);
+        if (!$lockB) {
+            $this->releaseLock($lockA);
             return [
                 'success' => false,
                 'error' => 'Could not obtain file lock. Please try again.',
@@ -740,8 +811,111 @@ class ImageManager
                 'type' => mime_content_type($newDestination)
             ];
         } finally {
-            $this->releaseLock($lockOld);
-            $this->releaseLock($lockNew);
+            $this->releaseLock($lockA);
+            $this->releaseLock($lockB);
+        }
+    }
+
+    /**
+     * Remove lock files that have been idle for a long time.
+     *
+     * Meant to be called from a cron job (e.g. once a day):
+     *
+     *     $im = new ImageManager();
+     *     $stats = $im->cleanupStaleLocks(86400); // 24h
+     *     error_log('lock cleanup: ' . json_encode($stats));
+     *
+     * Safety model:
+     *   - Only touch locks whose mtime is older than $maxAgeSeconds.
+     *   - For each, try a non-blocking flock() — if it fails, someone is
+     *     actively using it, so skip.
+     *   - Only then unlink.
+     *
+     * There is a theoretical race in the unlink-while-held pattern: if a
+     * waiter acquires the lock between our unlink and our release, it and
+     * the next opener of the (re-created) file can each believe they hold
+     * the "same" lock via different inodes. With the defaults above this
+     * is unreachable in practice — an active waiter would have timed out
+     * after 3s (lockTimeoutMs), not waited 24h — but it does exist. If
+     * you'd rather not accept even that theoretical risk, just don't call
+     * this method; the files are 0 bytes each and cause no harm.
+     *
+     * Scans both the current `locks/` directory and the images/ root, so
+     * any legacy `.jpg.lock` files from older versions are also cleaned.
+     *
+     * @param int $maxAgeSeconds   Minimum idle time before a lock is eligible (default 24h)
+     * @return array               ['deleted'=>int, 'skipped_active'=>int, 'skipped_recent'=>int, 'errors'=>int]
+     */
+    public function cleanupStaleLocks($maxAgeSeconds = 86400)
+    {
+        $stats = ['deleted' => 0, 'skipped_active' => 0, 'skipped_recent' => 0, 'errors' => 0];
+
+        // Current location: images/locks/*.lock
+        $this->cleanupLocksInDir($this->lockDir, $maxAgeSeconds, $stats);
+
+        // Legacy location: images/*.jpg.lock (from older versions)
+        $this->cleanupLocksInDir($this->uploadDir, $maxAgeSeconds, $stats);
+
+        return $stats;
+    }
+
+    private function cleanupLocksInDir($dir, $maxAgeSeconds, array &$stats)
+    {
+        if (!is_dir($dir)) {
+            return;
+        }
+
+        $entries = @scandir($dir);
+        if ($entries === false) {
+            return;
+        }
+
+        $now = time();
+        foreach ($entries as $file) {
+            if ($file === '.' || $file === '..') {
+                continue;
+            }
+            if (substr($file, -5) !== '.lock') {
+                continue;
+            }
+
+            $path = $dir . $file;
+            if (!is_file($path)) {
+                continue;
+            }
+
+            $mtime = @filemtime($path);
+            if ($mtime === false) {
+                $stats['errors']++;
+                continue;
+            }
+            if ($now - $mtime < $maxAgeSeconds) {
+                $stats['skipped_recent']++;
+                continue;
+            }
+
+            $fp = @fopen($path, 'c+');
+            if (!$fp) {
+                $stats['errors']++;
+                continue;
+            }
+
+            if (!flock($fp, LOCK_EX | LOCK_NB)) {
+                // Still held by a live process — leave it alone.
+                fclose($fp);
+                $stats['skipped_active']++;
+                continue;
+            }
+
+            $ok = @unlink($path);
+            flock($fp, LOCK_UN);
+            fclose($fp);
+
+            if ($ok) {
+                $stats['deleted']++;
+            } else {
+                $stats['errors']++;
+            }
         }
     }
 }

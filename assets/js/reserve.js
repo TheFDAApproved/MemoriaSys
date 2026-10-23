@@ -824,9 +824,16 @@
 
             if (els.searchInput) {
                 const value = els.searchInput.value.trim();
-                if (value.length === 0 || value.length >= MIN_SEARCH_LENGTH) {
-                    state.search = value;
+
+                // NEW: Filter is an explicit action too. If the term is
+                // non-empty but too short, warn via showAlertTOP and abort
+                // the filter — don't silently apply the previous term.
+                if (value.length > 0 && value.length < MIN_SEARCH_LENGTH) {
+                    warnSearchTooShort(value);
+                    return;
                 }
+
+                state.search = value;
             }
             if (els.statusFilter) {
                 state.status = els.statusFilter.value || 'all';

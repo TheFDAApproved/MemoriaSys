@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Memoria</title>
+
+    <meta
+      name="description"
+      content="Management system for the Cemetery. Locate plots, monitor leases, and manage notifications."
+    />
+    <meta name="author" content="Team DND" />
+    <meta name="theme-color" content="#2f3136" />
+    <meta name="robots" content="index, follow" />
+
+    <meta name="geo.region" content="PH-CEB" />
+    <meta name="geo.placename" content="Mandaue City" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="/" />
+    <meta property="og:site_name" content="Memoria" />
+    <meta property="og:title" content="Memoria | Cemetery Management System" />
+    <meta
+      property="og:description"
+      content="Efficiently manage and locate records within the Cemetery."
+    />
+    <meta
+      property="og:image"
+      content="https://cdn1.iconfinder.com/data/icons/government-buildings-5/504/cemetery-graveyard-tombstone-burial-memorial-512.png"
+    />
+
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+    />
+
+    <link rel="stylesheet" href="assets/css/root.css" />
+    <link
+      rel="stylesheet"
+      href="api/rootcolors.php"
+      onerror="
+        console.error('Failed to load custom colors. Using default theme.')
+      "
+    />
+    <link rel="stylesheet" href="assets/css/payments.css" />
+
+    <script src="assets/js/check_user.js"></script>
+  </head>
+  <body>
+    <div class="paymentsContainer">
+      <div class="tableControls">
+        <div class="searchBox">
+          <i class="fas fa-search"></i>
+          <input
+            type="text"
+            id="payment_search"
+            placeholder="Search..."
+            autocomplete="off"
+          />
+        </div>
+
+        <div class="controlItem">
+          <select
+            id="status_filter"
+            class="mainSelect"
+            aria-label="Filter by status"
+          >
+            <option value="all">All Status</option>
+            <option value="pending_office">Pending Office</option>
+            <option value="pending_grounds">Pending Grounds</option>
+            <option value="verified">Verified</option>
+          </select>
+        </div>
+
+        <button type="button" id="filter_btn" class="filterActionBtn">
+          <i class="fas fa-filter"></i>
+          <span>Filter</span>
+        </button>
+      </div>
+
+      <div class="table">
+        <div class="tableHeader">
+          <h3>Payment Records</h3>
+          <div class="pageInfoText">
+            Page <strong id="current_page_num">1</strong> of
+            <span id="total_pages_num">1</span>
+          </div>
+        </div>
+
+        <div class="tableScrollWrapper">
+          <table class="paymentsTable">
+            <thead>
+              <tr>
+                <th>Name of Deceased</th>
+                <th>Payer's Name</th>
+                <th>Payment Channel</th>
+                <th>Reference Number</th>
+                <th>Amount (PHP)</th>
+                <th>Phone Number</th>
+                <th>Email</th>
+                <th>Purpose</th>
+                <th>Proof of Payment</th>
+                <th>Remarks</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="paymentsTableBody"></tbody>
+          </table>
+
+          <p class="noData" id="burialNoData">
+            <i class="fas fa-inbox"></i>
+            No records found
+          </p>
+        </div>
+      </div>
+
+      <div class="paginationContainer">
+        <div class="paginationControls">
+          <button
+            type="button"
+            class="pageNavBtn"
+            id="prev_page_btn"
+            aria-label="Previous page"
+          >
+            <i class="fas fa-chevron-left"></i>
+          </button>
+
+          <div class="carouselViewport" id="carousel_viewport">
+            <div class="carouselTrack" id="carousel_track"></div>
+          </div>
+
+          <button
+            type="button"
+            class="pageNavBtn"
+            id="next_page_btn"
+            aria-label="Next page"
+          >
+            <i class="fas fa-chevron-right"></i>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <script src="assets/js/alert.js"></script>
+    <script src="assets/js/confirm_ui.js"></script>
+    <script src="assets/js/sms_notification.js"></script>
+    <script src="assets/js/office_payments.js"></script>
+  </body>
+</html>

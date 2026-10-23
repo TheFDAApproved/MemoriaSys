@@ -63,6 +63,17 @@
         };
     };
 
+    const notify = (message, type) => {
+        try {
+            if (typeof window.showAlertTOP === 'function') {
+                window.showAlertTOP(message, type);
+                return;
+            }
+        } catch (_) { /* fall through */ }
+        if (type === 'error') console.error(message);
+        else console.log(message);
+    };
+
     // ---- raw-error sanitization ----
     // Prevent ngrok/proxy HTML pages, bare HTTP status codes, JSON parse
     // failures, and network failures from reaching the empty-state block.
@@ -89,6 +100,57 @@
         if (!s || looksRawMessage(s)) return fallback || GENERIC_ERROR;
         return s;
     };
+
+    // ------------------------------------------------------------------ styles
+    function injectStyles() {
+        if (document.getElementById('logsSearchStyles')) return;
+        const style = document.createElement('style');
+        style.id = 'logsSearchStyles';
+        style.textContent = `
+            /* ============================================================
+               Search clear button
+               ============================================================ */
+            .pmSearchClearBtn {
+                position: absolute;
+                right: 8px;
+                top: 50%;
+                transform: translateY(-50%);
+                display: none;
+                align-items: center;
+                justify-content: center;
+                width: 24px;
+                height: 24px;
+                padding: 0;
+                margin: 0;
+                border: none;
+                border-radius: 50%;
+                background: transparent;
+                color: #9ca3af;
+                font-size: 11px;
+                line-height: 1;
+                cursor: pointer;
+                z-index: 5;
+                transition: background 0.15s ease, color 0.15s ease;
+            }
+            .pmSearchClearBtn:hover {
+                background: #f3f4f6;
+                color: #4b5563;
+            }
+            .pmSearchClearBtn:focus-visible {
+                outline: none;
+                box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.30);
+            }
+            .pmSearchClearBtn.is-visible {
+                display: inline-flex;
+            }
+            .pmSearchInputWithClear::-webkit-search-cancel-button,
+            .pmSearchInputWithClear::-webkit-search-decoration {
+                -webkit-appearance: none;
+                appearance: none;
+            }
+        `;
+        document.head.appendChild(style);
+    }
 
     // ------------------------------------------------------------------ response parsing
     const extractArray = (json) => {
@@ -337,6 +399,53 @@
         renderPage();
     }
 
+    // ------------------------------------------------------------------ search clear button
+    function setupSearchClearButton() {
+        const input = el.search;
+        if (!input) return;
+
+        const parent = input.parentElement;
+        if (!parent) return;
+
+        // The button is positioned absolutely inside the input's wrapper,
+        // so the wrapper must establish a positioning context.
+        if (window.getComputedStyle(parent).position === 'static') {
+            parent.style.position = 'relative';
+        }
+
+        // Reserve room so typed text never slides under the clear button.
+        input.style.paddingRight = '30px';
+        input.classList.add('pmSearchInputWithClear');
+
+        // Idempotent: avoid duplicating the button if init runs twice.
+        const existing = parent.querySelector('.pmSearchClearBtn');
+        if (existing) existing.remove();
+
+        const clearBtn = document.createElement('button');
+        clearBtn.type = 'button';
+        clearBtn.className = 'pmSearchClearBtn';
+        clearBtn.setAttribute('aria-label', 'Clear search');
+        clearBtn.title = 'Clear search';
+        clearBtn.innerHTML = '<i class="fas fa-times"></i>';
+
+        const updateVisibility = () => {
+            clearBtn.classList.toggle('is-visible', input.value.length > 0);
+        };
+
+        clearBtn.addEventListener('click', () => {
+            const hadTerm = input.value.trim().length > 0;
+            input.value = '';
+            updateVisibility();
+            if (hadTerm) applyFilters();
+            input.focus();
+        });
+
+        input.addEventListener('input', updateVisibility);
+
+        parent.appendChild(clearBtn);
+        updateVisibility();
+    }
+
     // ------------------------------------------------------------------ load
     async function loadLogs() {
         if (state.loading) return;
@@ -388,6 +497,13 @@
             el.search.addEventListener('keydown', (e) => {
                 if (e.key !== 'Enter') return;
                 e.preventDefault();
+                const v = el.search.value.trim();
+                // Live typing never triggers the "too short" warning —
+                // that only fires on Enter. Here we just warn and bail.
+                if (v.length > 0 && v.length < SEARCH_MIN_LEN) {
+                    notify('Too short to search', 'warning');
+                    return;
+                }
                 applyFilters();
             });
         }
@@ -418,7 +534,9 @@
     }
 
     // ------------------------------------------------------------------ init
+    injectStyles();
     hideNoData();
+    setupSearchClearButton();
     bindEvents();
     loadLogs();
 })();

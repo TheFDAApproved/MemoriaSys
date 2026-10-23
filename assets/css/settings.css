@@ -15,6 +15,7 @@ body {
   gap: 24px;
   padding: 24px;
   color: #333333;
+  overflow-x: hidden;
 
   label.required::after {
     content: " *";
@@ -59,8 +60,8 @@ body {
   }
 
   /* Optional: turn the field's label red while the error is active */
-  .formGroup:has(.inputError)>label,
-  .systemItem:has(.inputError)>label,
+  .formGroup:has(.inputError) > label,
+  .systemItem:has(.inputError) > label,
   .systemItem:has(.inputError) .labelRow label {
     color: #dc2626;
     transition: color 0.2s ease;
@@ -117,7 +118,7 @@ body {
     color: #111827;
   }
 
-  .cardTop>div>p {
+  .cardTop > div > p {
     margin: 6px 0 0;
     font-size: 14px;
     color: #6b7280;
@@ -146,7 +147,7 @@ body {
      ============================================================ */
   .importPreview {
     display: flex;
-    align-items: flex-start;        /* was: center — keep icon/btn on line 1 */
+    align-items: flex-start; /* was: center — keep icon/btn on line 1 */
     gap: 10px;
     margin-top: 12px;
     padding: 10px 12px;
@@ -160,11 +161,11 @@ body {
     display: none;
   }
 
-  .importPreview>i {
+  .importPreview > i {
     flex: 0 0 auto;
     font-size: 18px;
     color: #10b981;
-    margin-top: 1px;                /* nudge icon onto the first text line */
+    margin-top: 1px; /* nudge icon onto the first text line */
   }
 
   .importPreview .importFileName {
@@ -175,16 +176,16 @@ body {
     color: #1f2937;
 
     /* was: white-space: nowrap; overflow: hidden; text-overflow: ellipsis; */
-    white-space: normal;            /* allow wrapping to a new line          */
-    overflow-wrap: anywhere;        /* break long unbroken filenames         */
-    word-break: break-all;          /* filenames have no spaces — force break */
+    white-space: normal; /* allow wrapping to a new line          */
+    overflow-wrap: anywhere; /* break long unbroken filenames         */
+    word-break: break-all; /* filenames have no spaces — force break */
     line-height: 1.4;
   }
 
   .importPreview .importRemoveBtn {
     flex: 0 0 auto;
     padding: 8px 10px;
-    margin-top: -2px;               /* visually align ✕ with line 1          */
+    margin-top: -2px; /* visually align ✕ with line 1          */
   }
 
   .selectWrapper {
@@ -341,7 +342,7 @@ body {
       align-items: stretch;
     }
 
-    .cardTop>.btn {
+    .cardTop > .btn {
       width: 100%;
     }
 
@@ -350,8 +351,8 @@ body {
       max-width: none;
     }
 
-    .cardControls>.btn,
-    .cardControls>label.btn {
+    .cardControls > .btn,
+    .cardControls > label.btn {
       flex: 1 1 0;
       min-width: 0;
     }
@@ -541,7 +542,7 @@ body {
       flex-direction: column;
       gap: 8px;
 
-      >label,
+      > label,
       .labelRow label {
         font-size: 14px;
         font-weight: 500;
@@ -609,7 +610,7 @@ body {
             gap: 8px;
           }
 
-          >span {
+          > span {
             font-size: 12px;
             color: #9ca3af;
           }
@@ -886,140 +887,4 @@ body {
       color: #3b82f6;
     }
   }
-}
-
-/* ================================================================
-   RESPONSIVE — Settings / Profile
-   ================================================================ */
-
-/* ---- Large monitors: cap the card width so forms stay readable ---- */
-@media (min-width: 1200px) {
-    .settingsContent {
-        max-width: 1100px;
-        margin: 0 auto;
-    }
-}
-
-/* ---- Tablet (<=1024px) ---- */
-@media (max-width: 1024px) {
-    .settingsContent {
-        padding: 20px;
-        gap: 20px;
-    }
-
-    .settingsContent .settingsCard {
-        padding: 20px;
-    }
-}
-
-/* ---- Large phone (<=768px) ---- */
-@media (max-width: 768px) {
-    .settingsContent {
-        padding: 16px;
-        gap: 16px;
-    }
-
-    .settingsContent .settingsCard {
-        padding: 18px;
-    }
-
-    .settingsContent .sectionTitle {
-        gap: 12px;
-        margin-bottom: 20px;
-    }
-
-    .settingsContent .sectionTitle i {
-        font-size: 24px;
-    }
-
-    .settingsContent .sectionTitle h2 {
-        font-size: 18px;
-    }
-
-    .settingsContent .sectionTitle p {
-        font-size: 13px;
-    }
-
-    /* Stack the button row */
-    .settingsContent .saveRow {
-        flex-direction: column;
-        align-items: stretch;
-        gap: 10px;
-        margin-top: 20px;
-    }
-
-    .settingsContent .saveRow .btn {
-        width: 100%;
-        justify-content: center;
-        height: 44px;
-    }
-
-    .settingsContent .editModeNotice {
-        max-width: none;
-        font-size: 13px;
-        padding: 10px 14px;
-    }
-}
-
-/* ---- Small phone (<=480px) ---- */
-@media (max-width: 480px) {
-    .settingsContent {
-        padding: 12px;
-        gap: 14px;
-    }
-
-    .settingsContent .settingsCard {
-        padding: 14px;
-    }
-
-    .settingsContent .sectionTitle {
-        gap: 10px;
-        margin-bottom: 18px;
-    }
-
-    .settingsContent .sectionTitle i {
-        font-size: 22px;
-    }
-
-    .settingsContent .sectionTitle h2 {
-        font-size: 17px;
-    }
-
-    .settingsContent .sectionTitle p {
-        font-size: 12.5px;
-    }
-
-    .settingsContent .formGroup label {
-        font-size: 13px;
-    }
-
-    .settingsContent input[type="text"],
-    .settingsContent input[type="email"],
-    .settingsContent input[type="tel"],
-    .settingsContent input[type="password"] {
-        height: 40px;
-        font-size: 13.5px;
-    }
-
-    .settingsContent .saveRow .btn {
-        height: 42px;
-        font-size: 13.5px;
-    }
-}
-
-/* ---- Very small phone (<=360px) ---- */
-@media (max-width: 360px) {
-    .settingsContent {
-        padding: 10px;
-        gap: 12px;
-    }
-
-    .settingsContent .settingsCard {
-        padding: 12px;
-    }
-
-    .settingsContent .saveRow .btn {
-        height: 40px;
-        font-size: 13px;
-    }
 }
