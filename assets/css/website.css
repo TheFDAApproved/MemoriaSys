@@ -41,6 +41,7 @@ body {
     opacity: 0;
     transform: translateY(16px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -185,6 +186,7 @@ header {
     transform: translateY(4px);
     opacity: 0;
   }
+
   to {
     transform: translateY(0);
     opacity: 1;
@@ -408,6 +410,7 @@ header {
 
     & .cardIcon {
       background-color: var(--mainColor);
+
       & svg {
         color: #ffffff;
       }
@@ -424,7 +427,7 @@ header {
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   gap: 40px;
 
-  & > * {
+  &>* {
     min-width: 0;
   }
 
@@ -531,6 +534,7 @@ header {
         & strong {
           color: var(--mainColor);
         }
+
         & .serviceInfo {
           display: block;
           margin-top: 4px;
@@ -593,28 +597,17 @@ header {
         cursor: pointer;
         display: inline-flex;
         align-items: center;
-        gap: 10px;
-        transition:
-          opacity 0.2s,
-          transform 0.1s;
-        min-height: 44px;
-        padding: 8px 12px;
-        background-color: var(--backgroundColor);
-        border-radius: 8px;
-        border: 1px solid var(--borderColor);
-        width: 100%;
+        gap: 8px;
+        transition: opacity 0.2s;
 
         &:hover {
-          background-color: #f1f5f9;
-        }
-        &:active {
-          transform: scale(0.98);
+          opacity: 0.8;
         }
 
         & svg {
           width: 20px;
           height: 20px;
-          color: var(--mainColor);
+          color: #1c1e21;
           flex-shrink: 0;
         }
       }
@@ -754,6 +747,7 @@ header {
   &.open {
     color: #16a34a;
   }
+
   &.closed {
     color: #dc2626;
   }
@@ -935,6 +929,7 @@ header {
       &.fullWidth {
         grid-column: 1 / -1;
       }
+
       &.hidden {
         display: none;
       }
@@ -1004,7 +999,7 @@ header {
         }
 
         &:hover .selectIcon,
-        & select:focus + .selectIcon {
+        & select:focus+.selectIcon {
           color: var(--accentColor);
         }
       }
@@ -1062,56 +1057,45 @@ header {
 
 #hours_modal {
   & .modalCard {
-    background: var(--surfaceColor);
-    width: 100%;
+    background: #ffffff;
+    width: 90%;
     max-width: 480px;
-    max-height: 90vh;
-    max-height: 90dvh;
-    overflow-y: auto;
-    border-radius: 20px;
-    padding: 32px;
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-    transform: translateY(0) scale(1);
-    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  &.hidden .modalCard {
-    transform: translateY(16px) scale(0.96);
+    border-radius: 16px;
+    padding: 24px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
   }
 
   & .modalHeader {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 24px;
+    margin-bottom: 20px;
 
     & h3 {
       margin: 0;
-      font-size: 22px;
-      font-weight: 800;
+      font-size: 20px;
       color: var(--mainColor);
     }
 
     & .modalCloseBtn {
-      background: var(--backgroundColor);
-      border: 1px solid var(--borderColor);
-      font-size: 20px;
+      background: transparent;
+      border: none;
+      font-size: 24px;
       line-height: 1;
-      color: var(--textMuted);
+      color: #94a3b8;
       cursor: pointer;
       padding: 0;
-      width: 40px;
-      height: 40px;
+      width: 32px;
+      height: 32px;
       border-radius: 50%;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      transition: all 0.2s;
+      transition: background-color 0.2s, color 0.2s;
 
       &:hover {
         color: var(--mainColor);
-        background-color: #e2e8f0;
-        transform: rotate(90deg);
+        background-color: #f1f5f9;
       }
     }
   }
@@ -1120,35 +1104,34 @@ header {
     display: flex;
     align-items: center;
     gap: 16px;
-    padding: 12px 0;
-    margin-bottom: 24px;
+    padding: 8px 0;
+    margin-bottom: 20px;
 
     & .statusIconWrapper {
-      width: 48px;
-      height: 48px;
-      border-radius: 12px;
-      background-color: var(--backgroundColor);
-      border: 1px solid var(--borderColor);
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      background-color: #f8fafc;
+      border: 1px solid #e2e8f0;
       display: flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
 
       & svg {
-        width: 24px;
-        height: 24px;
-        color: var(--mainColor);
+        width: 20px;
+        height: 20px;
+        color: #64748b;
       }
     }
 
     & .statusLabel {
       display: block;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--textMuted);
-      margin-bottom: 4px;
+      letter-spacing: 0.05em;
+      color: #64748b;
     }
 
     & .modalStatusText {
@@ -1159,38 +1142,29 @@ header {
   & .hoursList {
     display: flex;
     flex-direction: column;
-    gap: 8px;
-    margin-bottom: 24px;
+    gap: 6px;
+    margin-bottom: 20px;
 
     & .hoursItem {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-size: 15px;
-      padding: 12px 16px;
-      border-radius: 10px;
-      background-color: var(--surfaceColor);
-      border: 1px solid transparent;
-      transition: background-color 0.2s;
-
-      &:hover {
-        background-color: var(--backgroundColor);
-      }
+      font-size: 14px;
+      padding: 8px 12px;
+      border-radius: 8px;
 
       & .dayLabel {
         font-weight: 600;
-        color: var(--textColor);
+        color: #334155;
       }
 
       & .timeLabel {
         font-weight: 500;
-        color: var(--textMuted);
-        text-align: right;
+        color: #64748b;
       }
 
       &.activeDay {
         background-color: #f0fdf4;
-        border-color: #bbf7d0;
 
         & .dayLabel,
         & .timeLabel {
@@ -1200,22 +1174,22 @@ header {
       }
 
       &.closedDay .timeLabel {
-        color: #ef4444;
+        color: #dc2626;
         font-weight: 700;
       }
     }
   }
 
   & .holidayNote {
-    background-color: var(--backgroundColor);
-    border-left: 4px solid var(--accentColor);
-    padding: 16px;
-    border-radius: 0 10px 10px 0;
+    background-color: #f8fafc;
+    border-left: 3px solid #94a3b8;
+    padding: 12px 16px;
+    border-radius: 0 8px 8px 0;
 
     & p {
-      font-size: 13px;
-      color: var(--textMuted);
-      line-height: 1.6;
+      font-size: 12px;
+      color: #475569;
+      line-height: 1.5;
       margin: 0;
     }
   }
@@ -1382,9 +1356,11 @@ footer {
   .container {
     max-width: 1440px;
   }
+
   .mapSectionWrapper {
     max-width: 1200px;
   }
+
   .dashboardGrid {
     grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr);
     gap: 48px;
@@ -1396,13 +1372,16 @@ footer {
     grid-template-columns: 1fr;
     gap: 36px;
   }
+
   .dashboardGrid .sidebar {
     position: static;
     top: auto;
   }
+
   .recordsCardGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
   .memoriaBanner {
     padding: 100px 24px;
   }
@@ -1413,6 +1392,7 @@ footer {
     padding: 0 24px;
     position: relative;
   }
+
   header .headerContainer .navToggle {
     display: flex;
   }
@@ -1458,12 +1438,14 @@ footer {
   header .headerContainer nav .navLink.active::after {
     display: none;
   }
+
   header .headerContainer nav .navLink.active {
     background-color: rgba(255, 255, 255, 0.08);
   }
 }
 
 @media (max-width: 768px) {
+
   input,
   select,
   textarea {
@@ -1473,63 +1455,79 @@ footer {
   .container {
     padding: 40px 20px;
   }
+
   .dashboardGrid .cardGrid,
   .recordsCardGrid {
     grid-template-columns: 1fr;
   }
+
   .paymentCard {
     padding: 32px 24px;
   }
+
   .paymentCard .formGrid {
     grid-template-columns: 1fr;
   }
+
   .paymentCard .submitPayBtn {
     width: 100%;
     margin-left: 0;
   }
+
   .formContainer {
     flex-direction: column;
     align-items: stretch;
     gap: 12px;
   }
+
   .formContainer .searchBtn {
     width: 100%;
     padding: 16px;
   }
+
   .memoriaBanner {
     padding: 80px 20px;
   }
+
   .memoriaBanner .memoriaContent .memoriaButtons {
     flex-direction: column;
     align-items: stretch;
   }
+
   .memoriaBanner .memoriaContent .memoriaButtons button {
     width: 100%;
   }
+
   .dashboardGrid .requirementsSection {
     padding: 24px 16px;
     margin: 28px auto;
   }
+
   .mapSectionWrapper {
     margin: 32px auto;
     padding: 0 16px;
   }
+
   .mapSectionWrapper .mapCanvasCard {
     min-height: 360px;
     padding: 32px 20px;
   }
+
   footer .footerContainer {
     flex-direction: column;
     align-items: flex-start;
     text-align: left;
     gap: 12px;
   }
+
   #hours_modal .modalCard {
     padding: 24px;
   }
+
   #record_modal .modalContainer {
     padding: 32px 24px;
   }
+
   #record_modal .modalClose {
     top: 20px;
     right: 20px;
@@ -1540,63 +1538,82 @@ footer {
   header {
     height: 64px;
   }
+
   header .headerContainer {
     padding: 0 16px;
     gap: 12px;
   }
+
   header .headerContainer .logoSection {
     gap: 10px;
   }
+
   header .headerContainer .logoSection img {
     height: 36px;
   }
+
   header .headerContainer .logoSection .headerText {
     padding-left: 10px;
   }
+
   header .headerContainer .logoSection .headerText h1 {
     font-size: 14px;
   }
+
   header .headerContainer .logoSection .headerText h2 {
     font-size: 10px;
   }
+
   .container {
     padding: 32px 16px;
   }
+
   .sectionHeader.mb-8 {
     margin-bottom: 24px;
   }
+
   .card {
     padding: 20px;
   }
+
   .dashboardGrid .sectionDesc {
     margin-bottom: 32px;
   }
+
   .dashboardGrid .cardGrid {
     gap: 20px;
   }
+
   .dashboardGrid .requirementsSection h4 {
     font-size: 16px;
   }
+
   .dashboardGrid .sidebar .sidebarBox {
     padding: 20px;
   }
+
   .paymentCard {
     padding: 24px 16px;
   }
+
   #hours_modal .modalCard {
     padding: 20px;
   }
+
   #hours_modal .hoursList .hoursItem {
     padding: 10px 14px;
     font-size: 14px;
   }
+
   #record_modal .modalContainer {
     padding: 28px 20px;
   }
+
   #record_modal .modalBody .modalGrid {
     grid-template-columns: 1fr;
     gap: 20px;
   }
+
   footer {
     padding: 32px 20px;
   }
@@ -1606,28 +1623,36 @@ footer {
   header .headerContainer {
     padding: 0 14px;
   }
+
   header .headerContainer .logoSection img {
     height: 32px;
   }
+
   header .headerContainer .logoSection .headerText h1 {
     font-size: 12px;
   }
+
   header .headerContainer .logoSection .headerText h2 {
     font-size: 9px;
   }
+
   .container {
     padding: 28px 14px;
   }
+
   .card {
     padding: 16px;
   }
+
   .paymentCard {
     padding: 20px 14px;
   }
+
   #hours_modal .modalCard,
   #record_modal .modalContainer {
     padding: 18px;
   }
+
   .memoriaBanner {
     padding: 64px 16px;
   }
@@ -1638,41 +1663,52 @@ footer {
     padding: 0 12px;
     gap: 8px;
   }
+
   header .headerContainer .logoSection {
     gap: 6px;
   }
+
   header .headerContainer .logoSection img {
     height: 28px;
   }
+
   header .headerContainer .logoSection .headerText {
     display: none;
   }
+
   .navToggle {
     width: 40px;
     height: 40px;
     padding: 8px;
   }
+
   .container {
     padding: 24px 12px;
   }
+
   .paymentCard {
     padding: 16px 12px;
   }
+
   .memoriaBanner {
     padding: 56px 14px;
   }
+
   .memoriaBanner .memoriaContent h2 {
     font-size: 24px;
     gap: 8px;
   }
+
   .memoriaBanner .memoriaContent h2 img {
     height: 28px;
   }
+
   #hours_modal .hoursItem {
     flex-direction: column;
     align-items: flex-start;
     gap: 4px;
   }
+
   #hours_modal .hoursItem .timeLabel {
     text-align: left;
   }
@@ -1682,32 +1718,41 @@ footer {
   header {
     height: 56px;
   }
+
   header .headerContainer .logoSection img {
     height: 32px;
   }
+
   header .headerContainer .logoSection .headerText h1 {
     font-size: 13px;
   }
+
   header .headerContainer .logoSection .headerText h2 {
     font-size: 10px;
   }
+
   .memoriaBanner {
     padding: 40px 24px;
   }
+
   .memoriaBanner .memoriaContent p {
     margin-bottom: 20px;
   }
+
   .memoriaBanner .memoriaContent .memoriaButtons {
     flex-direction: row;
     align-items: center;
   }
+
   .memoriaBanner .memoriaContent .memoriaButtons button {
     width: auto;
   }
+
   header .headerContainer nav.open {
     max-height: calc(100vh - 56px);
     max-height: calc(100dvh - 56px);
   }
+
   #hours_modal .modalCard,
   #record_modal .modalContainer {
     max-height: 88vh;
