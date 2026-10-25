@@ -292,6 +292,50 @@ document.addEventListener("DOMContentLoaded", () => {
     return false;
   }
 
+  /* -------- PH phone number validation --------
+     Accepts the usual ways a Philippine number gets typed. Formatting
+     characters (spaces, dashes, dots, parentheses) are stripped first,
+     so "0917-123-4567", "(0917) 123 4567" and "+63 917 123 4567" all pass.
+
+       Mobile   : 09171234567 | 9171234567 | 639171234567 | +639171234567
+       Manila   : 0281234567  | +63 2 8123 4567
+       Province : 0321234567  | +63 32 123 4567
+     ---------------------------------------------------------- */
+  const PH_MOBILE_RE = /^(?:\+?63|0)?9\d{9}$/;
+  const PH_MANILA_RE = /^(?:\+?63|0)2\d{8}$/;
+  const PH_PROVINCE_RE = /^(?:\+?63|0)[3-8]\d{8,9}$/;
+
+  function isValidPHPhoneNumber(raw) {
+    const s = String(raw ?? "").replace(/[\s\-.()]/g, "");
+    if (!s || !/^\+?\d+$/.test(s)) return false;
+    return (
+      PH_MOBILE_RE.test(s) || PH_MANILA_RE.test(s) || PH_PROVINCE_RE.test(s)
+    );
+  }
+
+  /**
+   * Blocks the profile save when the phone number isn't a valid PH number.
+   * Blank values are left to validateProfileFields() (which reports them
+   * as "required"), so this only checks the format of a non-empty value.
+   * @returns {boolean} true when the number is fine (or not editable).
+   */
+  function validatePhoneNumber() {
+    const el = document.getElementById("phone_number");
+    if (!el || el.disabled) return true;
+
+    const raw = (el.value ?? "").trim();
+    if (raw === "") return true;
+
+    if (isValidPHPhoneNumber(raw)) return true;
+
+    showAlertTOP(
+      "Please enter a valid Philippine phone number (e.g. 09171234567 or +639171234567).",
+      "warning",
+    );
+    animateInputError(el);
+    return false;
+  }
+
   /* -------- Snapshot of the current input values -------- */
   const originalProfile = {};
 
@@ -398,6 +442,7 @@ document.addEventListener("DOMContentLoaded", () => {
   /* -------- Save Changes (profile only) -------- */
   saveChangesBtn?.addEventListener("click", async () => {
     if (!validateProfileFields()) return;
+    if (!validatePhoneNumber()) return;
 
     const payload = buildProfilePayload();
 
