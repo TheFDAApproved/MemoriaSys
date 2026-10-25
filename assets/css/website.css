@@ -1718,3 +1718,8 @@ footer {
 #home {
   overflow-x: hidden;
 }
+
+#qr_code {
+  max-width: 200px;
+  max-height: 200px;
+}
