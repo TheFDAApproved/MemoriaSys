@@ -5,12 +5,20 @@
     font-family: 'Inter', sans-serif;
 }
 
+html,
 body {
-    height: 100vh;
-    background: #fff;
-    overflow: hidden;
+    height: 100%;
 }
 
+body {
+    height: 100vh;
+    height: 100dvh;
+    background: #fff;
+    overflow-x: hidden;
+    overflow-y: hidden;
+}
+
+/* Header Bar */
 header {
     position: fixed;
     top: 0;
@@ -64,10 +72,12 @@ header {
     }
 }
 
+/* Login layout */
 .login {
     display: flex;
     width: 100%;
     height: calc(100vh - 70px);
+    height: calc(100dvh - 70px);
     margin-top: 70px;
 
     &>section:nth-of-type(1) {
@@ -82,6 +92,8 @@ header {
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
+        min-height: 0;
+        overflow: hidden;
     }
 
     &>section:nth-of-type(2) {
@@ -89,7 +101,11 @@ header {
         display: flex;
         justify-content: center;
         align-items: center;
+        align-items: safe center;
         background: #fff;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
     }
 }
 
@@ -116,6 +132,7 @@ header {
     }
 }
 
+/* Form Wrapper and Heading */
 .inputWrapper {
     width: 100%;
     max-width: 360px;
@@ -146,8 +163,9 @@ header {
     }
 }
 
+/* Text Inputs [username, password, etc.] */
 .inputBox {
-    margin-bottom: 12px;
+    margin-bottom: 10px;
 
     input {
         width: 100%;
@@ -167,6 +185,7 @@ header {
     }
 }
 
+/* Buttons */
 .loginBtn,
 .signupBtn,
 .resetBtn {
@@ -187,11 +206,12 @@ header {
     }
 }
 
+/* Terms and Conditions Checkbox */
 .termsConditions {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin: 15px 0 20px 5px;
+    margin: 12px 0 16px 5px;
     font-size: 13px;
     color: #606770;
 
@@ -215,8 +235,9 @@ header {
     }
 }
 
+/* Back to Login Link */
 .loginLink {
-    margin-top: 25px;
+    margin-top: 20px;
     text-align: center;
     font-size: 14px;
     color: #606770;
@@ -248,6 +269,7 @@ header {
     }
 }
 
+/* Signup Button on Login Page */
 .loginPage {
     width: 100%;
     padding: 12px;
@@ -266,8 +288,9 @@ header {
     }
 }
 
+/* Footer */
 .footer {
-    margin-top: 40px;
+    margin-top: 30px;
     text-align: center;
 
     p {
@@ -289,6 +312,7 @@ header {
     }
 }
 
+/* Contact Modal */
 .contactModal {
     position: fixed;
     inset: 0;
@@ -388,6 +412,7 @@ header {
     }
 }
 
+/* Terms and Conditions modal [used on sign up page] */
 .termsAndConditions {
     position: fixed;
     top: 0;
@@ -396,9 +421,13 @@ header {
     height: 100%;
     background: rgba(15, 23, 42, 0.6);
     backdrop-filter: blur(4px);
+    /* blurs the page behind it */
     display: flex;
     justify-content: center;
     align-items: center;
+    align-items: safe center;
+    overflow-y: auto;
+    padding: 20px;
     z-index: 1000;
 
     .termsContainer {
@@ -462,6 +491,7 @@ header {
         font-size: 14.5px;
         line-height: 1.6;
 
+        /* custom thin scrollbar */
         &::-webkit-scrollbar {
             width: 6px;
         }
@@ -553,55 +583,66 @@ header {
     display: none !important;
 }
 
-/* ============================================================
-   TABLET & MOBILE RESPONSIVENESS (≤ 900px)
-   ============================================================ */
-@media (max-width: 900px) {
-    /* Allow scrolling on mobile devices so the keyboard doesn't hide the form */
+/* Responsive Styles */
+@media (max-height: 640px) {
     body {
         height: auto;
         min-height: 100vh;
         overflow-y: auto;
-        overflow-x: hidden;
     }
 
-    header .headerContainer {
-        padding: 0 20px;
-    }
-
-    /* Stack the split-screen image and form vertically */
     .login {
-        flex-direction: column;
         height: auto;
         min-height: calc(100vh - 70px);
+        min-height: calc(100dvh - 70px);
     }
 
-    .login > section:nth-of-type(1) {
-        flex: none;
-        padding: 40px 20px;
-        min-height: 220px;
-        border-right: none;
-        border-bottom: 1px solid #e5e7eb;
+    .login>section:nth-of-type(1) {
+        display: none;
     }
 
-    .login > section:nth-of-type(2) {
+    .login>section:nth-of-type(2) {
+        overflow-y: visible;
+        padding: 30px 20px;
+    }
+}
+
+@media (max-width: 900px) {
+    .login {
+        flex-direction: column;
+    }
+
+    .login>section:nth-of-type(1) {
+        display: none;
+    }
+
+    .login>section:nth-of-type(2) {
         flex: 1;
         padding: 40px 20px;
-        align-items: flex-start;
+        align-items: safe center;
     }
 
     .inputWrapper {
-        padding: 0; 
+        padding: 0;
         margin: 0 auto;
     }
 }
 
-/* ============================================================
-   COMPACT MOBILE (≤ 600px)
-   ============================================================ */
 @media (max-width: 600px) {
+    header .headerContainer {
+        padding: 0 15px;
+    }
+
+    header .logoSection {
+        gap: 10px;
+    }
+
     header .logoSection img {
         height: 35px;
+    }
+
+    header .headerText {
+        padding-left: 10px;
     }
 
     header .headerText h1 {
@@ -612,12 +653,24 @@ header {
         font-size: 9px;
     }
 
-    .banner img {
-        height: 55px;
+    .login>section:nth-of-type(2) {
+        padding: 30px 15px;
     }
 
-    .banner p {
-        font-size: 1.15rem;
+    .inputHeader h2 {
+        font-size: 20px;
+    }
+
+    .inputHeader p {
+        font-size: 13px;
+    }
+
+    .footer {
+        margin-top: 25px;
+    }
+
+    .footer p {
+        white-space: normal;
     }
 
     .termsAndConditions .termsContainer {
@@ -627,5 +680,59 @@ header {
     .termsAndConditions .closeCornerBtn {
         top: 15px;
         right: 15px;
+    }
+}
+
+@media (max-width: 480px) {
+    header .headerContainer {
+        padding: 0 10px;
+    }
+
+    header .logoSection {
+        gap: 8px;
+    }
+
+    header .logoSection img {
+        height: 28px;
+    }
+
+    header .headerText {
+        padding-left: 8px;
+    }
+
+    header .headerText h1 {
+        font-size: 11px;
+    }
+
+    header .headerText h2 {
+        font-size: 8px;
+    }
+
+    .login>section:nth-of-type(2) {
+        padding: 20px 12px;
+    }
+
+    .inputHeader h2 {
+        font-size: 18px;
+    }
+
+    .inputHeader p {
+        font-size: 12px;
+    }
+
+    .inputBox input {
+        font-size: 14px;
+        padding: 12px 14px;
+    }
+
+    .loginBtn,
+    .signupBtn,
+    .resetBtn {
+        font-size: 15px;
+        padding: 12px;
+    }
+
+    .termsAndConditions .termsContainer {
+        padding: 24px 16px 16px 16px;
     }
 }

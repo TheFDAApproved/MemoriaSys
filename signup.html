@@ -24,21 +24,22 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
 
     <link rel="stylesheet" href="assets/css/root.css">
-    <link rel="stylesheet" href="api/rootcolors.php" onerror="console.error('Failed to load custom colors. Using default theme.')"> 
+    <link rel="stylesheet" href="api/rootcolors.php" onerror="console.error('Failed to load custom colors. Using default theme.')">
     <link rel="stylesheet" href="assets/css/auth.css">
+
     <script src="assets/js/check_user.js"></script>
 </head>
 <body>
+    <!-- Header -->
     <header>
         <div class="headerContainer">
             <div class="logoSection">
-                <img id="logo_1" src="api/images/logo_1.png" onerror="this.onerror = null; this.src = 'assets/images/MandaueLogo.png'; console.error('Failed to load dynamic logo. Using default logo.');" alt="Logo 1"/>
-                <img id="logo_2" src="api/images/logo_2.png" onerror="this.onerror = null; this.src = 'assets/images/DGSLogo.png'; console.error('Failed to load dynamic logo. Using default logo.');" alt="Logo 2"/>
+                <img id="logo_1" src="api/images/logo_1.png" onerror="this.onerror = null; this.src = 'assets/images/MandaueLogo.png'; console.error('Failed to load dynamic logo. Using default logo.');" alt="Logo 1">
+                <img id="logo_2" src="api/images/logo_2.png" onerror="this.onerror = null; this.src = 'assets/images/DGSLogo.png'; console.error('Failed to load dynamic logo. Using default logo.');" alt="Logo 2">
                 <div class="headerText">
                     <h1 id="dept_name">Department of General Services</h1>
                     <h2 id="cemetery_name">Mandaue City Public Cemetery</h2>
@@ -47,14 +48,18 @@
         </div>
     </header>
 
+    <!-- Signup Split Layout -->
     <div class="login">
+
+        <!-- Left side: banner -->
         <section>
             <div class="banner">
-                <img id="cemetery_logo" src="api/images/cemetery_logo.png" onerror="this.onerror = null; this.src = 'assets/images/MemoriaLogo.png'; console.error('Failed to load dynamic logo. Using default logo.');" alt="Cemetery Logo"/>
+                <img id="cemetery_logo" src="api/images/cemetery_logo.png" onerror="this.onerror = null; this.src = 'assets/images/MemoriaLogo.png'; console.error('Failed to load dynamic logo. Using default logo.');" alt="Cemetery Logo">
                 <p id="cemetery_name">Mandaue City Public Cemetery</p>
             </div>
         </section>
 
+        <!-- Right side: sign up form -->
         <section>
             <div class="inputWrapper">
                 <div class="inputHeader">
@@ -83,6 +88,7 @@
                         <input type="password" placeholder="Password" required>
                     </div>
 
+                    <!-- Checkbox that opens the terms modal -->
                     <label class="termsConditions">
                         <input type="checkbox" required>
                         <span>I agree to <a href="#" id="terms_link">terms & conditions</a></span>
@@ -98,10 +104,16 @@
         </section>
     </div>
 
+    <!-- Terms Modal -->
     <div class="termsAndConditions hidden" id="terms">
         <div class="termsContainer">
+
+            <!-- Close button [Top right] -->
             <button class="closeCornerBtn" type="button" id="close_btn" title="Decline and close">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
             </button>
 
             <div class="headerWrapper">
@@ -110,6 +122,7 @@
             </div>
 
             <div class="termsContent">
+
                 <div class="policySection">
                     <span class="sectionTag">Section 01</span>
                     <h4>Accuracy of Cemetery Records</h4>
@@ -127,7 +140,7 @@
                     <h4>Confidentiality of Family Data</h4>
                     <p>The personal information, financial payments, and contact addresses of deed holders stored in this system are strictly confidential. Staff members are expressly forbidden from downloading, exporting, or printing customer profiles for unauthorized use or distribution outside official office administrative pipelines.</p>
                 </div>
-                
+
                 <div class="policySection">
                     <span class="sectionTag">Section 04</span>
                     <h4>Restricted Access & Security Hygiene</h4>
@@ -141,9 +154,12 @@
                 </div>
             </div>
 
+            <!-- Accept button [Disabled until user confirms] -->
             <div class="termsAction">
                 <button type="button" class="acceptBtn" id="term_accept_btn" disabled>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
                     Accept
                 </button>
             </div>

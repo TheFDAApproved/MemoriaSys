@@ -24,22 +24,22 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
 
     <link rel="stylesheet" href="assets/css/root.css">
     <link rel="stylesheet" href="api/rootcolors.php" onerror="console.error('Failed to load custom colors. Using default theme.')">
     <link rel="stylesheet" href="assets/css/auth.css">
-    
+
     <script src="assets/js/check_user.js"></script>
 </head>
 <body>
+    <!-- Header -->
     <header>
         <div class="headerContainer">
             <div class="logoSection">
-                <img id="logo_1" src="api/images/logo_1.png" onerror="this.onerror = null; this.src = 'assets/images/MandaueLogo.png'; console.error('Failed to load dynamic logo. Using default logo.');" alt="Logo 1"/>
-                <img id="logo_2" src="api/images/logo_2.png" onerror="this.onerror = null; this.src = 'assets/images/DGSLogo.png'; console.error('Failed to load dynamic logo. Using default logo.');" alt="Logo 2"/>
+                <img id="logo_1" src="api/images/logo_1.png" onerror="this.onerror = null; this.src = 'assets/images/MandaueLogo.png'; console.error('Failed to load dynamic logo. Using default logo.');" alt="Logo 1">
+                <img id="logo_2" src="api/images/logo_2.png" onerror="this.onerror = null; this.src = 'assets/images/DGSLogo.png'; console.error('Failed to load dynamic logo. Using default logo.');" alt="Logo 2">
                 <div class="headerText">
                     <h1 id="dept_name">Department of General Services</h1>
                     <h2 id="cemetery_name">Mandaue City Public Cemetery</h2>
@@ -48,14 +48,18 @@
         </div>
     </header>
 
+    <!-- Login Split Layout -->
     <div class="login">
+
+        <!-- Left side: banner or background image -->
         <section>
             <div class="banner">
-                <img id="cemetery_logo" src="api/images/cemetery_logo.png" onerror="this.onerror = null; this.src = 'assets/images/MemoriaLogo.png'; console.error('Failed to load dynamic logo. Using default logo.');" alt="Cemetery Logo"/>
+                <img id="cemetery_logo" src="api/images/cemetery_logo.png" onerror="this.onerror = null; this.src = 'assets/images/MemoriaLogo.png'; console.error('Failed to load dynamic logo. Using default logo.');" alt="Cemetery Logo">
                 <p id="cemetery_name">Mandaue City Public Cemetery</p>
             </div>
         </section>
 
+        <!-- Right side: login form -->
         <section>
             <div class="inputWrapper">
                 <h2 class="inputHeader">Log into Memoria</h2>
@@ -86,6 +90,7 @@
         </section>
     </div>
 
+    <!-- Contact Modal -->
     <div class="contactModal" id="contact_modal">
         <div class="modalContent">
             <div class="modalHeader">
@@ -93,12 +98,14 @@
                 <button class="closeBtn" id="close_contact_modal" aria-label="Close">&times;</button>
             </div>
             <div class="modalBody">
+                <!-- Phone -->
                 <a href="tel:+639123456789" class="contactItem">
                     <svg class="contactIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M6.62 10.79a15.053 15.053 0 006.59 6.59l2.2-2.2a1 1 0 011.01-.24 11.36 11.36 0 003.58.57 1 1 0 011 1V20a1 1 0 01-1 1A17 17 0 013 4a1 1 0 011-1h3.5a1 1 0 011 1 11.36 11.36 0 00.57 3.58 1 1 0 01-.24 1.01l-2.21 2.2z" />
                     </svg>
                     <span id="contact_phone">+63 912 3456 789</span>
                 </a>
+                <!-- Email -->
                 <a href="mailto:memoria@gmail.com" class="contactItem">
                     <svg class="contactIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M20 4H4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V6a2 2 0 00-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" />
