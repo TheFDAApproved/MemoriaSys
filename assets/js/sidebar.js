@@ -1,4 +1,6 @@
 document.addEventListener('DOMContentLoaded', async () => {
+
+    // Load the saved main color [set in Settings]
     const savedColor = localStorage.getItem('ui_main_color');
     if (savedColor) {
         document.documentElement.style.setProperty('--mainColor', savedColor);
@@ -6,15 +8,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         document.documentElement.style.setProperty('--primary-color', savedColor);
     }
 
-    const logoToggle      = document.getElementById('logo_toggle');
-    const sidebar         = document.getElementById('sidebar');
-    const menuItems       = document.querySelectorAll('.sidebarNav .menu');
-    const logoutBtn       = document.querySelector('.logout');
-    const iframe          = document.querySelector('iframe[name="contentFrame"]');
-    const frameLoader     = document.getElementById('frameLoader');
+    const logoToggle = document.getElementById('logo_toggle');
+    const sidebar = document.getElementById('sidebar');
+    const menuItems = document.querySelectorAll('.sidebarNav .menu');
+    const logoutBtn = document.querySelector('.logout');
+    const iframe = document.querySelector('iframe[name="contentFrame"]');
+    const frameLoader = document.getElementById('frameLoader');
     const mobileHamburger = document.getElementById('mobileHamburger');
     const sidebarBackdrop = document.getElementById('sidebarBackdrop');
 
+    // Turn transitions back on after the first paint [avoids a flash]
     if (sidebar) {
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
@@ -23,16 +26,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
-    /* ================================================================== *
-     * MOBILE SIDEBAR — hamburger / backdrop / Escape / link-click
-     * ------------------------------------------------------------------
-     * Breakpoint MUST match the CSS media query in sidebar.css (1024px).
-     * ================================================================== */
+    // Mobile Sidebar
     const MOBILE_QUERY = '(max-width: 1024px)';
-    const mobileMql    = window.matchMedia(MOBILE_QUERY);
+    const mobileMql = window.matchMedia(MOBILE_QUERY);
     const isMobileView = () => mobileMql.matches;
 
-    // Cache the <i> inside the button so we can swap bars <-> times.
+    // Swap the icon inside the hamburger button
     const hamburgerIcon = mobileHamburger
         ? mobileHamburger.querySelector('i')
         : null;
@@ -41,8 +40,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (!mobileHamburger) return;
 
         if (hamburgerIcon) {
-            hamburgerIcon.classList.toggle('fa-bars',  !open);
-            hamburgerIcon.classList.toggle('fa-times',  open);
+            hamburgerIcon.classList.toggle('fa-bars', !open);
+            hamburgerIcon.classList.toggle('fa-times', open);
         }
 
         mobileHamburger.setAttribute('aria-expanded', open ? 'true' : 'false');
@@ -70,6 +69,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         else openMobileSidebar();
     };
 
+    // Hamburger button click
     if (mobileHamburger) {
         mobileHamburger.addEventListener('click', (e) => {
             e.preventDefault();
@@ -78,23 +78,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // Tap the dark backdrop to close
     if (sidebarBackdrop) {
         sidebarBackdrop.addEventListener('click', closeMobileSidebar);
     }
 
+    // Press Escape to close
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && sidebar && sidebar.classList.contains('mobile-open')) {
             closeMobileSidebar();
         }
     });
 
-    /* ---- Initial state: on a phone, always start closed and full-width. ---- */
     if (sidebar && isMobileView()) {
         sidebar.classList.remove('collapsed');
         closeMobileSidebar();
     }
 
-    /* ---- React only when the breakpoint is actually crossed. ---- */
+    // Only react when the breakpoint is actually crossed
     let wasMobile = isMobileView();
 
     const syncSidebarToViewport = () => {
@@ -123,17 +124,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         mobileMql.addListener(onBreakpointChange);
     }
 
-    /* ------------------------------------------------------------------ *
-     * Frame loader
-     * ------------------------------------------------------------------ */
-    const LOADER_DELAY       = 120;
+    // Frame Loader
+    const LOADER_DELAY = 120;
     const LOADER_MIN_VISIBLE = 250;
-    const LOADER_MAX_WAIT    = 6000;
+    const LOADER_MAX_WAIT = 6000;
 
     let loaderShowTimer = null;
     let loaderHideTimer = null;
-    let loaderMaxTimer  = null;
-    let loaderShownAt   = Date.now();
+    let loaderMaxTimer = null;
+    let loaderShownAt = Date.now();
 
     const showFrameLoader = (delay = LOADER_DELAY) => {
         if (!frameLoader) return;
@@ -149,6 +148,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (delay > 0) loaderShowTimer = setTimeout(reveal, delay);
         else reveal();
 
+        // Safety net: hide even if load never fires
         loaderMaxTimer = setTimeout(hideFrameLoader, LOADER_MAX_WAIT);
     };
 
@@ -158,6 +158,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         clearTimeout(loaderMaxTimer);
         clearTimeout(loaderHideTimer);
 
+        // Keep the spinner up long enough to not look flickery
         const elapsed = Date.now() - loaderShownAt;
         const wait = Math.max(0, LOADER_MIN_VISIBLE - elapsed);
 
@@ -166,6 +167,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }, wait);
     };
 
+    // Reset state right after a fresh login
     const justLoggedIn = localStorage.getItem('justLoggedIn') === '1';
     if (justLoggedIn) {
         localStorage.removeItem('justLoggedIn');
@@ -173,6 +175,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         localStorage.removeItem('sidebarScrollTop');
     }
 
+    // Restore the page that was last open
     const savedPage = localStorage.getItem('activePage');
     const defaultPage = iframe ? (iframe.getAttribute('src') || 'dashboard.html') : null;
     const targetPage = savedPage || defaultPage;
@@ -190,6 +193,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
         });
 
+        // If the saved page has no matching menu item, highlight the first one
         if (!matched && menuItems.length > 0) {
             menuItems[0].classList.add('active');
         }
@@ -200,6 +204,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }
 
+    // Sidebar scroll position
     const SIDEBAR_SCROLL_KEY = 'sidebarScrollTop';
     const ACTIVE_ITEM_PADDING = 12;
 
@@ -214,6 +219,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         } catch (_) { }
     };
 
+    // Gently scroll so the highlighted item is in view
     const ensureActiveItemVisible = () => {
         if (!scrollEl) return;
 
@@ -246,15 +252,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     const restoreSidebarScroll = () => {
         if (!scrollEl) return;
 
+        // Fresh login = start at the top
         if (justLoggedIn) {
             scrollEl.scrollTop = 0;
             return;
         }
 
         const saved = parseInt(localStorage.getItem(SIDEBAR_SCROLL_KEY) || '0', 10) || 0;
-
         scrollEl.scrollTop = saved;
 
+        // Make sure the active item is visible after layout settles
         requestAnimationFrame(() => {
             requestAnimationFrame(ensureActiveItemVisible);
         });
@@ -268,9 +275,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         requestAnimationFrame(ensureActiveItemVisible);
     });
 
-    /* ------------------------------------------------------------------ *
-     * Prefetch
-     * ------------------------------------------------------------------ */
+    // Prefetch pages on hover or focus so they open faster
     const prefetched = new Set();
 
     const prefetchPage = (url) => {
@@ -287,6 +292,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         item.addEventListener('focus', () => prefetchPage(href));
     });
 
+    // Swap the iframe page
     menuItems.forEach(item => {
         item.addEventListener('click', function (e) {
             const pageUrl = this.getAttribute('href');
@@ -307,6 +313,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     });
 
+    // Hide the spinner once the iframe finishes loading
     if (iframe) {
         iframe.addEventListener('load', () => {
             hideFrameLoader();
@@ -314,6 +321,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // Logo click - collapse or expand the sidebar
     if (logoToggle && sidebar) {
         logoToggle.addEventListener('click', () => {
             if (isMobileView()) return;
@@ -329,6 +337,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // Logout button
     if (logoutBtn) {
         logoutBtn.addEventListener('click', async () => {
             const ok = await confirm_ui('Are you sure you want to logout?', {
@@ -352,10 +361,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    // Sidebar clock [updates every second]
     updateSidebarTime();
     setInterval(updateSidebarTime, 1000);
 });
 
+// Draws the current date and time into the sidebar
 function updateSidebarTime() {
     const displayElement = document.getElementById('date_time_display');
     if (!displayElement) return;

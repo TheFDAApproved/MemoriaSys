@@ -17,6 +17,7 @@ body {
     transition: none !important;
 }
 
+/* Sidebar */
 .sidebar {
     position: fixed;
     top: 0;
@@ -30,6 +31,7 @@ body {
     z-index: 1000;
     transition: width 0.3s ease;
 
+    /* Collapsed [icons only] */
     &.collapsed {
         width: 80px;
 
@@ -39,6 +41,7 @@ body {
         }
     }
 
+    /* Top area: logo and clock */
     .sidebarTop {
         flex-shrink: 0;
         padding: 5px 0 10px;
@@ -65,10 +68,12 @@ body {
                 margin-right: 4px;
             }
 
+            /* Show the full logo when expanded */
             .fullLogo {
                 display: block;
             }
 
+            /* Hide the small logo when expanded */
             .collapsedLogo {
                 display: none;
             }
@@ -87,6 +92,7 @@ body {
         }
     }
 
+    /* Navigation Links */
     .sidebarNav {
         flex: 1;
         overflow-y: auto;
@@ -145,6 +151,7 @@ body {
         }
     }
 
+    /* Bottom area: user info and logout button */
     .sidebarFooter {
         width: 100%;
         padding: 12px 16px;
@@ -234,6 +241,7 @@ body {
         }
     }
 
+    /* Collapsed Overrides [icons-only] */
     &.collapsed {
         .sidebarTop {
             .memoriaLogo {
@@ -244,6 +252,7 @@ body {
                     margin-right: 0;
                 }
 
+                /* Swap to the small logo */
                 .fullLogo {
                     display: none !important;
                 }
@@ -259,6 +268,8 @@ body {
         }
 
         .sidebarNav {
+
+            /* Hide the section headings */
             .sidebarSection {
                 display: none !important;
             }
@@ -289,6 +300,7 @@ body {
             .userCard {
                 justify-content: center;
 
+                /* Hide text and logout when collapsed */
                 .userDetails,
                 .logout {
                     display: none !important;
@@ -298,8 +310,9 @@ body {
     }
 }
 
+/* Main Content Area */
 .mainContent {
-    position: relative;             /* NEW — anchors the loader overlay */
+    position: relative;
     margin-left: 260px;
     width: calc(100% - 260px);
     height: 100vh;
@@ -320,11 +333,7 @@ body {
     }
 }
 
-/* ------------------------------------------------------------------ *
- * Frame loader overlay
- * Sits inside .mainContent (which is now position: relative) and covers
- * the iframe while a page loads. Hidden by default; .is-visible reveals.
- * ------------------------------------------------------------------ */
+/* Spinner overlay while the iframe loads */
 .frameLoader {
     position: absolute;
     inset: 0;
@@ -332,7 +341,7 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #f1f3f4;            /* matches .mainContent / body */
+    background: #f1f3f4;
     opacity: 0;
     visibility: hidden;
     pointer-events: none;
@@ -361,23 +370,15 @@ body {
     }
 }
 
+/* Slower spin for users who prefer reduced motion */
 @media (prefers-reduced-motion: reduce) {
     .frameLoader .frameSpinner {
         animation-duration: 1.8s;
     }
 }
 
-/* ================================================================
-   RESPONSIVE — Sidebar, hamburger, backdrop, main content
-   ----------------------------------------------------------------
-   Desktop (>1024px) keeps the current behavior exactly.
-   Tablet & phone (<=1024px) hide the sidebar off-screen, surface a
-   hamburger, and slide the sidebar in as an overlay. Content is
-   pushed down by a small header strip so the hamburger never covers
-   page content.
-   ================================================================ */
-
-/* --- Hamburger button --- */
+/* Responsive */
+/* Hamburger button */
 .mobileHamburger {
     display: none;
     position: fixed;
@@ -414,7 +415,6 @@ body {
     box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.55), 0 2px 10px rgba(15, 23, 42, 0.18);
 }
 
-/* --- Backdrop --- */
 .sidebarBackdrop {
     display: none;
     position: fixed;
@@ -433,23 +433,18 @@ body {
     pointer-events: auto;
 }
 
-/* ================================================================
-   BREAKPOINT: TABLET & PHONE (<=1024px)
-   ================================================================ */
 @media (max-width: 1024px) {
-    /* ---- Body: allow dynamic viewport height on mobile ---- */
+
     body {
         height: 100vh;
         height: 100dvh;
         overflow: hidden;
     }
 
-    /* ---- Hamburger becomes visible ---- */
     .mobileHamburger {
         display: inline-flex;
     }
 
-    /* ---- Sidebar slides off-screen by default ---- */
     .sidebar {
         transform: translateX(-100%);
         transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s ease;
@@ -457,20 +452,15 @@ body {
         will-change: transform;
     }
 
-    /* ---- Open state ---- */
     .sidebar.mobile-open {
         transform: translateX(0);
         box-shadow: 4px 0 24px rgba(15, 23, 42, 0.22);
     }
 
-    /* Sidebar JS removes the .collapsed class on open, so the
-       full-width layout renders naturally. This is a belt-and-braces
-       fallback in case the class is present. */
     .sidebar.mobile-open.collapsed {
         width: 260px;
     }
 
-    /* ---- Main content: full width, small top padding for hamburger ---- */
     .mainContent {
         margin-left: 0;
         width: 100%;
@@ -480,10 +470,7 @@ body {
         padding-top: 56px;
     }
 
-    /* Override the collapsed-state margin-left that would otherwise
-       squeeze content on tablets that had a collapsed sidebar stored
-       from a previous desktop session. */
-    .sidebar.collapsed ~ .mainContent {
+    .sidebar.collapsed~.mainContent {
         margin-left: 0;
         width: 100%;
     }
@@ -492,16 +479,11 @@ body {
         height: 100%;
     }
 
-    /* ---- Loader overlay: skip the 56px hamburger strip so it never
-       blocks the menu button while a page is loading ---- */
     .frameLoader {
         top: 56px;
     }
 }
 
-/* ================================================================
-   BREAKPOINT: SMALL PHONES (<=480px)
-   ================================================================ */
 @media (max-width: 480px) {
     .mobileHamburger {
         top: 10px;
@@ -520,9 +502,6 @@ body {
     }
 }
 
-/* ================================================================
-   BREAKPOINT: VERY SMALL PHONES (<=360px)
-   ================================================================ */
 @media (max-width: 360px) {
     .mobileHamburger {
         width: 34px;
@@ -541,9 +520,6 @@ body {
     }
 }
 
-/* ================================================================
-   BREAKPOINT: SHORT LANDSCAPE (phones rotated)
-   ================================================================ */
 @media (max-height: 500px) and (max-width: 1024px) {
     .mainContent {
         padding-top: 44px;
@@ -562,10 +538,9 @@ body {
     }
 }
 
-/* ================================================================
-   Reduce motion
-   ================================================================ */
+/* Turn off animations for users who want less motion */
 @media (prefers-reduced-motion: reduce) {
+
     .sidebar,
     .sidebarBackdrop,
     .mobileHamburger {
