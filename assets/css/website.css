@@ -23,6 +23,33 @@ body {
 
     &.active {
         display: block;
+        animation: sectionFadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+}
+
+/* Fade + slight rise when switching between menu sections */
+@keyframes sectionFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Active nav underline grows up from the bottom */
+@keyframes slideUpLine {
+    from {
+        transform: scaleY(0);
+        opacity: 0;
+    }
+
+    to {
+        transform: scaleY(1);
+        opacity: 1;
     }
 }
 
@@ -134,12 +161,16 @@ header {
                 font-weight: 500;
                 color: #cbd5e1;
                 text-decoration: none;
-                transition: color 0.2s;
+                transition: color 0.2s ease, transform 0.12s ease;
                 white-space: nowrap;
 
                 &:hover,
                 &.active {
                     color: #fff;
+                }
+
+                &:active {
+                    transform: scale(0.95);
                 }
 
                 /* Underline for the active tab */
@@ -152,6 +183,8 @@ header {
                     height: 3px;
                     background-color: #fff;
                     border-radius: 2px 2px 0 0;
+                    transform-origin: bottom;
+                    animation: slideUpLine 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
                 }
             }
         }
@@ -674,7 +707,7 @@ header {
     }
 }
 
-/* Starus Text [Open or Closed] */
+/* Status Text [Open or Closed] */
 .modalStatusText {
     font-size: 15px;
     font-weight: 700;
@@ -1355,13 +1388,15 @@ footer {
         box-shadow: 0 8px 16px rgba(0, 0, 0, 0.25);
         max-height: 0;
         overflow: hidden;
-        transition: max-height 0.3s ease;
+        opacity: 0;
+        transition: max-height 0.3s ease, opacity 0.25s ease;
     }
 
     header .headerContainer nav.open {
         max-height: calc(100vh - 64px);
         max-height: calc(100dvh - 64px);
         overflow-y: auto;
+        opacity: 1;
     }
 
     header .headerContainer nav .navLink {
@@ -1640,7 +1675,7 @@ footer {
         height: 26px;
     }
 
-    /* Hide the text block on 320px — logos + hamburger need the room */
+    /* Hide the text block on 320px - logos + hamburger need the room */
     header .headerContainer .logoSection .headerText {
         display: none;
     }
@@ -1741,5 +1776,19 @@ footer {
     #record_modal .modalContainer {
         max-height: 88vh;
         max-height: 88dvh;
+    }
+}
+
+/* Accessibility - Respect reduced motion preference */
+/* Turn off animations for users who prefer less motion */
+@media (prefers-reduced-motion: reduce) {
+
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
     }
 }
