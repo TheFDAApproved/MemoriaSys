@@ -684,3 +684,201 @@ tr.historyRow {
         font-size: 10px;
     }
 }
+
+/* Responsive */
+@supports (height: 100dvh) {
+    .recordsContent {
+        height: 100dvh;
+    }
+}
+
+html {
+    -webkit-text-size-adjust: 100%;
+}
+
+@media (max-width: 1024px) {
+    .recordsContent {
+        padding: 18px;
+    }
+}
+
+@media (max-width: 768px) {
+
+    .recordsContent {
+        padding: 16px;
+        padding-bottom: 96px;
+    }
+
+    .tableControls {
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-bottom: 16px;
+    }
+
+    .searchBox {
+        flex: 1 1 100%;
+        max-width: none;
+        min-width: 0;
+    }
+
+    .searchBox+.controlItem {
+        margin-left: 0;
+    }
+
+    .controlItem {
+        flex: 1 1 140px;
+        min-width: 0;
+    }
+
+    .filterActionBtn {
+        flex: 0 0 auto;
+    }
+
+    .tableHeader {
+        padding: 12px 14px;
+        gap: 8px;
+    }
+
+    .tableHeader h3 {
+        font-size: 15px;
+    }
+
+    .pageInfoText {
+        font-size: 12px;
+    }
+
+    .tableScrollWrapper {
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .paginationContainer {
+        margin-top: 14px;
+    }
+
+    .paginationContainer .paginationControls {
+        gap: 8px;
+        padding: 4px;
+    }
+
+    .paginationContainer .paginationControls .pageNavBtn {
+        width: 32px;
+        height: 32px;
+        font-size: 12px;
+    }
+
+    .paginationContainer .paginationControls .carouselViewport {
+        max-width: min(320px, calc(100vw - 140px));
+    }
+
+    .paginationContainer .paginationControls .carouselViewport .carouselTrack {
+        gap: 4px;
+    }
+
+    .paginationContainer .paginationControls .carouselViewport .carouselTrack button {
+        width: 32px;
+        height: 32px;
+        font-size: 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    .recordsContent {
+        padding: 12px;
+        padding-bottom: 88px;
+    }
+
+    .tableControls {
+        gap: 8px;
+        margin-bottom: 12px;
+    }
+
+    .searchBox input {
+        font-size: 16px;
+        padding: 10px 12px 10px 36px;
+    }
+
+    .searchBox i.fa-search {
+        left: 12px;
+        font-size: 13px;
+    }
+
+    .controlItem .mainSelect {
+        font-size: 16px;
+        padding: 10px 32px 10px 12px;
+    }
+
+    .filterActionBtn {
+        padding: 10px 14px;
+        font-size: 13px;
+    }
+
+    .tableHeader {
+        padding: 10px 12px;
+        gap: 6px;
+    }
+
+    .tableHeader h3 {
+        font-size: 14px;
+    }
+
+    .pageInfoText {
+        font-size: 11px;
+    }
+
+    .addRecordBtn {
+        width: 52px;
+        height: 52px;
+        font-size: 20px;
+        bottom: 16px;
+        right: 16px;
+    }
+
+    .paginationContainer .paginationControls {
+        gap: 6px;
+        padding: 4px;
+    }
+
+    .paginationContainer .paginationControls .pageNavBtn {
+        width: 30px;
+        height: 30px;
+        font-size: 12px;
+    }
+
+    .paginationContainer .paginationControls .carouselViewport {
+        max-width: min(280px, calc(100vw - 120px));
+    }
+
+    .paginationContainer .paginationControls .carouselViewport .carouselTrack button {
+        width: 30px;
+        height: 30px;
+        font-size: 12px;
+    }
+
+    .noData {
+        padding: 32px 16px;
+        font-size: 13px;
+    }
+
+    .noData i {
+        font-size: 26px;
+    }
+}
+
+@media (max-width: 360px) {
+    .recordsContent {
+        padding: 10px;
+        padding-bottom: 82px;
+    }
+
+    .filterActionBtn {
+        padding: 10px 12px;
+    }
+
+    .addRecordBtn {
+        width: 48px;
+        height: 48px;
+        font-size: 18px;
+        bottom: 12px;
+        right: 12px;
+    }
+}
