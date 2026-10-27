@@ -1,5 +1,5 @@
 document.addEventListener("DOMContentLoaded", function () {
-    const API_URL = "api/dashboard";
+    const API_URL = "api/dashboard.php";
 
     // Shared color palette used by both charts
     const COLORS = {
