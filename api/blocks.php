@@ -1,69 +1,15 @@
 <?php
 
-/**
- * blocks.php – Manage cemetery blocks and their graves
- *
- * GET    : List all blocks or get a specific block with its graves (paginated).
- *          Admin/Office receive full records including grave status, remarks,
- *          occupants, and aggregate counts. Public and Grounds receive only
- *          the geometry needed to render blocks and graves — no status,
- *          no remarks, no occupants, no counts.
- * POST   : Create a new block (with optional grave generation). Admin/Office only.
- * PUT    : Update block details, rename, and resize the grave grid. Admin/Office only.
- * DELETE : Soft-delete a block and all its graves. Admin/Office only.
- *
- * SIZE LIMITS:
- *   MAX_GRAVES_PER_BLOCK (default 25,000) caps the total graves a single
- *   block may contain. Enforced on create (POST) and on enlarge (PUT).
- *   Individual dimensions are also capped at 500 per side.
- *
- *   Rationale: MySQL caps placeholders per prepared statement at 65,535.
- *   A single multi-row INSERT for 250,000 graves would need 1,000,000
- *   placeholders (4 per grave) and fail with SQLSTATE 1390. We chunk all
- *   INSERTs into batches of 1,000 rows (4,000 placeholders) so any block
- *   up to the limit works on every MySQL/MariaDB build. The total limit
- *   keeps the request bounded so it finishes within normal PHP timeouts.
- *
- * RESIZE RULES:
- *   SHRINK  -> soft-delete graves outside the new bounds, but ONLY if every
- *              removed grave is:
- *                 * status = 'Vacant'
- *                 * not referenced by any row in `interments`
- *                 * not referenced by any Active row in `reservations`
- *                 * not referenced by any row in `placement_history`
- *              If any grave fails, the whole shrink is rejected.
- *
- *   ENLARGE -> for each new (row, col) position:
- *                 * if a soft-deleted grave exists at that position, RESTORE it
- *                   (so historical FK references stay intact);
- *                 * otherwise, INSERT a fresh Vacant grave.
- *
- * DELETE RULES:
- *   A block can only be soft-deleted if EVERY grave inside it is safe to
- *   remove by the same definition above. Soft-deleting a block also
- *   soft-deletes every grave inside it.
- *
- * RENAME:
- *   Always allowed, even when the block has graves. Grave codes are rewritten
- *   so their prefix matches the new block name. Because block names are unique
- *   among ACTIVE blocks, the derived grave codes remain globally unique.
- *
- * CONCURRENCY:
- *   PUT and DELETE open a transaction, set READ COMMITTED isolation, then
- *   lock the block row with SELECT ... FOR UPDATE. They also lock every
- *   grave row they might modify. This serializes concurrent edits to the
- *   same block: the second request waits, then sees the first request's
- *   committed state. Lost updates cannot happen. Lock wait / deadlock
- *   exceptions are caught and returned as 409 with a retry-friendly
- *   message.
- *
- * ERROR HANDLING:
- *   Every write path catches PDOException and maps MySQL error codes to
- *   friendly HTTP responses via friendlyDbError(). The raw exception is
- *   always logged so the real cause is never lost.
- *
- * NOTE: `rows` and `cols` are reserved words in MariaDB and must be backticked.
- */
+// blocks.php – Manage cemetery blocks and their graves
+// GET  returns all blocks or get a specific block with its graves
+// Admin/Office receive full records including grave status, remarks, occupants
+// Public and Grounds receive only the coordiantes needed to render blocks and graves in the map
+// Admin/Office only: 
+// POST Create a new block.
+// PUT  Update block details, rename, and resize the grave grid
+// DELETE   Soft-delete a block and all its graves
+// PUT RESIZE RULES: if SHRINK make sure there is no other occupants. Soft-delete graves outside the new
+// DELETE: A block can only be soft-deleted if every grave inside it is safe (no occupants)
 
 define('ITS_ME_JUSTTOVERIFY', true);
 
@@ -85,30 +31,12 @@ $rawData = array_merge(
     $_POST ?? []
 );
 
-// graves.grave_code is VARCHAR(50). Format = "block_name-RRR-CCC" where
-// RRR/CCC are at most 3 digits (rows/cols are capped at 500). The suffix
-// can cost up to 8 characters ("-500-500"), so block_name must fit in 42.
 const BLOCK_NAME_MAX = 42;
 
-// Hard cap on graves per block. Chunked inserts mean this is a soft
-// request-timeout guard, not a placeholder guard.
-// Raise or lower at your discretion.
 const MAX_GRAVES_PER_BLOCK = 15000;
 
-// MySQL limits placeholders per prepared statement to 65,535.
-// Each grave uses 4 placeholders, so 1,000 rows = 4,000 placeholders.
-// Safely under the limit on every MySQL/MariaDB build.
 const GRAVE_INSERT_CHUNK = 1000;
 
-// -----------------------------------------------------------------------------
-// HELPERS
-// -----------------------------------------------------------------------------
-
-/**
- * Aggregate grave counts for a block.
- * All counts EXCLUDE soft-deleted graves.
- * Admin/Office only — never called for public / grounds callers.
- */
 function getBlockCounts(PDO $pdo, int $blockId): array
 {
     $stmt = $pdo->prepare("
@@ -131,12 +59,6 @@ function getBlockCounts(PDO $pdo, int $blockId): array
     ];
 }
 
-/**
- * Bulk-insert Vacant graves in chunks so we never exceed MySQL's
- * 65,535-placeholder-per-prepared-statement limit.
- *
- * $positions is an array of [row, col] pairs.
- */
 function bulkInsertGraves(PDO $pdo, int $blockId, array $positions, string $blockName): void
 {
     if (empty($positions)) {
@@ -159,29 +81,6 @@ function bulkInsertGraves(PDO $pdo, int $blockId, array $positions, string $bloc
     }
 }
 
-/**
- * Return every active grave in a block that is NOT safe to remove.
- *
- * "Safe to remove" means ALL of:
- *   - status = 'Vacant'
- *   - no `interments` row references it (current_grave_id)
- *   - no Active `reservations` row references it
- *       (target_grave_id or old_new_grave_id)
- *   - no `placement_history` row references it
- *       (from_grave_id or to_grave_id)
- *
- * Executed / Cancelled reservations are historical; they do not lock a
- * grave for future edits. Only Active reservations do — a reservation
- * that is still pending Confirm/Cancel is a "hold" on the target and the
- * old occupant's destination.
- *
- * If $maxRow / $maxCol are provided, only graves OUTSIDE that rectangle
- * (row_num > $maxRow OR col_num > $maxCol) are checked. If they are NULL,
- * every active grave in the block is checked.
- *
- * Callers MUST already hold FOR UPDATE locks on the graves they care about
- * (or run at READ COMMITTED) so this check sees the latest committed state.
- */
 function findUnsafeGraves(PDO $pdo, int $blockId, ?int $maxRow = null, ?int $maxCol = null): array
 {
     $where  = "g.block_id = ? AND g.deleted_at IS NULL";
@@ -240,9 +139,6 @@ function findUnsafeGraves(PDO $pdo, int $blockId, ?int $maxRow = null, ?int $max
     return $unsafe;
 }
 
-/**
- * Canonical grave code: BLOCKNAME-RR-CC  (zero-padded).
- */
 function buildGraveCode(string $blockName, int $row, int $col): string
 {
     return $blockName
@@ -250,9 +146,6 @@ function buildGraveCode(string $blockName, int $row, int $col): string
         . '-' . str_pad((string) $col, 2, '0', STR_PAD_LEFT);
 }
 
-/**
- * Turn an unsafe-graves list into a short human-readable summary.
- */
 function summariseUnsafe(array $unsafe, int $max = 8): string
 {
     $codes = array_map(static fn($g) => $g['grave_code'], $unsafe);
@@ -261,13 +154,6 @@ function summariseUnsafe(array $unsafe, int $max = 8): string
     return $extra > 0 ? "$head … and $extra more" : $head;
 }
 
-/**
- * Normalize a raw block row from PDO to consistent JSON types.
- *
- * @param array $row
- * @param bool  $withCounts  Whether the row may contain count columns.
- * @return array
- */
 function normalizeBlockRow(array $row, bool $withCounts = false): array
 {
     if (array_key_exists('block_id', $row)) {
@@ -292,10 +178,6 @@ function normalizeBlockRow(array $row, bool $withCounts = false): array
     return $row;
 }
 
-/**
- * Map a PDOException to (user_message, http_status).
- * Every MySQL error we can meaningfully handle gets a friendly message.
- */
 function friendlyDbError(PDOException $e, string $context = 'operation'): array
 {
     $mysqlCode = $e->errorInfo[1] ?? null;
@@ -350,9 +232,6 @@ function friendlyDbError(PDOException $e, string $context = 'operation'): array
     }
 }
 
-/**
- * Log the raw error, then send the friendly one. Never returns.
- */
 function failWithDbError(PDOException $e, string $context): void
 {
     [$msg, $code] = friendlyDbError($e, $context);
@@ -360,12 +239,9 @@ function failWithDbError(PDOException $e, string $context): void
     Response::error($msg, $code);
 }
 
-// -----------------------------------------------------------------------------
 // GET
-// -----------------------------------------------------------------------------
 if ($method === 'GET') {
 
-    // ---- Single block (with paginated graves) --------------------------------
     if (is_numeric($resourceId)) {
         if ($isAdminOffice) {
             $blockStmt = $pdo->prepare("
@@ -373,7 +249,7 @@ if ($method === 'GET') {
                 WHERE block_id = ? AND deleted_at IS NULL
             ");
         } else {
-            // Public / Grounds: rendering fields only. No remarks, no audit columns.
+            // Public / Grounds: rendering fields. No remarks, no audit columns
             $blockStmt = $pdo->prepare("
                 SELECT block_id, block_name, block_type, coordinates,
                        image_link, `rows`, `cols`, custom
@@ -472,7 +348,6 @@ if ($method === 'GET') {
                 $graves = array_values($gravesMap);
             }
         } else {
-            // Public / Grounds: geometry only. No status, no remarks, no occupants.
             $graveSql = "
                 SELECT grave_id, grave_code, row_num, col_num
                 FROM graves
@@ -492,7 +367,7 @@ if ($method === 'GET') {
             unset($g);
         }
 
-        // Counts: Admin/Office ONLY.
+        // Counts: Admin/Office only
         if ($isAdminOffice) {
             $counts = getBlockCounts($pdo, (int) $resourceId);
             $block['total_graves'] = $counts['total'];
@@ -513,7 +388,6 @@ if ($method === 'GET') {
         ]);
     }
 
-    // ---- List blocks ---------------------------------------------------------
     $searchTerm = isset($_GET['search_term']) ? trim((string) $_GET['search_term']) : '';
     if ($searchTerm !== '' && mb_strlen($searchTerm) < 3) {
         Response::error("Search term must be at least 3 characters long", 400);
@@ -548,7 +422,7 @@ if ($method === 'GET') {
             ORDER BY b.block_id
         ";
     } else {
-        // Public / Grounds: rendering fields only. NO counts, NO remarks.
+        // Public / Grounds: rendering fields only for the UI/Map
         $sql = "
             SELECT
                 b.block_id, b.block_name, b.block_type, b.coordinates,
@@ -580,16 +454,12 @@ if ($method === 'GET') {
     }
 }
 
-// -----------------------------------------------------------------------------
 // Everything below is Admin / Office only
-// -----------------------------------------------------------------------------
 if (!$isAdminOffice) {
     Response::error("Forbidden.", 403);
 }
 
-// -----------------------------------------------------------------------------
 // POST – Create a block (optionally with a full grave grid)
-// -----------------------------------------------------------------------------
 if ($method === 'POST') {
 
     if (empty($rawData['block_name']) || empty($rawData['block_type'])) {
@@ -688,9 +558,7 @@ if ($method === 'POST') {
     }
 }
 
-// -----------------------------------------------------------------------------
 // PUT – Update block details, rename, resize
-// -----------------------------------------------------------------------------
 if ($method === 'PUT') {
 
     if (!is_numeric($resourceId)) {
@@ -725,17 +593,10 @@ if ($method === 'PUT') {
         Response::error("No fields to update.", 400);
     }
 
-    // ---- All the real work happens inside one locked transaction ----------
-    // SET TRANSACTION applies to the next transaction only.
-    // READ COMMITTED means every SELECT sees the latest committed state,
-    // which is what we want when we hold row locks and check for
-    // concurrent references from interments / reservations / placement_history.
     $pdo->exec("SET TRANSACTION ISOLATION LEVEL READ COMMITTED");
     $pdo->beginTransaction();
 
     try {
-        // Lock the block row. A concurrent PUT/DELETE on the same block
-        // will block here until we commit.
         $lockBlock = $pdo->prepare("
             SELECT * FROM blocks
             WHERE block_id = ? AND deleted_at IS NULL
@@ -758,10 +619,6 @@ if ($method === 'PUT') {
         $willShrink  = ($targetRows < $currentRows || $targetCols < $currentCols);
         $willEnlarge = ($targetRows > $currentRows || $targetCols > $currentCols);
 
-        // ---- Enforce MAX_GRAVES_PER_BLOCK on enlarge ---------------------
-        // If the block already exceeds the limit (legacy data), we do not
-        // block non-resize updates or shrinks — only attempts to enlarge
-        // beyond the cap.
         if ($willEnlarge && $targetRows * $targetCols > MAX_GRAVES_PER_BLOCK) {
             $pdo->rollBack();
             Response::error(
@@ -773,7 +630,7 @@ if ($method === 'PUT') {
             );
         }
 
-        // ---- Rename (uniqueness + length check) --------------------------
+        // Rename, uniqueness + length check
         $renameFrom = null;
         $renameTo   = null;
 
@@ -806,11 +663,6 @@ if ($method === 'PUT') {
             }
         }
 
-        // ---- Shrink: lock graves we intend to remove ---------------------
-        // Holding X-locks on these rows prevents any concurrent INSERT into
-        // interments / reservations / placement_history from committing a
-        // new reference to them (FK checks take S-locks on the parent row).
-        // This guarantees the safety check below is truthful.
         if ($willShrink) {
             $lockGraves = $pdo->prepare("
                 SELECT grave_id FROM graves
@@ -840,7 +692,6 @@ if ($method === 'PUT') {
             }
         }
 
-        // ---- 1) Apply rename + rebuild active grave codes ----------------
         if ($renameFrom !== null) {
             $upd = $pdo->prepare("
                 UPDATE blocks SET block_name = ?, updated_by = ?
@@ -848,25 +699,6 @@ if ($method === 'PUT') {
             ");
             $upd->execute([$renameTo, $userData['user_id'], $blockId]);
 
-            // Rebuild grave_code from row_num/col_num instead of doing
-            // SUBSTRING surgery on the old code.
-            //
-            // Why rebuild?
-            //   * SUBSTRING in MySQL is 1-indexed, and cutting the prefix
-            //     mid-string can leave a stray '-' behind (a classic cause
-            //     of "extra dash each rename" bugs).
-            //   * It is idempotent: running it on an already-correct code
-            //     produces the same result.
-            //   * It heals existing data that was corrupted by the old
-            //     substring logic — the next rename on that block fixes it.
-            //   * It does not depend on LIKE wildcards, so block names that
-            //     contain % or _ are safe.
-            //
-            // Padding note: we use IF(row_num < 10, '0', '') rather than
-            // LPAD(row_num, 2, '0'). LPAD *truncates* when the input is
-            // longer than the target length — LPAD(500, 2, '0') would
-            // return '50'. The IF form matches PHP's str_pad(…, 2, '0',
-            // STR_PAD_LEFT), which never truncates.
             $graveUpd = $pdo->prepare("
                 UPDATE graves
                 SET grave_code = CONCAT(
@@ -886,7 +718,6 @@ if ($method === 'PUT') {
             ]);
         }
 
-        // ---- 2) Scalar field updates + grid dimension update -------------
         $updates = [];
         $params  = [];
         foreach ($scalarFields as $field) {
@@ -913,7 +744,6 @@ if ($method === 'PUT') {
             $pdo->prepare($sql)->execute($params);
         }
 
-        // ---- 3) SHRINK – soft-delete graves outside the new bounds -------
         if ($willShrink) {
             $del = $pdo->prepare("
                 UPDATE graves
@@ -925,7 +755,6 @@ if ($method === 'PUT') {
             $del->execute([$userData['user_id'], $blockId, $targetRows, $targetCols]);
         }
 
-        // ---- 4) ENLARGE – restore-or-insert for new positions -----------
         if ($willEnlarge) {
             $blockName = $renameTo ?? $currentName;
 
@@ -949,7 +778,6 @@ if ($method === 'PUT') {
 
             for ($r = 1; $r <= $targetRows; $r++) {
                 for ($c = 1; $c <= $targetCols; $c++) {
-                    // Only positions outside the OLD grid are new.
                     if ($r > $currentRows || $c > $currentCols) {
                         $softFind->execute([$blockId, $r, $c]);
                         $softId = $softFind->fetchColumn();
@@ -966,7 +794,6 @@ if ($method === 'PUT') {
                 }
             }
 
-            // Chunked bulk insert handles any size up to MAX_GRAVES_PER_BLOCK.
             if (!empty($toInsert)) {
                 bulkInsertGraves($pdo, $blockId, $toInsert, $blockName);
             }
@@ -986,11 +813,7 @@ if ($method === 'PUT') {
     }
 }
 
-// -----------------------------------------------------------------------------
 // DELETE – Soft-delete a block and all its graves
-//
-// Refuses if any grave is not safe to remove (see top-of-file contract).
-// -----------------------------------------------------------------------------
 if ($method === 'DELETE') {
 
     if (!is_numeric($resourceId)) {
@@ -1002,7 +825,6 @@ if ($method === 'DELETE') {
     $pdo->beginTransaction();
 
     try {
-        // Lock the block row (serializes concurrent PUT/DELETE on it).
         $lockBlock = $pdo->prepare("
             SELECT block_id FROM blocks
             WHERE block_id = ? AND deleted_at IS NULL
@@ -1014,8 +836,6 @@ if ($method === 'DELETE') {
             Response::error("Block not found or already deleted.", 404);
         }
 
-        // Lock every active grave in the block. Any concurrent FK insert
-        // that references one of them will block until we commit.
         $lockGraves = $pdo->prepare("
             SELECT grave_id FROM graves
             WHERE block_id = ? AND deleted_at IS NULL
@@ -1024,7 +844,6 @@ if ($method === 'DELETE') {
         $lockGraves->execute([$blockId]);
         $lockGraves->fetchAll(PDO::FETCH_COLUMN);
 
-        // Safety: every active grave in the block must be safe to remove.
         $unsafe = findUnsafeGraves($pdo, $blockId);
         if (!empty($unsafe)) {
             $summary = summariseUnsafe($unsafe);
