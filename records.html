@@ -19,12 +19,10 @@
     <meta property="og:title" content="Memoria | Cemetery Management System">
     <meta property="og:description" content="Efficiently manage and locate records within the Cemetery.">
     <meta property="og:image" content="https://cdn1.iconfinder.com/data/icons/government-buildings-5/504/cemetery-graveyard-tombstone-burial-memorial-512.png">
-
     <meta name="twitter:card" content="summary_large_image">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
 
@@ -39,36 +37,38 @@
 </head>
 <body>
     <div class="recordsContent">
+
+        <!-- Search and filter controls -->
         <div class="tableControls">
             <div class="searchBox">
                 <i class="fas fa-search"></i>
                 <input type="text" id="user_search" placeholder="Search...">
             </div>
 
-            <div class="paginationContainer">
-                <div class="paginationControls">
-                    <button class="pageNavBtn" id="prev_page_btn" title="Previous Page">
-                        <i class="fas fa-chevron-left"></i>
-                    </button>
-
-                    <div class="carouselViewport" id="carousel_viewport">
-                        <div class="carouselTrack" id="carousel_track"></div>
-                    </div>
-
-                    <button class="pageNavBtn" id="next_page_btn" title="Next Page">
-                        <i class="fas fa-chevron-right"></i>
-                    </button>
-                </div>
+            <div class="controlItem">
+                <select id="role_filter" class="mainSelect">
+                    <option value="all">All Status</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                </select>
             </div>
+
+            <button class="filterActionBtn" id="filter_btn">
+                <i class="fas fa-filter"></i>
+                <span>Filter</span>
+            </button>
         </div>
 
+        <!-- Table title and page info -->
         <div class="table">
             <div class="tableHeader">
                 <h3>Records</h3>
-                <span class="pageInfoText">Page <strong id="current_page_num">1</strong> of <span id="total_pages_num">1</span></span>
+                <span class="pageInfoText">Page <strong id="current_page_num">1</strong> of <span
+                        id="total_pages_num">1</span></span>
             </div>
         </div>
 
+        <!-- Records table -->
         <div class="tableScrollWrapper">
             <table id="burial_records">
                 <thead>
@@ -100,6 +100,24 @@
             </p>
         </div>
 
+        <!-- Page navigation -->
+        <div class="paginationContainer">
+            <div class="paginationControls">
+                <button class="pageNavBtn" id="prev_page_btn" title="Previous Page">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+
+                <div class="carouselViewport" id="carousel_viewport">
+                    <div class="carouselTrack" id="carousel_track"></div>
+                </div>
+
+                <button class="pageNavBtn" id="next_page_btn" title="Next Page">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Floating add button -->
         <button class="addRecordBtn" id="open_add_modal_btn" title="Add Record" aria-label="Add Record">
             <i class="fas fa-plus"></i>
         </button>

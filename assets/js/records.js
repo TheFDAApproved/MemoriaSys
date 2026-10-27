@@ -1,6 +1,7 @@
 (function (global) {
     'use strict';
 
+    // Config
     const CONFIG = {
         ENDPOINT: 'api/records.php',
         DEFAULT_LIMIT: 100,
@@ -10,10 +11,12 @@
         REQUEST_TIMEOUT_MS: 30000,
     };
 
+    // State
     const state = {
         page: 1,
         limit: CONFIG.DEFAULT_LIMIT,
         search: '',
+        status: 'all',
         totalPages: 1,
         totalRecords: 0,
         items: [],
@@ -22,6 +25,7 @@
         lastError: null,
     };
 
+    // DOM Element Cache
     const els = {
         tbody: null,
         noData: null,
@@ -34,19 +38,17 @@
         carouselViewport: null,
         addBtn: null,
         tableWrapper: null,
+        statusFilter: null,
+        filterBtn: null,
     };
 
+    // Timers and flags
     let searchTimer = null;
-    // NEW: ref to the injected "clear search" (X) button.
     let searchClearBtn = null;
     let booted = false;
-
-    // NEW: global lock so only one modal-opening action can run at a time.
-    // Prevents double-open if the user clicks two different buttons quickly.
     let actionInProgress = false;
 
-    // ---------- NEW: button loading state ----------
-
+    // Button Loading Styles
     function injectLoadingStyles() {
         if (document.getElementById('recordsBtnLoadingStyles')) return;
         const style = document.createElement('style');
@@ -81,9 +83,7 @@
         document.head.appendChild(style);
     }
 
-    // Runs `fn` while showing a spinner on `btn`. Guarantees cleanup on
-    // success OR failure. Safe against double-clicks and cross-button
-    // re-entrancy (global actionInProgress flag).
+    // Runs a button action with a loading spinner
     async function runAction(btn, fn) {
         if (actionInProgress) return;
         if (!btn || btn.dataset.loading === 'true') return;
@@ -91,10 +91,6 @@
         actionInProgress = true;
         const prevDisabled = btn.disabled;
 
-        // Only give the button a containing block for the ::after spinner
-        // if it isn't positioned already. Floating / absolutely-positioned
-        // buttons (e.g. the "+" add button) already are, and overriding
-        // their position would make them jump mid-load.
         const wasStatic = window.getComputedStyle(btn).position === 'static';
         if (wasStatic) btn.style.position = 'relative';
 
@@ -103,8 +99,6 @@
         btn.disabled = true;
 
         try {
-            // Yield one frame so the loading state actually paints before
-            // fn runs (important when fn is mostly synchronous).
             await new Promise((r) => requestAnimationFrame(() => r()));
             await fn();
         } catch (err) {
@@ -118,14 +112,14 @@
         }
     }
 
-    // ---------- formatting helpers ----------
-
-    // Helper to strictly enforce only Active or Inactive statuses
+    // Helpers
+    // Checks if a status is active or inactive
     const isStatusValid = (status) => {
         const s = String(status || '').toLowerCase().trim();
         return s === 'active' || s === 'inactive';
     };
 
+    // Escapes text before inserting it into HTML
     const escapeHtml = (value) => {
         if (value === null || value === undefined) return '';
         return String(value)
@@ -136,12 +130,14 @@
             .replace(/'/g, '&#39;');
     };
 
+    // Shows a dash for empty values
     const dash = (value) => {
         if (value === null || value === undefined) return '—';
         const s = String(value).trim();
         return s === '' ? '—' : escapeHtml(s);
     };
 
+    // Formats a date as "Mon DD, YYYY"
     const formatDate = (value) => {
         if (!value) return '—';
         const d = new Date(value);
@@ -153,26 +149,25 @@
         });
     };
 
-    // ---- raw-error sanitization ----
-    // Prevents ngrok/proxy HTML pages, bare HTTP status codes, JSON parse
-    // failures, and network failures from reaching showAlertTOP.
     const GENERIC_ERROR = 'Something went wrong. Please try again.';
 
+    // Returns true if the message looks like a raw error
     const looksRawMessage = (text) => {
         if (!text) return true;
         const t = String(text).trim();
         if (!t) return true;
-        if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true;                       // HTML body
-        if (/ERR_NGROK_|ngrok/i.test(t)) return true;                         // ngrok
-        if (/^HTTP\s+\d{3}/i.test(t)) return true;                            // bare "HTTP 502"
-        if (/^Request failed \(\d{3}\)$/i.test(t)) return true;               // our own fallback
+        if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true;
+        if (/ERR_NGROK_|ngrok/i.test(t)) return true;
+        if (/^HTTP\s+\d{3}/i.test(t)) return true;
+        if (/^Request failed \(\d{3}\)$/i.test(t)) return true;
         if (/non-JSON|Unexpected token|is not valid JSON|Unexpected end of JSON/i.test(t)) return true;
         if (/Failed to fetch|NetworkError|Load failed/i.test(t)) return true;
         if (/^(TypeError|SyntaxError|ReferenceError|RangeError|DOMException)\b/i.test(t)) return true;
-        if (t.length > 200) return true;                                      // giant dumps
+        if (t.length > 200) return true;
         return false;
     };
 
+    // Shows an alert and logs the message
     function notify(kind, message) {
         if (!message) return;
         const rawText = String(message);
@@ -192,8 +187,7 @@
         else console.log('[records.js]', rawText);
     }
 
-    // Single source of truth for the "search term is too short" warning.
-    // Routed through notify() so it shows up via showAlertTOP(text, 'warning').
+    // Warns when the search term is too short
     function warnSearchTooShort(value) {
         const min = CONFIG.MIN_SEARCH_LENGTH;
         const len = String(value || '').trim().length;
@@ -204,19 +198,14 @@
         );
     }
 
-    // ---------- search clear (X) button ----------
-
-    // NEW: inject the "clear search" button inside the search box, matching
-    // the behaviour of reserve.js. Idempotent — calling it twice is safe.
+    /* Search Clear Button */
+    // Creates the clear button inside the search box
     function mountSearchClearBtn() {
         if (!els.searchInput) return;
 
-        // Prefer the .searchBox wrapper if present, otherwise fall back to the
-        // input's direct parent so this still works on simpler layouts.
         const box = els.searchInput.closest('.searchBox') || els.searchInput.parentElement;
         if (!box) return;
 
-        // Don't mount twice.
         const existing = box.querySelector('.searchClearBtn');
         if (existing) {
             searchClearBtn = existing;
@@ -248,14 +237,14 @@
         toggleSearchClear(els.searchInput.value);
     }
 
-    // NEW: show/hide the X based on whether the field has content.
+    // Shows or hides the clear button based on the input value
     function toggleSearchClear(value) {
         if (!searchClearBtn) return;
         searchClearBtn.classList.toggle('is-visible', String(value || '').length > 0);
     }
 
-    // ---------- HTTP ----------
-
+    /* API Client */
+    // Sends an API request and handles the response
     async function call(method, path = '', { body = null, query = null, signal = null } = {}) {
         const controller = new AbortController();
         const onAbort = () => controller.abort();
@@ -353,25 +342,32 @@
         return envelope ? envelope.data : payload;
     }
 
+    /* RecordsAPI Facade */
     const RecordsAPI = {
+        // Lists records with filters
         list(opts = {}) {
             const query = {};
             if (opts.page != null) query.page = opts.page;
             if (opts.limit != null) query.limit = opts.limit;
             if (opts.search_term) query.search_term = opts.search_term;
+            if (opts.status) query.status = opts.status;
             return call('GET', '', { query });
         },
+        // Gets one record
         get(id) {
             if (id == null) return Promise.reject(new Error('interment_id is required.'));
             return call('GET', `/${encodeURIComponent(id)}`);
         },
+        // Creates a new record
         create(data) {
             return call('POST', '', { body: data });
         },
+        // Updates a record
         update(id, data) {
             if (id == null) return Promise.reject(new Error('interment_id is required.'));
             return call('PUT', `/${encodeURIComponent(id)}`, { body: data });
         },
+        // Deletes a record
         remove(id) {
             if (id == null) return Promise.reject(new Error('interment_id is required.'));
             return call('DELETE', `/${encodeURIComponent(id)}`);
@@ -379,14 +375,16 @@
         refresh: () => fetchRecords(),
         goToPage,
         setSearch,
+        setStatus,
         getState: () => ({ ...state }),
+        // Finds an item by id
         getItem: (id) =>
             state.items.find((row) => Number(row.interment_id) === Number(id)) || null,
         init,
     };
 
-    // ---------- DOM detection ----------
-
+    /* DOM setup */
+    // Finds the page elements used by the table
     function autoDetect() {
         if (!els.tbody) {
             els.tbody =
@@ -403,6 +401,8 @@
         if (!els.carouselTrack) els.carouselTrack = document.getElementById('carousel_track');
         if (!els.carouselViewport) els.carouselViewport = document.getElementById('carousel_viewport');
         if (!els.addBtn) els.addBtn = document.getElementById('open_add_modal_btn');
+        if (!els.statusFilter) els.statusFilter = document.getElementById('role_filter');
+        if (!els.filterBtn) els.filterBtn = document.getElementById('filter_btn');
 
         if (!els.tableWrapper && els.tbody) {
             els.tableWrapper =
@@ -412,6 +412,7 @@
         }
     }
 
+    // Starts the table with optional element overrides
     function init(overrides = {}) {
         Object.assign(els, overrides || {});
         autoDetect();
@@ -419,14 +420,15 @@
         return fetchRecords();
     }
 
-    // ---------- fetch ----------
-
+    /* Data loading */
+    // Loads records from the server
     async function fetchRecords() {
         if (!els.tbody) {
             return RecordsAPI.list({
                 page: state.page,
                 limit: state.limit,
                 search_term: state.search,
+                status: (state.status === 'active' || state.status === 'inactive') ? state.status : undefined,
             });
         }
 
@@ -443,6 +445,7 @@
                     page: state.page,
                     limit: state.limit,
                     search_term: state.search || undefined,
+                    status: (state.status === 'active' || state.status === 'inactive') ? state.status : undefined,
                 },
                 signal: state.controller.signal,
             });
@@ -465,18 +468,17 @@
         const data = result || {};
         const pagination = data.pagination || {};
 
-        // Filter both the main items and their nested history items
-        state.items = Array.isArray(data.interments) 
-        ? data.interments
-            .filter(item => isStatusValid(item.status))
-            .map(item => {
-                if (Array.isArray(item.history)) {
-                    item.history = item.history.filter(h => isStatusValid(h.status));
-                }
-                return item;
-            })
-        : [];
-        
+        state.items = Array.isArray(data.interments)
+            ? data.interments
+                .filter(item => isStatusValid(item.status))
+                .map(item => {
+                    if (Array.isArray(item.history)) {
+                        item.history = item.history.filter(h => isStatusValid(h.status));
+                    }
+                    return item;
+                })
+            : [];
+
         state.page = Number(pagination.current_page) || state.page;
         state.totalPages = Math.max(1, Number(pagination.total_pages) || 1);
         state.totalRecords = Number(pagination.total_records) || state.items.length;
@@ -500,6 +502,7 @@
         return result;
     }
 
+    // Toggles the loading class on the table
     function setLoading(isLoading) {
         state.loading = isLoading;
 
@@ -509,8 +512,8 @@
         if (isLoading && els.noData) els.noData.style.display = 'none';
     }
 
-    // ---------- row rendering ----------
-
+    /* Row Rendering */
+    // Combines contact address fields into one string
     function buildContactAddress(item) {
         const parts = [
             item.contact_person_address,
@@ -519,6 +522,7 @@
         return parts.length ? parts.join(', ') : '—';
     }
 
+    // Splits the "[History ...]" prefix from the name
     function splitHistoryName(item) {
         const raw = String(item.deceased_name || '').trim();
         const m = raw.match(/^\[History\s+([^\]]+)\]\s*(.*)$/i);
@@ -527,11 +531,13 @@
         return { badge: '', name: raw };
     }
 
+    // Builds the default SMS greeting
     function buildSmsMessage(item) {
         const contact = String(item && item.contact_person_name ? item.contact_person_name : '').trim();
         return contact ? `Greetings ${contact}.` : 'Greetings.';
     }
 
+    // Renders the phone cell as a clickable SMS link
     function renderPhoneCell(item) {
         const raw = item ? item.contact_person_phone_number : null;
         if (raw === null || raw === undefined) return '—';
@@ -547,6 +553,7 @@
         );
     }
 
+    // Builds the main table row
     function renderMainRow(item, hasHistory) {
         const id = item.interment_id;
 
@@ -563,10 +570,6 @@
          </div>`
             : dash(item.control_number);
 
-        // NOTE: inline onclick="memoria_certificate(...)" was removed from the
-        // print button — the delegated handler in onRowActionClick now owns
-        // the call so we can show a loading state. data-id was added so the
-        // handler can resolve it.
         const actionButtons = `
         <button type="button" class="viewBtn" data-action="view" data-id="${id}" title="View / Edit" aria-label="View / Edit">
           <i class="fas fa-file-lines"></i>
@@ -600,6 +603,7 @@
       </tr>`;
     }
 
+    // Builds a transfer history row
     function renderHistoryRow(item, parentId, visible = false) {
         const { badge, name } = splitHistoryName(item);
 
@@ -635,7 +639,7 @@
       </tr>`;
     }
 
-    // Sort helper — matches PHP's `event_date DESC, history_id DESC`.
+    // Sorts history newest first
     function compareHistoryDesc(a, b) {
         const ta = new Date(a.event_date || 0).getTime();
         const tb = new Date(b.event_date || 0).getTime();
@@ -645,6 +649,7 @@
         return hb - ha;
     }
 
+    // Draws the table rows.
     function renderRows() {
         if (!els.tbody) return;
 
@@ -663,9 +668,6 @@
         const html = [];
 
         for (const item of state.items) {
-            // The list endpoint returns LIVE rows at the top level, each with
-            // a nested `history` array. If a flat history row ever slips in
-            // at the top level, skip it — it belongs under its parent.
             if (item.is_history) continue;
 
             const id = Number(item.interment_id);
@@ -687,8 +689,8 @@
         els.tbody.classList.add('animate');
     }
 
-    // ---------- pagination ----------
-
+    // Pagination
+    // Draws the pagination controls
     function renderPagination() {
         if (els.currentPageLabel) els.currentPageLabel.textContent = state.page;
         if (els.totalPagesLabel) els.totalPagesLabel.textContent = state.totalPages;
@@ -720,6 +722,7 @@
         }
     }
 
+    // Creates one page number button
     function makePageBtn(pageNum) {
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -731,6 +734,7 @@
         return btn;
     }
 
+    // Creates the "..." placeholder
     function makeEllipsis() {
         const span = document.createElement('span');
         span.className = 'pageEllipsis';
@@ -739,6 +743,7 @@
         return span;
     }
 
+    // Goes to a page number
     function goToPage(page) {
         const target = Math.min(Math.max(1, Number(page) || 1), state.totalPages);
         if (target === state.page || state.loading) return;
@@ -746,33 +751,46 @@
         fetchRecords();
     }
 
+    // Filters
+    // Sets the search term and reloads.
     function setSearch(term) {
         const value = String(term || '').trim();
         if (value === state.search) return;
         state.search = value;
         state.page = 1;
         if (els.searchInput) els.searchInput.value = value;
-        // NEW: keep the X button in sync when search is set programmatically.
         toggleSearchClear(value);
         fetchRecords();
     }
 
-    // ---------- event wiring ----------
+    // Sets the status filter and reloads
+    function setStatus(value) {
+        const raw = String(value || '').trim().toLowerCase();
+        const next = (raw === 'active' || raw === 'inactive') ? raw : 'all';
+        if (next === state.status) return;
+        state.status = next;
+        state.page = 1;
+        if (els.statusFilter) els.statusFilter.value = next;
+        fetchRecords();
+    }
 
+    // Applies the current filter dropdown value
+    function onFilterApply() {
+        if (!els.statusFilter) return;
+        setStatus(els.statusFilter.value);
+    }
+
+    /* Event Binding */
+    // Attaches all table event listeners
     function bindEvents() {
         injectLoadingStyles();
 
         if (els.searchInput && !els.searchInput.__recordsBound) {
             els.searchInput.__recordsBound = true;
 
-            // NEW: inject the "clear search" X button into the search box.
             mountSearchClearBtn();
 
-            // Typing: still debounced auto-search (unchanged), but NO warning
-            // here — short terms are silently ignored until the user hits Enter.
             els.searchInput.addEventListener('input', () => {
-                // NEW: reflect field content on the X button immediately,
-                // not on the debounce tick, so it feels responsive.
                 toggleSearchClear(els.searchInput.value);
 
                 clearTimeout(searchTimer);
@@ -784,9 +802,6 @@
                 }, CONFIG.SEARCH_DEBOUNCE_MS);
             });
 
-            // Enter: explicit search submission. If the term is non-empty but
-            // too short, warn the user via showAlertTOP instead of silently
-            // doing nothing.
             els.searchInput.addEventListener('keydown', (e) => {
                 if (e.key !== 'Enter') return;
                 e.preventDefault();
@@ -826,8 +841,15 @@
             els.addBtn.__recordsBound = true;
             els.addBtn.addEventListener('click', onAddClick);
         }
+
+        if (els.filterBtn && !els.filterBtn.__recordsBound) {
+            els.filterBtn.__recordsBound = true;
+            els.filterBtn.addEventListener('click', onFilterApply);
+        }
     }
 
+    /* Row Action Handlers */
+    // Opens the add modal
     async function onAddClick(e) {
         e.preventDefault();
 
@@ -840,6 +862,7 @@
         });
     }
 
+    // Opens the SMS modal for a contact
     function handleSmsClick(link) {
         const id = Number(link.dataset.id);
         const item = RecordsAPI.getItem(id);
@@ -854,8 +877,8 @@
         global.openSmsModal(phone, buildSmsMessage(item));
     }
 
+    // Handles clicks on row action buttons
     async function onRowActionClick(e) {
-        // SMS link takes priority — must return before row/history toggle logic.
         const smsLink = e.target.closest('[data-action="sms"]');
         if (smsLink && els.tbody.contains(smsLink)) {
             e.preventDefault();
@@ -875,8 +898,6 @@
 
             if (action === 'view') {
                 await runAction(btn, async () => {
-                    // Fetch the full record so the modal sees the freshest live
-                    // row (single-GET returns flat: index 0 = live, 1..n = history).
                     let fullItem = item;
                     try {
                         const resData = await RecordsAPI.get(id);
@@ -898,9 +919,6 @@
 
             if (action === 'print') {
                 await runAction(btn, async () => {
-                    // Inline onclick was removed from renderMainRow — the
-                    // call now lives here so we can await it and manage the
-                    // loading state.
                     if (typeof global.memoria_certificate === 'function') {
                         await Promise.resolve(global.memoria_certificate(id));
                     }
@@ -932,6 +950,7 @@
         }
     }
 
+    // Shows or hides transfer history rows
     function toggleHistory(toggleBtn) {
         const mainRow = toggleBtn.closest('tr.recordRow');
         if (!mainRow) return;
@@ -962,8 +981,8 @@
         }
     }
 
-    // ---------- delete ----------
-
+    /* Delete Flow */
+    // Opens the delete confirmation modal
     async function handleDelete(id, item) {
         if (!global.DeleteModal || typeof global.DeleteModal.open !== 'function') {
             const name = item ? item.deceased_name : `#${id}`;
@@ -983,6 +1002,7 @@
         });
     }
 
+    // Deletes a record and updates the table
     async function performDelete(id, item) {
         let result;
         try {
@@ -1025,7 +1045,8 @@
         return result;
     }
 
-    // ---------- save ----------
+    /* Save from Burial Modal */
+    // Saves data from the burial modal
     async function handleModalSave(event) {
         const detail = event.detail || {};
         const mode = detail.mode;
@@ -1076,8 +1097,7 @@
 
             if (freshData && Array.isArray(freshData.interments) && freshData.interments.length > 0) {
                 freshItem = freshData.interments[0];
-                
-                // Filter the history right when we construct the fresh record
+
                 freshHistory = freshData.interments
                     .filter(x => x && x.is_history)
                     .filter(h => isStatusValid(h.status))
@@ -1085,22 +1105,17 @@
                 freshItem.history = freshHistory;
 
                 if (isEdit) {
-                    // ---- Update state ----
                     const idx = state.items.findIndex(
                         r => Number(r.interment_id) === Number(fetchId) && !r.is_history
                     );
-                    
+
                     if (isStatusValid(freshItem.status)) {
-                        // Status is still good, update it
                         if (idx > -1) state.items[idx] = freshItem;
                     } else {
-                        // Status changed to something else (e.g. Expired). 
-                        // Reload the table so it filters it out and disappears.
                         await fetchRecords();
-                        return; // Stop running the rest of the DOM update below
+                        return;
                     }
-                    
-                    // ---- Update DOM in place, no tbody wipe, no animation ----
+
                     const existingRow = els.tbody.querySelector(`tr.recordRow[data-id="${fetchId}"]`);
                     if (existingRow) {
                         let sib = existingRow.nextElementSibling;
@@ -1122,7 +1137,6 @@
                         existingRow.outerHTML = block.join('');
                     }
                 } else {
-                    // ---- New record: history always starts empty ----
                     if (isStatusValid(freshItem.status)) {
                         state.items.unshift(freshItem);
                         state.totalRecords++;
@@ -1152,11 +1166,10 @@
             onSuccess(updatedData, result);
         }
     }
-    
+
     document.addEventListener('burial_modal:save', handleModalSave);
 
-    // ---------- boot ----------
-
+    // Starts the records table
     function boot() {
         if (booted) return;
         booted = true;
