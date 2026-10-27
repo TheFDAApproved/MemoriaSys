@@ -118,7 +118,35 @@ function handleRateLimit($limit, $period, $bucket = 'default')
 function applyDefaultRateLimit()
 {
     $method = $_SERVER['REQUEST_METHOD'] ?? 'UNKNOWN';
+    $path   = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?? '';
 
+    // Order matters: forgot-password must be checked before the generic "users" rule,
+    // since "/users/forgot-password" also matches the users regex.
+    $isForgotPassword = (bool) preg_match('#(^|/)(api/)?users(\.php)?/forgot-password(/|$)#i', $path);
+    $isAuth           = (bool) preg_match('#(^|/)(api/)?auth(\.php)?(/|$)#i', $path);
+    $isUsers          = (bool) preg_match('#(^|/)(api/)?users(\.php)?(/|$)#i', $path);
+
+    // Auth DELETE (logout / revoke session) stays exempt, as before
+    if ($isAuth && $method === 'DELETE') {
+        return;
+    }
+
+    if ($method === 'POST') {
+        if ($isForgotPassword) {
+            handleRateLimit(5, 100, 'forgot-password');  // 5 per 100s
+            return;
+        }
+        if ($isAuth) {
+            handleRateLimit(10, 100, 'auth');            // 10 per 100s (login)
+            return;
+        }
+        if ($isUsers) {
+            handleRateLimit(5, 100, 'user-create');      // 5 per 100s
+            return;
+        }
+    }
+
+    // Everything else
     if (in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
         handleRateLimit(30, 60, 'write');
     } else {
