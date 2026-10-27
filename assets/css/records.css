@@ -784,7 +784,7 @@ html {
 @media (max-width: 480px) {
     .recordsContent {
         padding: 12px;
-        padding-bottom: 88px;
+        padding-bottom: 30px;
     }
 
     .tableControls {
@@ -867,7 +867,7 @@ html {
 @media (max-width: 360px) {
     .recordsContent {
         padding: 10px;
-        padding-bottom: 82px;
+        padding-bottom: 30px;
     }
 
     .filterActionBtn {
