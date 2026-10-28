@@ -1,3 +1,8 @@
+html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+}
+
 body {
     margin: 0;
     padding: 0;
@@ -13,11 +18,13 @@ body {
     display: flex;
     flex-direction: column;
     height: 100vh;
+    height: 100dvh;
     width: 100%;
     max-width: none;
     margin: 0;
     padding: 24px;
     overflow: hidden;
+    box-sizing: border-box;
 }
 
 /* Box sizing fix for scrollable areas */
@@ -171,6 +178,8 @@ body {
     border-radius: 10px;
     cursor: pointer;
     transition: opacity 0.2s ease, transform 0.2s ease;
+    flex-shrink: 0;
+    white-space: nowrap;
 
     & i {
         font-size: 13px;
@@ -206,6 +215,8 @@ body {
         border: 1px solid #e5e7eb;
         border-radius: 999px;
         box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+        max-width: 100%;
+        box-sizing: border-box;
 
         /* Previous / next buttons */
         .pageNavBtn {
@@ -220,6 +231,7 @@ body {
             color: #1c1e21;
             font-size: 13px;
             cursor: pointer;
+            flex-shrink: 0;
             transition: background 0.2s ease, color 0.2s ease, opacity 0.2s ease;
 
             &:hover:not(:disabled) {
@@ -241,7 +253,7 @@ body {
         /* Page number scroller */
         .carouselViewport {
             overflow: hidden;
-            max-width: 320px;
+            max-width: min(320px, 60vw);
 
             .carouselTrack {
                 display: flex;
@@ -339,6 +351,7 @@ body {
     border-top: none;
     border-radius: 0 0 10px 10px;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    -webkit-overflow-scrolling: touch;
 
     /* Scrollbar styling */
     &::-webkit-scrollbar {
@@ -522,8 +535,8 @@ body {
 /* Floating Add Button */
 .addRecordBtn {
     position: fixed;
-    bottom: 30px;
-    right: 30px;
+    bottom: calc(30px + env(safe-area-inset-bottom, 0));
+    right: calc(30px + env(safe-area-inset-right, 0));
     width: 60px;
     height: 60px;
     border-radius: 50%;
@@ -686,57 +699,92 @@ tr.historyRow {
 }
 
 /* Responsive */
-@supports (height: 100dvh) {
+@media (min-width: 1600px) {
     .recordsContent {
-        height: 100dvh;
+        padding: 32px 48px;
+    }
+
+    .tableScrollWrapper table {
+        min-width: 100%;
     }
 }
 
-html {
-    -webkit-text-size-adjust: 100%;
+@media (max-width: 1280px) {
+    .recordsContent {
+        padding: 20px;
+    }
+
+    .tableScrollWrapper table {
+        min-width: 1280px;
+    }
 }
 
 @media (max-width: 1024px) {
     .recordsContent {
         padding: 18px;
     }
-}
-
-@media (max-width: 768px) {
-
-    .recordsContent {
-        padding: 16px;
-        padding-bottom: 96px;
-    }
 
     .tableControls {
-        flex-wrap: wrap;
         gap: 10px;
         margin-bottom: 16px;
     }
 
-    .searchBox {
+    .tableScrollWrapper table {
+        min-width: 1180px;
+    }
+
+    .tableScrollWrapper thead th,
+    .tableScrollWrapper tbody td {
+        padding: 12px 14px;
+    }
+}
+
+@media (max-width: 900px) {
+    .recordsContent {
+        padding: 14px;
+    }
+
+    .tableScrollWrapper table {
+        min-width: 1080px;
+    }
+}
+
+@media (max-width: 768px) {
+    .recordsContent {
+        padding: 12px;
+    }
+
+    .tableControls {
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 12px;
+    }
+
+    .tableControls .searchBox {
         flex: 1 1 100%;
-        max-width: none;
+        max-width: 100%;
         min-width: 0;
+        order: 1;
     }
 
     .searchBox+.controlItem {
         margin-left: 0;
     }
 
-    .controlItem {
+    .tableControls .controlItem {
         flex: 1 1 140px;
         min-width: 0;
+        order: 2;
     }
 
-    .filterActionBtn {
+    .tableControls .filterActionBtn {
         flex: 0 0 auto;
+        padding: 11px 16px;
+        order: 3;
     }
 
     .tableHeader {
         padding: 12px 14px;
-        gap: 8px;
     }
 
     .tableHeader h3 {
@@ -747,8 +795,18 @@ html {
         font-size: 12px;
     }
 
-    .tableScrollWrapper {
-        -webkit-overflow-scrolling: touch;
+    .tableScrollWrapper table {
+        min-width: 950px;
+        font-size: 13px;
+    }
+
+    .tableScrollWrapper thead th {
+        font-size: 10px;
+        padding: 10px 12px;
+    }
+
+    .tableScrollWrapper tbody td {
+        padding: 10px 12px;
     }
 
     .paginationContainer {
@@ -756,60 +814,54 @@ html {
     }
 
     .paginationContainer .paginationControls {
-        gap: 8px;
-        padding: 4px;
-    }
-
-    .paginationContainer .paginationControls .pageNavBtn {
-        width: 32px;
-        height: 32px;
-        font-size: 12px;
+        gap: 6px;
+        padding: 5px;
     }
 
     .paginationContainer .paginationControls .carouselViewport {
-        max-width: min(320px, calc(100vw - 140px));
+        max-width: min(240px, 48vw);
     }
 
-    .paginationContainer .paginationControls .carouselViewport .carouselTrack {
-        gap: 4px;
-    }
-
-    .paginationContainer .paginationControls .carouselViewport .carouselTrack button {
-        width: 32px;
-        height: 32px;
-        font-size: 12px;
+    .addRecordBtn {
+        bottom: calc(20px + env(safe-area-inset-bottom, 0));
+        right: calc(20px + env(safe-area-inset-right, 0));
+        width: 54px;
+        height: 54px;
+        font-size: 22px;
     }
 }
 
-@media (max-width: 480px) {
+@media (max-width: 540px) {
     .recordsContent {
-        padding: 12px;
-        padding-bottom: 30px;
+        padding: 10px;
     }
 
     .tableControls {
         gap: 8px;
-        margin-bottom: 12px;
+        margin-bottom: 10px;
+    }
+
+    .tableControls .controlItem {
+        flex: 1 1 120px;
+    }
+
+    .tableControls .filterActionBtn {
+        padding: 11px 14px;
+        font-size: 13px;
+    }
+
+    .tableControls .controlItem .mainSelect {
+        padding: 10px 30px 10px 12px;
+        font-size: 13px;
     }
 
     .searchBox input {
-        font-size: 16px;
-        padding: 10px 12px 10px 36px;
+        padding: 10px 30px 10px 36px;
+        font-size: 13px;
     }
 
     .searchBox i.fa-search {
         left: 12px;
-        font-size: 13px;
-    }
-
-    .controlItem .mainSelect {
-        font-size: 16px;
-        padding: 10px 32px 10px 12px;
-    }
-
-    .filterActionBtn {
-        padding: 10px 14px;
-        font-size: 13px;
     }
 
     .tableHeader {
@@ -821,64 +873,240 @@ html {
         font-size: 14px;
     }
 
-    .pageInfoText {
-        font-size: 11px;
+    .tableScrollWrapper table {
+        min-width: 850px;
+        font-size: 13px;
     }
 
-    .addRecordBtn {
-        width: 52px;
-        height: 52px;
-        font-size: 20px;
-        bottom: 16px;
-        right: 16px;
+    .tableScrollWrapper thead th {
+        padding: 9px 10px;
     }
 
-    .paginationContainer .paginationControls {
-        gap: 6px;
-        padding: 4px;
-    }
-
-    .paginationContainer .paginationControls .pageNavBtn {
-        width: 30px;
-        height: 30px;
-        font-size: 12px;
-    }
-
-    .paginationContainer .paginationControls .carouselViewport {
-        max-width: min(280px, calc(100vw - 120px));
-    }
-
-    .paginationContainer .paginationControls .carouselViewport .carouselTrack button {
-        width: 30px;
-        height: 30px;
-        font-size: 12px;
+    .tableScrollWrapper tbody td {
+        padding: 9px 10px;
     }
 
     .noData {
         padding: 32px 16px;
-        font-size: 13px;
     }
 
     .noData i {
         font-size: 26px;
     }
-}
 
-@media (max-width: 360px) {
-    .recordsContent {
-        padding: 10px;
-        padding-bottom: 30px;
+    .paginationContainer {
+        margin-top: 12px;
     }
 
-    .filterActionBtn {
-        padding: 10px 12px;
+    .paginationContainer .paginationControls {
+        gap: 4px;
+        padding: 4px;
+    }
+
+    .paginationContainer .paginationControls .pageNavBtn {
+        width: 34px;
+        height: 34px;
+    }
+
+    .paginationContainer .paginationControls .carouselViewport {
+        max-width: min(180px, 50vw);
+    }
+
+    .paginationContainer .paginationControls .carouselViewport .carouselTrack button {
+        width: 34px;
+        height: 34px;
+        font-size: 12px;
     }
 
     .addRecordBtn {
-        width: 48px;
-        height: 48px;
+        bottom: calc(16px + env(safe-area-inset-bottom, 0));
+        right: calc(16px + env(safe-area-inset-right, 0));
+        width: 50px;
+        height: 50px;
+        font-size: 20px;
+    }
+}
+
+@media (max-width: 380px) {
+    .recordsContent {
+        padding: 8px;
+    }
+
+    .tableControls .filterActionBtn {
+        padding: 10px 12px;
+        min-width: 42px;
+        justify-content: center;
+    }
+
+    .tableControls .filterActionBtn span {
+        display: none;
+    }
+
+    .tableScrollWrapper table {
+        min-width: 780px;
+        font-size: 12px;
+    }
+
+    .paginationContainer .paginationControls .carouselViewport {
+        max-width: min(140px, 46vw);
+    }
+
+    .addRecordBtn {
+        width: 46px;
+        height: 46px;
         font-size: 18px;
+    }
+}
+
+@media (max-height: 500px) and (orientation: landscape) {
+    .recordsContent {
+        padding: 8px;
+    }
+
+    .tableControls {
+        margin-bottom: 8px;
+    }
+
+    .tableScrollWrapper {
+        min-height: 120px;
+    }
+
+    .paginationContainer {
+        margin-top: 8px;
+    }
+
+    .tableHeader {
+        padding: 8px 12px;
+    }
+
+    .addRecordBtn {
         bottom: 12px;
         right: 12px;
+        width: 46px;
+        height: 46px;
+        font-size: 18px;
+    }
+}
+
+@media (max-height: 480px) {
+    body {
+        overflow-y: auto;
+        height: auto;
+    }
+
+    .recordsContent {
+        height: auto;
+        min-height: 100dvh;
+        overflow: visible;
+    }
+
+    .tableScrollWrapper {
+        min-height: 260px;
+        overflow-y: auto;
+    }
+}
+
+@media (max-width: 768px) {
+
+    .modal,
+    .modal-overlay,
+    .modal-backdrop,
+    .modal-wrapper,
+    .modal-container,
+    [class*="modal" i][class*="overlay" i],
+    [class*="modal" i][class*="backdrop" i],
+    [class*="modal" i][class*="wrapper" i],
+    [class*="modal" i][class*="container" i] {
+        padding: 8px !important;
+        align-items: flex-start !important;
+        justify-content: center !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch;
+        box-sizing: border-box;
+    }
+
+    .modal-content,
+    .modal-dialog,
+    .modal-panel,
+    .modal-card,
+    [class*="modal" i][class*="content" i],
+    [class*="modal" i][class*="dialog" i],
+    [class*="modal" i][class*="panel" i],
+    [class*="modal" i][class*="card" i] {
+        width: 100% !important;
+        max-width: calc(100vw - 16px) !important;
+        max-height: calc(100dvh - 16px) !important;
+        margin: 0 auto !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch;
+        box-sizing: border-box;
+    }
+
+    [class*="modal" i][class*="body" i] {
+        max-height: none !important;
+        overflow-y: visible !important;
+    }
+
+    [class*="modal" i] input,
+    [class*="modal" i] select,
+    [class*="modal" i] textarea {
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    [class*="modal" i] [class*="form" i][class*="row" i],
+    [class*="modal" i] [class*="form" i][class*="grid" i],
+    [class*="modal" i] [class*="field" i][class*="row" i],
+    [class*="modal" i] [class*="input" i][class*="row" i] {
+        grid-template-columns: 1fr !important;
+        flex-direction: column !important;
+        align-items: stretch !important;
+    }
+
+    [class*="modal" i][class*="content" i] [class*="footer" i],
+    [class*="modal" i][class*="dialog" i] [class*="footer" i],
+    [class*="modal" i][class*="panel" i] [class*="footer" i] {
+        flex-wrap: wrap !important;
+        gap: 8px !important;
+    }
+
+    [class*="modal" i][class*="content" i] [class*="footer" i]>*,
+    [class*="modal" i][class*="dialog" i] [class*="footer" i]>*,
+    [class*="modal" i][class*="panel" i] [class*="footer" i]>* {
+        flex: 1 1 auto;
+        min-width: 120px;
+    }
+}
+
+@media (max-width: 540px) {
+
+    .modal,
+    .modal-overlay,
+    .modal-backdrop,
+    .modal-wrapper,
+    .modal-container,
+    [class*="modal" i][class*="overlay" i],
+    [class*="modal" i][class*="backdrop" i],
+    [class*="modal" i][class*="wrapper" i],
+    [class*="modal" i][class*="container" i] {
+        padding: 6px !important;
+    }
+
+    .modal-content,
+    .modal-dialog,
+    .modal-panel,
+    .modal-card,
+    [class*="modal" i][class*="content" i],
+    [class*="modal" i][class*="dialog" i],
+    [class*="modal" i][class*="panel" i],
+    [class*="modal" i][class*="card" i] {
+        max-width: calc(100vw - 12px) !important;
+        max-height: calc(100dvh - 12px) !important;
+    }
+
+    [class*="modal" i][class*="content" i] [class*="footer" i]>*,
+    [class*="modal" i][class*="dialog" i] [class*="footer" i]>*,
+    [class*="modal" i][class*="panel" i] [class*="footer" i]>* {
+        flex: 1 1 100%;
     }
 }
