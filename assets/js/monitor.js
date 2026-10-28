@@ -1,12 +1,14 @@
 (() => {
     'use strict';
 
+    // Configuration constants
     const API_URL = 'api/monitor.php';
     const DEFAULT_LIMIT = 100;
     const MIN_SEARCH_LENGTH = 3;
     const SEARCH_DEBOUNCE_MS = 350;
     const PAGINATION_WINDOW = 5;
 
+    // Application state
     const state = {
         page: 1,
         limit: DEFAULT_LIMIT,
@@ -20,6 +22,7 @@
         silentNextRender: false,
     };
 
+    // DOM element references
     const els = {
         tbody: document.getElementById('reservation'),
         noData: document.getElementById('monitor_no_data'),
@@ -37,12 +40,10 @@
         return;
     }
 
-    // NEW: global lock so only one row-action can run at a time.
-    // Prevents double-click / cross-button re-entrancy.
     let actionInProgress = false;
 
-    // ---------- NEW: button loading state ----------
-
+    // Action-button loading indicator
+    // Injects the spinner animation used while an action button is busy.
     function injectLoadingStyles() {
         if (document.getElementById('recordsBtnLoadingStyles')) return;
         const style = document.createElement('style');
@@ -77,9 +78,8 @@
         document.head.appendChild(style);
     }
 
-    // Runs `fn` while showing a spinner on `btn`. Guarantees cleanup on
-    // success OR failure. Only sets position:relative when the button is
-    // statically positioned, so fixed/absolute/relative buttons don't jump.
+    // Runs an async action while disabling the button and showing a spinner
+    // Prevents double-clicks and overlapping actions
     async function runAction(btn, fn) {
         if (actionInProgress) return;
         if (!btn || btn.dataset.loading === 'true') return;
@@ -108,27 +108,22 @@
         }
     }
 
-    // ------------------------------------------------------------------
-    // utilities
-    // ------------------------------------------------------------------
-
-    // ---- raw-error sanitization ----
-    // Prevent ngrok/proxy HTML pages, bare HTTP status codes, JSON parse
-    // failures, and network failures from reaching showAlertTOP / showError.
+    // Notification and error helpers
     const GENERIC_ERROR = 'Something went wrong. Please try again.';
 
+    // Detects raw technical errors so they can be replaced with a friendly message
     const looksRawMessage = (text) => {
         if (!text) return true;
         const t = String(text).trim();
         if (!t) return true;
-        if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true;                       // HTML body
-        if (/ERR_NGROK_|ngrok/i.test(t)) return true;                         // ngrok
-        if (/^HTTP\s+\d{3}/i.test(t)) return true;                            // bare "HTTP 502"
-        if (/^Request failed \(\d{3}\)$/i.test(t)) return true;               // our own fallback
+        if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true;
+        if (/ERR_NGROK_|ngrok/i.test(t)) return true;
+        if (/^HTTP\s+\d{3}/i.test(t)) return true;
+        if (/^Request failed \(\d{3}\)$/i.test(t)) return true;
         if (/non-JSON|Unexpected token|is not valid JSON|Unexpected end of JSON/i.test(t)) return true;
         if (/Failed to fetch|NetworkError|Load failed/i.test(t)) return true;
         if (/^(TypeError|SyntaxError|ReferenceError|RangeError|DOMException)\b/i.test(t)) return true;
-        if (t.length > 200) return true;                                      // giant dumps
+        if (t.length > 200) return true;
         return false;
     };
 
@@ -150,8 +145,6 @@
         else console.log('[monitor.js]', rawText);
     }
 
-    // NEW: single source of truth for the "search term is too short" warning.
-    // Routed through notify() so it shows up via showAlertTOP(text, 'warning').
     function warnSearchTooShort(value) {
         const min = MIN_SEARCH_LENGTH;
         const len = String(value || '').trim().length;
@@ -162,6 +155,7 @@
         );
     }
 
+    // Value formatting helpers
     const escapeHtml = (v) => {
         if (v === null || v === undefined) return '';
         return String(v)
@@ -174,6 +168,7 @@
         return s === '' ? '-' : s;
     };
 
+    // SMS helpers [build a pre-filled message and open the SMS modal]
     function formatSmsDate(v) {
         if (!v) return '';
         const d = new Date(v);
@@ -194,6 +189,7 @@
         return msg;
     }
 
+    // Renders a contact number as an SMS link when a number exists
     function renderPhoneLink(occ) {
         if (!occ) return '-';
         const raw = occ.contact_person_phone_number;
@@ -228,9 +224,7 @@
         }));
     }
 
-    // ------------------------------------------------------------------
-    // search clear button
-    // ------------------------------------------------------------------
+    // Search clear button [injected next to the search input]
     let searchClearBtn = null;
     (function mountSearchClearBtn() {
         if (!els.searchInput) return;
@@ -261,9 +255,7 @@
         searchClearBtn.classList.toggle('is-visible', String(value || '').length > 0);
     }
 
-    // ------------------------------------------------------------------
-    // loading / errors
-    // ------------------------------------------------------------------
+    // Loading / empty / error state helpers
     const setLoading = (isLoading) => {
         state.loading = isLoading;
         const wrapper = els.tbody.closest('.tableWrapper');
@@ -281,15 +273,14 @@
 
     function showError(message) {
         if (!els.noData) return;
-        // Raw-error sanitization: html/ngrok/bare-status text → generic message.
         const display = (message && !looksRawMessage(message)) ? message : GENERIC_ERROR;
         els.noData.innerHTML = `<i class="fas fa-triangle-exclamation"></i> ${escapeHtml(display)}`;
         els.noData.style.display = '';
     }
 
-    // ------------------------------------------------------------------
-    // fetch
-    // ------------------------------------------------------------------
+    // Data fetching
+    // Loads reservations from the API using the current page, limit, and search
+    // Uses AbortController + requestId to safely ignore stale responses
     async function fetchReservations() {
         if (state.controller) state.controller.abort();
         state.controller = new AbortController();
@@ -346,12 +337,13 @@
         }
     }
 
-    // Silent refresh — same data, no row animation, no scroll jump.
+    // Refreshes without playing the row fade-in animation
     function silentRefresh() {
         state.silentNextRender = true;
         return fetchReservations();
     }
 
+    // Re-fetches a single reservation by ID [used before viewing or printing]
     async function refetchReservation(reservationId) {
         if (!reservationId) return null;
         try {
@@ -371,9 +363,7 @@
         }
     }
 
-    // ------------------------------------------------------------------
-    // render
-    // ------------------------------------------------------------------
+    // Rendering
     function render() {
         renderRows();
         renderPagination();
@@ -404,17 +394,20 @@
             tr.dataset.type = old ? 'replace' : 'vacant';
             tr.classList.add('monitorRow', `type-${old ? 'replace' : 'vacant'}`);
 
+            // Old occupant columns
             const oldName = old ? displayVal(old.deceased_name) : '-';
             const oldExpiration = old ? displayVal(old.lease_expiration_date) : '-';
             const oldContact = old ? displayVal(old.contact_person_name) : '-';
             const oldPhoneCell = renderPhoneLink(old);
 
+            // Block / grave code
             const blockName = displayVal(grave.block_name);
             const graveCode = displayVal(grave.grave_code);
             const locationCell = (blockName !== '-' && graveCode !== '-')
                 ? `${escapeHtml(blockName)} <span style="color:#94a3b8">/</span> ${escapeHtml(graveCode)}`
                 : escapeHtml(blockName !== '-' ? blockName : graveCode);
 
+            // Pending occupant columns
             const newName = displayVal(neu.deceased_name);
             const newAddress = displayVal(neu.last_known_address);
             const newContact = displayVal(neu.contact_person_name);
@@ -422,6 +415,7 @@
             const newContactAddress = displayVal(neu.contact_person_address);
             const remarks = displayVal(neu.remarks || (old && old.remarks));
 
+            // Row action buttons
             let actionButtons = '';
             if (old) {
                 actionButtons += `<button type="button" class="viewBtn monitorActionBtn" data-action="view-old" title="View Old Occupant" aria-label="View Old Occupant"><i class="fas fa-user-clock"></i></button>`;
@@ -429,9 +423,7 @@
             actionButtons += `<button type="button" class="viewBtn monitorActionBtn" data-action="view-new" title="View New Occupant" aria-label="View New Occupant"><i class="fas fa-user-plus"></i></button>`;
             actionButtons += `<button type="button" class="checkBtn monitorActionBtn" data-action="check" title="Confirm Reservation" aria-label="Confirm Reservation"><i class="fas fa-check"></i></button>`;
             actionButtons += `<button type="button" class="cancelBtn monitorActionBtn" data-action="cancel" title="Cancel Reservation" aria-label="Cancel Reservation"><i class="fas fa-times"></i></button>`;
-            actionButtons += `<button type="button" class="printBtn monitorActionBtn" data-action="print" title="Print Certificate" aria-label="Print Certificate">
-          <i class="fas fa-print"></i>
-        </button>`;
+            actionButtons += `<button type="button" class="printBtn monitorActionBtn" data-action="print" title="Print Certificate" aria-label="Print Certificate"><i class="fas fa-print"></i></button>`;
 
             tr.innerHTML = `
                 <td>${escapeHtml(oldName)}</td>
@@ -456,7 +448,6 @@
             btn.addEventListener('click', handleActionClick);
         });
 
-        // Row-enter animation — skipped on silent refresh.
         if (!state.silentNextRender) {
             els.tbody.classList.remove('animate');
             void els.tbody.offsetWidth;
@@ -482,11 +473,13 @@
         let end = Math.min(total, start + windowSize - 1);
         start = Math.max(1, end - windowSize + 1);
 
+        // First page + ellipsis when the window doesn't start at page 1
         if (start > 1) {
             els.carouselTrack.appendChild(makePageBtn(1));
             if (start > 2) els.carouselTrack.appendChild(makeEllipsis());
         }
         for (let p = start; p <= end; p++) els.carouselTrack.appendChild(makePageBtn(p));
+        // Last page + ellipsis when the window doesn't end at the last page
         if (end < total) {
             if (end < total - 1) els.carouselTrack.appendChild(makeEllipsis());
             els.carouselTrack.appendChild(makePageBtn(total));
@@ -519,10 +512,8 @@
         fetchReservations();
     }
 
-    // ------------------------------------------------------------------
-    // payload builder for the table's ✓ button
-    // (uses the reservation's currently stored values — no edits)
-    // ------------------------------------------------------------------
+    // Reservation helpers
+    // Converts the reservation object into the payload expected by the API
     function buildPayloadFromReservation(res) {
         const n = res.pending_interment || {};
         const o = res.old_interment || null;
@@ -560,7 +551,7 @@
             payload.old_new_status = res.old_new_status || 'Inactive';
             if (res.old_new_grave && res.old_new_grave.grave_id) {
                 payload.old_new_grave_id = res.old_new_grave.grave_id;
-                payload.old_new_grave_code = res.old_new_grave.grave_code || '';
+                payload.old_new_grave_code = res.old_new_grave.code || res.old_new_grave.grave_code || '';
             }
             if (res.old_new_assistance_type) payload.old_new_assistance_type = res.old_new_assistance_type;
             if (res.old_new_remarks) payload.old_new_remarks = res.old_new_remarks;
@@ -572,20 +563,18 @@
         return payload;
     }
 
+    // Uses the shared confirm modal if available, otherwise falls back to window.confirm
     function confirmDialog(opts) {
         if (typeof window.showConfirmModal === 'function') return window.showConfirmModal(opts);
         const plain = [opts.title, opts.message].filter(Boolean).join('\n\n');
         return Promise.resolve(window.confirm(plain));
     }
 
-    // ------------------------------------------------------------------
-    // actions
-    // ------------------------------------------------------------------
     function findReservationById(id) {
         return state.items.find(r => String(r.reservation_id) === String(id)) || null;
     }
 
-    // Silent row removal — no re-render, no animation beyond a small fade.
+    // Removes a row from the table with a short fade and updates local counters
     function removeRowLocally(reservationId) {
         state.items = state.items.filter(
             r => String(r.reservation_id) !== String(reservationId)
@@ -603,6 +592,7 @@
         state.totalRecords = Math.max(0, state.totalRecords - 1);
     }
 
+    // Row action dispatcher
     async function handleActionClick(event) {
         const btn = event.currentTarget;
         const row = btn.closest('tr');
@@ -639,7 +629,8 @@
         document.dispatchEvent(new CustomEvent('monitor:view-new', { detail: payload }));
     }
 
-    // Table ✓ = execute with current reservation values.
+    // Reservation actions: confirm, cancel, print
+    // Confirms the reservation. For a transfer, the old occupant is replaced
     async function confirmReservation(reservation) {
         const old = reservation.old_interment || null;
         const neu = reservation.pending_interment || {};
@@ -675,7 +666,6 @@
                 const json = await res.json().catch(() => null);
                 if (!res.ok || (json && json.success === false)) {
                     const apiMsg = json && (json.message || json.error);
-                    // Raw fallback: use GENERIC_ERROR instead of "HTTP 502".
                     throw new Error((apiMsg && !looksRawMessage(apiMsg)) ? apiMsg : GENERIC_ERROR);
                 }
             },
@@ -686,6 +676,7 @@
         notify('success', 'Reservation confirmed.');
     }
 
+    // Cancels a pending reservation. For a transfer, the old occupant stays as-is
     async function cancelReservation(reservation) {
         const neu = reservation.pending_interment || {};
         const old = reservation.old_interment || null;
@@ -722,7 +713,6 @@
                 const json = await res.json().catch(() => null);
                 if (!res.ok || (json && json.success === false)) {
                     const apiMsg = json && (json.message || json.error);
-                    // Raw fallback: use GENERIC_ERROR instead of "HTTP 502".
                     throw new Error((apiMsg && !looksRawMessage(apiMsg)) ? apiMsg : GENERIC_ERROR);
                 }
             },
@@ -733,10 +723,8 @@
         notify('success', 'Reservation cancelled.');
     }
 
-    // Table print button — uses pending_interment.interment_id
-    // (the ID of the NEW occupant's pending interment record).
+    // Prints the burial certificate for the pending interment
     async function printCertificate(reservation) {
-        // Pull fresh data so a just-confirmed reservation still prints right.
         const fresh = await refetchReservation(reservation.reservation_id);
         const payload = fresh || reservation;
 
@@ -757,9 +745,7 @@
         await Promise.resolve(window.memoria_certificate(intermentId));
     }
 
-    // ------------------------------------------------------------------
-    // wire-up
-    // ------------------------------------------------------------------
+    // Search input handling
     let searchTimer = null;
     if (els.searchInput) {
         els.searchInput.addEventListener('input', () => {
@@ -790,8 +776,6 @@
 
             const value = els.searchInput.value.trim();
 
-            // NEW: Enter is an explicit action. If the term is non-empty but
-            // too short, warn via showAlertTOP instead of silently doing nothing.
             if (value.length > 0 && value.length < MIN_SEARCH_LENGTH) {
                 warnSearchTooShort(value);
                 return;
@@ -803,11 +787,12 @@
         });
     }
 
+    // Pagination buttons and row-level SMS clicks
     if (els.prevBtn) els.prevBtn.addEventListener('click', () => goToPage(state.page - 1));
     if (els.nextBtn) els.nextBtn.addEventListener('click', () => goToPage(state.page + 1));
     els.tbody.addEventListener('click', handleSmsClick);
 
-    // Modal events: silent refresh (no animation).
+    // Cross-component events [burial modal]
     document.addEventListener('monitor_burial_modal:saved', () => { silentRefresh(); });
     document.addEventListener('monitor_burial_modal:executed', (e) => {
         const id = e.detail && e.detail.reservationId;
@@ -815,9 +800,7 @@
         else silentRefresh();
     });
 
-    // ------------------------------------------------------------------
-    // public API
-    // ------------------------------------------------------------------
+    // Public API [exposed for other scripts]
     window.MonitorTable = {
         refresh: () => fetchReservations(),
         silentRefresh,
@@ -836,6 +819,7 @@
         getState() { return { ...state }; },
     };
 
+    // Initial setup
     if (els.searchInput && els.searchInput.value) {
         const v = els.searchInput.value.trim();
         if (v.length === 0 || v.length >= MIN_SEARCH_LENGTH) state.search = v;
@@ -843,7 +827,6 @@
     }
     if (els.noData) els.noData.style.display = 'none';
 
-    // NEW: inject spinner CSS once before first render.
     injectLoadingStyles();
 
     fetchReservations();

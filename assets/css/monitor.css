@@ -1,15 +1,17 @@
 body {
-    
+
+    /* Hover style for the print button in the Action column */
     .printBtn:hover {
-    background: #f1f5f9;
-    border-color: #e2e8f0;
-    color: #334155;
+        background: #f1f5f9;
+        border-color: #e2e8f0;
+        color: #334155;
     }
 
     margin: 0;
     padding: 0;
     box-sizing: border-box;
-    font-family: 'Inter', sans-serif;
+    font-family: 'Inter',
+    sans-serif;
     background: #f5f6f7;
     height: 100%;
     overflow: hidden;
@@ -23,6 +25,7 @@ body {
         box-sizing: border-box;
         overflow: hidden;
 
+        /* Search and pagination toolbar */
         .tableControls {
             display: flex;
             align-items: center;
@@ -201,6 +204,7 @@ body {
             }
         }
 
+        /* Table title bar */
         .table {
             flex-shrink: 0;
 
@@ -236,6 +240,7 @@ body {
             }
         }
 
+        /* Scrollable table area */
         .tableWrapper {
             display: flex;
             flex: 1 1 auto;
@@ -305,6 +310,7 @@ body {
                         color: #1c1e21;
                         border-bottom: 1px solid #e5e7eb;
 
+                        /* Tinted background for the pending-interment columns */
                         &:nth-child(6),
                         &:nth-child(7),
                         &:nth-child(8),
@@ -340,6 +346,7 @@ body {
                 }
             }
 
+            /* Placeholder shown when there are no rows */
             .noData {
                 display: flex;
                 flex: 1 1 auto;
@@ -375,6 +382,7 @@ body {
     }
 }
 
+/* Action column buttons */
 .actions {
     display: inline-flex;
     align-items: center;
@@ -407,6 +415,7 @@ body {
     transform: translateY(1px);
 }
 
+/* Hover colors for each action type */
 .viewBtn:hover {
     background: #eff6ff;
     border-color: #dbeafe;
@@ -431,8 +440,340 @@ body {
     color: #dc2626;
 }
 
+/* Fade-out animation used when a row is removed from the table */
 #reservation tr.rowFadeOut {
     opacity: 0;
     transform: translateY(-4px);
     transition: opacity .18s ease, transform .18s ease;
+}
+
+html {
+    height: 100%;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+}
+
+body {
+    height: 100vh;
+    height: 100dvh;
+}
+
+body .monitorContent {
+    height: 100vh;
+    height: 100dvh;
+}
+
+body .monitorContent .tableControls {
+    flex-wrap: wrap;
+}
+
+body .monitorContent .tableWrapper {
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Responsive layout */
+@media (min-width: 1600px) {
+    body .monitorContent {
+        padding: 32px 48px;
+    }
+
+    body .monitorContent .tableWrapper table {
+        min-width: 100%;
+    }
+}
+
+@media (max-width: 1280px) {
+    body .monitorContent {
+        padding: 20px;
+    }
+}
+
+@media (max-width: 1024px) {
+    body .monitorContent {
+        padding: 18px;
+    }
+
+    body .monitorContent .tableControls {
+        gap: 10px;
+        margin-bottom: 16px;
+    }
+
+    body .monitorContent .tableWrapper table {
+        min-width: 860px;
+    }
+
+    body .monitorContent .tableWrapper table thead th,
+    body .monitorContent .tableWrapper table tbody td {
+        padding: 12px 14px;
+    }
+}
+
+@media (max-width: 900px) {
+    body .monitorContent {
+        padding: 14px;
+    }
+
+    body .monitorContent .tableWrapper table {
+        min-width: 800px;
+    }
+}
+
+@media (max-width: 768px) {
+    body .monitorContent {
+        padding: 12px;
+    }
+
+    body .monitorContent .tableControls {
+        gap: 8px;
+        margin-bottom: 12px;
+        justify-content: center;
+    }
+
+    body .monitorContent .tableControls .searchBox {
+        flex: 1 1 100%;
+        max-width: 100%;
+        min-width: 0;
+    }
+
+    body .monitorContent .table .tableHeader {
+        padding: 12px 14px;
+    }
+
+    body .monitorContent .table .tableHeader h3 {
+        font-size: 15px;
+    }
+
+    body .monitorContent .table .tableHeader .pageInfoText {
+        font-size: 12px;
+    }
+
+    body .monitorContent .tableWrapper table {
+        min-width: 720px;
+        font-size: 13px;
+    }
+
+    body .monitorContent .tableWrapper table thead th {
+        font-size: 10px;
+        padding: 10px 12px;
+    }
+
+    body .monitorContent .tableWrapper table tbody td {
+        padding: 10px 12px;
+    }
+
+    body .monitorContent .tableControls .paginationContainer .paginationControls {
+        gap: 6px;
+        padding: 5px;
+    }
+
+    body .monitorContent .tableControls .paginationContainer .paginationControls .pageNavBtn {
+        width: 34px;
+        height: 34px;
+    }
+
+    body .monitorContent .tableControls .paginationContainer .paginationControls .carouselViewport {
+        max-width: min(240px, 48vw);
+    }
+
+    body .monitorContent .tableControls .paginationContainer .paginationControls .carouselViewport .carouselTrack button {
+        width: 34px;
+        height: 34px;
+        font-size: 12px;
+    }
+}
+
+@media (max-width: 540px) {
+    body .monitorContent {
+        padding: 10px;
+    }
+
+    body .monitorContent .tableControls {
+        gap: 8px;
+        margin-bottom: 10px;
+    }
+
+    body .monitorContent .table .tableHeader {
+        padding: 10px 12px;
+        gap: 6px;
+    }
+
+    body .monitorContent .table .tableHeader h3 {
+        font-size: 14px;
+    }
+
+    body .monitorContent .tableWrapper table {
+        min-width: 640px;
+        font-size: 13px;
+    }
+
+    body .monitorContent .tableWrapper table thead th {
+        padding: 9px 10px;
+    }
+
+    body .monitorContent .tableWrapper table tbody td {
+        padding: 9px 10px;
+    }
+
+    body .monitorContent .tableWrapper .noData {
+        padding: 32px 16px;
+    }
+
+    body .monitorContent .tableWrapper .noData i {
+        font-size: 26px;
+    }
+
+    body .monitorContent .tableControls .paginationContainer .paginationControls {
+        gap: 4px;
+        padding: 4px;
+    }
+
+    body .monitorContent .tableControls .paginationContainer .paginationControls .carouselViewport {
+        max-width: min(180px, 50vw);
+    }
+}
+
+@media (max-width: 380px) {
+    body .monitorContent {
+        padding: 8px;
+    }
+
+    body .monitorContent .tableWrapper table {
+        min-width: 560px;
+        font-size: 12px;
+    }
+
+    body .monitorContent .tableControls .paginationContainer .paginationControls .carouselViewport {
+        max-width: min(140px, 46vw);
+    }
+}
+
+@media (max-height: 500px) and (orientation: landscape) {
+    body .monitorContent {
+        padding: 8px;
+    }
+
+    body .monitorContent .tableControls {
+        margin-bottom: 8px;
+    }
+
+    body .monitorContent .tableWrapper {
+        min-height: 120px;
+    }
+
+    body .monitorContent .table .tableHeader {
+        padding: 8px 12px;
+    }
+}
+
+@media (max-width: 768px) {
+
+    [class*="modal" i][class*="overlay" i],
+    [class*="modal" i][class*="backdrop" i],
+    [class*="modal" i][class*="wrapper" i],
+    [class*="modal" i][class*="container" i] {
+        padding: 8px !important;
+        align-items: flex-start !important;
+        justify-content: center !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch;
+        box-sizing: border-box;
+    }
+
+    [class*="modal" i][class*="content" i],
+    [class*="modal" i][class*="dialog" i],
+    [class*="modal" i][class*="panel" i],
+    [class*="modal" i][class*="card" i] {
+        width: 100% !important;
+        max-width: calc(100vw - 16px) !important;
+        max-height: calc(100dvh - 16px) !important;
+        margin: 0 auto !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch;
+        box-sizing: border-box;
+    }
+
+    [class*="modal" i][class*="body" i] {
+        max-height: none !important;
+        overflow-y: visible !important;
+    }
+
+    [class*="modal" i] input,
+    [class*="modal" i] select,
+    [class*="modal" i] textarea {
+        max-width: 100% !important;
+        box-sizing: border-box !important;
+    }
+
+    [class*="modal" i] [class*="form" i][class*="row" i],
+    [class*="modal" i] [class*="form" i][class*="grid" i],
+    [class*="modal" i] [class*="field" i][class*="row" i],
+    [class*="modal" i] [class*="input" i][class*="row" i] {
+        grid-template-columns: 1fr !important;
+        flex-direction: column !important;
+        align-items: stretch !important;
+    }
+
+    [class*="modal" i][class*="content" i] [class*="footer" i],
+    [class*="modal" i][class*="dialog" i] [class*="footer" i],
+    [class*="modal" i][class*="panel" i] [class*="footer" i] {
+        flex-wrap: wrap !important;
+        gap: 8px !important;
+    }
+
+    [class*="modal" i][class*="content" i] [class*="footer" i]>*,
+    [class*="modal" i][class*="dialog" i] [class*="footer" i]>*,
+    [class*="modal" i][class*="panel" i] [class*="footer" i]>* {
+        flex: 1 1 auto;
+        min-width: 120px;
+    }
+}
+
+@media (max-width: 540px) {
+
+    [class*="modal" i][class*="overlay" i],
+    [class*="modal" i][class*="backdrop" i],
+    [class*="modal" i][class*="wrapper" i],
+    [class*="modal" i][class*="container" i] {
+        padding: 6px !important;
+    }
+
+    [class*="modal" i][class*="content" i],
+    [class*="modal" i][class*="dialog" i],
+    [class*="modal" i][class*="panel" i],
+    [class*="modal" i][class*="card" i] {
+        max-width: calc(100vw - 12px) !important;
+        max-height: calc(100dvh - 12px) !important;
+    }
+
+    [class*="modal" i][class*="content" i] [class*="footer" i]>*,
+    [class*="modal" i][class*="dialog" i] [class*="footer" i]>*,
+    [class*="modal" i][class*="panel" i] [class*="footer" i]>* {
+        flex: 1 1 100%;
+    }
+}
+
+/* On phones or short screens, pin the pagination bar to the bottom */
+@media (max-width: 768px),
+(max-height: 500px) {
+    body .monitorContent {
+        position: relative;
+        padding-bottom: 74px;
+    }
+
+    body .monitorContent .tableControls .searchBox {
+        flex: 1 1 100%;
+        max-width: 100%;
+        min-width: 0;
+    }
+
+    body .monitorContent .tableControls .paginationContainer {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 12px;
+        margin: 0;
+        padding: 0;
+        display: flex;
+        justify-content: center;
+    }
 }

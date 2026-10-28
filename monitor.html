@@ -9,7 +9,6 @@
     <meta name="author" content="Team DND">
     <meta name="theme-color" content="#2f3136">
     <meta name="robots" content="index, follow">
-
     <meta name="geo.region" content="PH-CEB">
     <meta name="geo.placename" content="Mandaue City">
 
@@ -19,12 +18,10 @@
     <meta property="og:title" content="Memoria | Cemetery Management System">
     <meta property="og:description" content="Efficiently manage and locate records within the Cemetery.">
     <meta property="og:image" content="https://cdn1.iconfinder.com/data/icons/government-buildings-5/504/cemetery-graveyard-tombstone-burial-memorial-512.png">
-
     <meta name="twitter:card" content="summary_large_image">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
 
@@ -38,6 +35,7 @@
 </head>
 <body>
     <div class="monitorContent">
+        <!-- Search box and pagination controls -->
         <div class="tableControls">
             <div class="searchBox">
                 <i class="fas fa-search"></i>
@@ -46,10 +44,11 @@
 
             <div class="paginationContainer">
                 <div class="paginationControls">
-                    <button class="pageNavBtn" id="prev_page_btn" title="Previous Page">   
+                    <button class="pageNavBtn" id="prev_page_btn" title="Previous Page">
                         <i class="fas fa-chevron-left"></i>
                     </button>
 
+                    <!-- Sliding window of page number buttons -->
                     <div class="carouselViewport" id="carousel_viewport">
                         <div class="carouselTrack" id="carousel_track"></div>
                     </div>
@@ -61,6 +60,7 @@
             </div>
         </div>
 
+        <!-- Table header with page indicator -->
         <div class="table">
             <div class="tableHeader">
                 <h3>Monitor</h3>
@@ -68,6 +68,7 @@
             </div>
         </div>
 
+        <!-- Data table -->
         <div class="tableWrapper">
             <table>
                 <thead>
