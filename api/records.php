@@ -1,64 +1,46 @@
 <?php
 
-/**
- * records.php – Master File. Full CRUD for interments.
- *
- * GET    /records.php/{id}  : One interment + its placement history
- * GET    /records.php       : List interments (Active / Inactive only),
- *                             each with its nested placement history
- * POST   /records.php       : Create a manual interment record
- * PUT    /records.php/{id}  : Update (blocked if an Active reservation locks it)
- * DELETE /records.php/{id}  : Soft-delete (blocked if an Active reservation locks it)
- *
- * CO-INTERMENT
- *   Multiple Active interments may point at the same grave. This file does
- *   NOT enforce grave.status = 'Vacant' when creating or editing an Active
- *   interment. Grave status is derived from `interments` via
- *   rederiveGraveStatus().
- *
- * RESERVATION-AWARE LOCKS
- *   While a reservation is Active, its anchors are locked:
- *     - The incoming person   (reservations.pending_interment_id)
- *     - The old occupant      (reservations.old_interment_id)
- *     - The target grave      (reservations.target_grave_id)
- *     - The old occupant's destination grave (reservations.old_new_grave_id)
- *
- *   This file refuses to:
- *     - Edit or delete a locked interment.
- *     - Move any interment INTO a locked grave.
- *     - Create a new interment in a locked grave.
- *
- *   It DOES allow:
- *     - Moving a bystander OUT of a locked grave (the reservation only cares
- *       that the target eventually holds exactly N; a bystander leaving is fine).
- *     - Editing records that aren't referenced by any Active reservation.
- *
- * HISTORY
- *   placement_history records PHYSICAL PLACEMENTS only.  Field edits
- *   (name correction, contact update, permit added) are NOT logged.
- *
- *   Event types produced by this file:
- *     - Initial  : current_grave_id went from NULL  -> a grave
- *     - Move     : current_grave_id went from grave -> a different grave
- *     - Removal  : current_grave_id went from grave -> NULL
- *
- *   POST that creates a row already Active with a grave also logs an
- *   'Initial' event. POST that creates an Inactive (or Active-without-grave)
- *   row does NOT log — nothing moved.
- *
- *   DELETE does NOT log. deleted_at is a record-keeping flag, not a movement.
- *
- *   A PUT that only changes fields (no grave change) logs nothing.
- *
- * RESPONSE SHAPE
- *   Both GET handlers return an `interments` array.  Each item is a LIVE
- *   row (is_history: false).  Each item carries its own `history` array of
- *   placement entries (is_history: true) inside it.
- *
- *   The single-ID handler keeps the historical flat shape too: the top-level
- *   array still contains BOTH the live row (index 0) and each history entry
- *   (indexes 1..n) for backwards compatibility.
- */
+// records.php - Master File, full CRUD for interments
+// GET    /records.php/{id}  returns one interment plus its placement history
+// GET    /records.php       lists interments (Active or Inactive only) with nested placement history
+// POST   /records.php       creates a manual interment record
+// PUT    /records.php/{id}  updates, blocked if an Active reservation locks it
+// DELETE /records.php/{id}  soft-deletes, blocked if an Active reservation locks it
+//
+// CO-INTERMENT
+// multiple Active interments may point at the same grave
+// this file does not enforce grave.status = 'Vacant' when creating or editing an Active interment
+// grave status is derived from interments via rederiveGraveStatus()
+//
+// RESERVATION-AWARE LOCKS
+// while a reservation is Active its anchors are locked
+// the incoming person (reservations.pending_interment_id)
+// the old occupant (reservations.old_interment_id)
+// the target grave (reservations.target_grave_id)
+// the old occupant's destination grave (reservations.old_new_grave_id)
+// this file refuses to edit or delete a locked interment
+// this file refuses to move any interment into a locked grave
+// this file refuses to create a new interment in a locked grave
+// this file does allow moving a bystander out of a locked grave, the reservation only cares that the target eventually holds exactly N
+// this file does allow editing records that no Active reservation references
+//
+// HISTORY
+// placement_history records physical placements only
+// field edits like name corrections, contact updates, or permits added are not logged
+// Initial means current_grave_id went from NULL to a grave
+// Move means current_grave_id went from one grave to another
+// Removal means current_grave_id went from a grave to NULL
+// a POST that creates a row already Active with a grave also logs an Initial event
+// a POST that creates an Inactive row or an Active row without a grave logs nothing, nothing moved
+// DELETE does not log, deleted_at is a record-keeping flag not a movement
+// a PUT that only changes fields and not the grave logs nothing
+//
+// RESPONSE SHAPE
+// both GET handlers return an interments array
+// each item is a live row with is_history: false
+// each item carries its own history array of placement entries with is_history: true
+// the single-ID handler keeps the historical flat shape too
+// the top-level array still contains the live row at index 0 and each history entry at indexes 1..n for backwards compatibility
 
 define('ITS_ME_JUSTTOVERIFY', true);
 
@@ -85,9 +67,7 @@ $resourceId = array_shift($pathParts);
 
 $userId = (int) $userData['user_id'];
 
-// -----------------------------------------------------------------------------
-// Formatter for a live or snapshot row
-// -----------------------------------------------------------------------------
+// Shape a live or snapshot row into the JSON structure the client expects
 $formatInterment = function (array $r): array {
     $g = function ($key, $default = null) use ($r) {
         return array_key_exists($key, $r) ? $r[$key] : $default;
@@ -129,19 +109,17 @@ $formatInterment = function (array $r): array {
         'lease_expiration_date'           => $g('lease_expiration_date'),
         'status'                          => $g('status'),
         'remarks'                         => $g('remarks'),
+        'created_at'                      => $g('created_at'),
+        'updated_at'                      => $g('updated_at'),
     ];
 };
 
-// -----------------------------------------------------------------------------
-// Build one history item from a placement_history row + its grave joins.
-// Shared by the single-record handler and the list handler.
-// -----------------------------------------------------------------------------
+// Build one history item from a placement_history row plus its grave joins
 $buildHistoryRow = function (array $e) use ($formatInterment): array {
     $before = json_decode((string) $e['snapshot_before'], true) ?: [];
     $after  = json_decode((string) $e['snapshot_after'],  true) ?: [];
 
-    // Display the "state at the time of the event" using snapshot_before
-    // as the base. Override grave fields with the from-grave join.
+    // Base the display state on snapshot_before, then override with the from-grave join
     $base = $before;
     $base['grave_code']       = $e['from_grave_code'];
     $base['row_num']          = $e['from_row_num'];
@@ -186,7 +164,7 @@ $buildHistoryRow = function (array $e) use ($formatInterment): array {
     return $row;
 };
 
-// The history SELECT is shared too — same column list in both handlers.
+// Shared column list for placement history so both GET handlers stay in sync
 $historySelectSql = "
     SELECT ph.*,
            fg.grave_code AS from_grave_code, fg.row_num AS from_row_num, fg.col_num AS from_col_num,
@@ -202,18 +180,8 @@ $historySelectSql = "
     LEFT JOIN blocks tb ON tb.block_id = tg.block_id        AND tb.deleted_at IS NULL
 ";
 
-// =============================================================================
-// GET
-// =============================================================================
 if ($method === 'GET') {
 
-    // -------------------------------------------------------------------------
-    // GET /records.php/{id} — one interment + placement history
-    //
-    // FLAT shape (backwards-compatible):
-    //   interments[0]      = live row, is_history = false
-    //   interments[1..n]   = history rows, is_history = true
-    // -------------------------------------------------------------------------
     if ($resourceId && is_numeric($resourceId)) {
         $id = (int) $resourceId;
 
@@ -234,12 +202,12 @@ if ($method === 'GET') {
             Response::error('Interment not found.', 404);
         }
 
+        // Flat shape: live row first, history rows after
         $interments = [];
         $liveFormatted = $formatInterment($live);
         $liveFormatted['is_history'] = false;
         $interments[] = $liveFormatted;
 
-        // History entries for this interment
         $histStmt = $pdo->prepare(
             $historySelectSql . "
             WHERE ph.interment_id = ?
@@ -256,26 +224,6 @@ if ($method === 'GET') {
         Response::success('Interment retrieved', ['interments' => $interments]);
     }
 
-    // -------------------------------------------------------------------------
-    // GET /records.php — list
-    //
-    // NESTED shape (paginated over LIVE records):
-    //   interments[i]              = live row, is_history = false
-    //   interments[i]['history']   = array of history rows, is_history = true
-    //
-    // SEARCH SCOPE (when search_term is provided)
-    //   A live row is included if EITHER:
-    //     - the row's own fields match (name, grave, contacts, etc.), OR
-    //     - one of its placement_history entries matches
-    //       (reason, event_type, from/to grave codes and blocks).
-    //
-    //   When a row matches via its history only, its nested `history` array
-    //   is filtered to just the matching entries.
-    //
-    //   The item-level `matched_via` field ('record' | 'history') tells the
-    //   frontend which dimension the match came from.  Only meaningful when
-    //   a search term was provided.
-    // -------------------------------------------------------------------------
     $searchTerm = trim((string) ($_GET['search_term'] ?? ''));
     if ($searchTerm !== '' && mb_strlen($searchTerm) < 3) {
         Response::error("Search term must be at least 3 characters long", 400);
@@ -285,7 +233,7 @@ if ($method === 'GET') {
     $limit = max(1, min((int) ($_GET['limit'] ?? 100), 500));
     $page  = max(1, (int) ($_GET['page'] ?? 1));
 
-    // Status filter: Active, Inactive (comma-separated). Default: both.
+    // Status filter defaults to both Active and Inactive
     $statusRaw = $_GET['status'] ?? '';
     if (is_array($statusRaw)) {
         $statusRaw = implode(',', $statusRaw);
@@ -312,7 +260,6 @@ if ($method === 'GET') {
         $statusParams = $wantedStatuses;
     }
 
-    // ---- Build search clauses (live + history) -----------------------------
     $liveMatchSQL       = '';
     $liveMatchParams    = [];
     $historyMatchSQL    = '';
@@ -321,7 +268,9 @@ if ($method === 'GET') {
     if ($hasSearch) {
         $like = '%' . $searchTerm . '%';
 
-        // Live-row columns
+        // Parsed once and reused for live and history branches, plain text adds no clauses
+        $dateCriteria = convert_dates($searchTerm);
+
         $liveCols = [
             'i.control_number',
             'i.deceased_name',
@@ -351,9 +300,51 @@ if ($method === 'GET') {
             $parts[] = "$c LIKE ?";
             $liveMatchParams[] = $like;
         }
+
+        // DATE()/MONTH()/DAY()/YEAR() skip indexes but LIKE '%...%' already forced a scan
+        $liveDateCols = [
+            'i.deceased_date_of_birth',
+            'i.deceased_date_of_death',
+            'i.burial_permit_date',
+            'i.transfer_permit_date',
+            'i.exhumation_permit_date',
+            'i.date_buried',
+            'i.date_exhumed',
+            'i.burial_clearance_date',
+            'i.lease_expiration_date',
+            'i.created_at',
+            'i.updated_at',
+        ];
+
+        foreach ($dateCriteria['exact_dates'] as $d) {
+            foreach ($liveDateCols as $col) {
+                $parts[] = "DATE($col) = ?";
+                $liveMatchParams[] = $d;
+            }
+        }
+        foreach ($dateCriteria['month_days'] as $md) {
+            foreach ($liveDateCols as $col) {
+                $parts[] = "(MONTH($col) = ? AND DAY($col) = ?)";
+                $liveMatchParams[] = $md['m'];
+                $liveMatchParams[] = $md['d'];
+            }
+        }
+        foreach ($dateCriteria['year_months'] as $ym) {
+            foreach ($liveDateCols as $col) {
+                $parts[] = "(YEAR($col) = ? AND MONTH($col) = ?)";
+                $liveMatchParams[] = $ym['y'];
+                $liveMatchParams[] = $ym['m'];
+            }
+        }
+        foreach ($dateCriteria['years'] as $y) {
+            foreach ($liveDateCols as $col) {
+                $parts[] = "YEAR($col) = ?";
+                $liveMatchParams[] = $y;
+            }
+        }
+
         $liveMatchSQL = '(' . implode(' OR ', $parts) . ')';
 
-        // History columns
         $histCols = [
             'ph.reason',
             'ph.event_type',
@@ -369,9 +360,30 @@ if ($method === 'GET') {
             $parts[] = "$c LIKE ?";
             $historyMatchParams[] = $like;
         }
+
+        // Same date criteria against placement_history.event_date
+        foreach ($dateCriteria['exact_dates'] as $d) {
+            $parts[] = "DATE(ph.event_date) = ?";
+            $historyMatchParams[] = $d;
+        }
+        foreach ($dateCriteria['month_days'] as $md) {
+            $parts[] = "(MONTH(ph.event_date) = ? AND DAY(ph.event_date) = ?)";
+            $historyMatchParams[] = $md['m'];
+            $historyMatchParams[] = $md['d'];
+        }
+        foreach ($dateCriteria['year_months'] as $ym) {
+            $parts[] = "(YEAR(ph.event_date) = ? AND MONTH(ph.event_date) = ?)";
+            $historyMatchParams[] = $ym['y'];
+            $historyMatchParams[] = $ym['m'];
+        }
+        foreach ($dateCriteria['years'] as $y) {
+            $parts[] = "YEAR(ph.event_date) = ?";
+            $historyMatchParams[] = $y;
+        }
+
         $historyMatchSQL = '(' . implode(' OR ', $parts) . ')';
 
-        // Outer WHERE: (live OR history exists)
+        // A record matches if its live fields match OR any history entry matches
         $historyExistsSql = "
             EXISTS (
                 SELECT 1
@@ -389,15 +401,13 @@ if ($method === 'GET') {
 
     $whereSQL = ' WHERE ' . implode(' AND ', $where);
 
-    // Params in SQL text order for the outer queries:
-    //   status  → live (if search)  → history (if search)
+    // Params in SQL text order: status, then live search, then history search
     $outerParams = array_merge(
         $statusParams,
         $hasSearch ? $liveMatchParams    : [],
         $hasSearch ? $historyMatchParams : []
     );
 
-    // ---- Count -------------------------------------------------------------
     $countStmt = $pdo->prepare("
         SELECT COUNT(*)
         FROM interments i
@@ -412,7 +422,6 @@ if ($method === 'GET') {
     $page       = min($page, max(1, $totalPages));
     $offset     = ($page - 1) * $limit;
 
-    // ---- Page fetch --------------------------------------------------------
     $pageStmt = $pdo->prepare("
         SELECT i.*,
                g.grave_code, g.row_num, g.col_num,
@@ -428,8 +437,8 @@ if ($method === 'GET') {
     $pageStmt->execute($outerParams);
     $rows = $pageStmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // ---- Classify rows: matched on record vs. matched on history only ------
-    $liveMatchedIds = [];   // rows whose LIVE fields match the search
+    // Split rows into "matched on record" vs "matched on history only"
+    $liveMatchedIds = [];
     if ($hasSearch && !empty($rows)) {
         $pageIds = array_map(function ($r) {
             return (int) $r['interment_id'];
@@ -451,7 +460,7 @@ if ($method === 'GET') {
         );
     }
 
-    // ---- Fetch nested history ----------------------------------------------
+    // Rows that matched on record get full history, rows that matched on history get only matching entries
     $historyByInterment = [];
     $fullHistoryIds     = [];
     $filteredHistoryIds = [];
@@ -466,7 +475,6 @@ if ($method === 'GET') {
             }
         }
 
-        // Full history for rows whose live fields matched (or no search)
         if (!empty($fullHistoryIds)) {
             $inPh = implode(',', array_fill(0, count($fullHistoryIds), '?'));
             $histStmt = $pdo->prepare(
@@ -482,7 +490,6 @@ if ($method === 'GET') {
             }
         }
 
-        // Filtered history for rows that matched only via history
         if (!empty($filteredHistoryIds)) {
             $inPh = implode(',', array_fill(0, count($filteredHistoryIds), '?'));
             $histStmt = $pdo->prepare(
@@ -500,12 +507,12 @@ if ($method === 'GET') {
         }
     }
 
-    // ---- Build items -------------------------------------------------------
     $items = [];
     foreach ($rows as $r) {
         $iid = (int) $r['interment_id'];
         $f = $formatInterment($r);
         $f['is_history']  = false;
+        // matched_via tells the frontend whether the search hit the record or one of its history entries
         $f['matched_via'] = (!$hasSearch || in_array($iid, $liveMatchedIds, true))
             ? 'record'
             : 'history';
@@ -525,13 +532,13 @@ if ($method === 'GET') {
     if ($searchTerm !== '') {
         $payload['search_term'] = $searchTerm;
     }
+    if ($statusRaw) {
+        $payload['status'] = $statusRaw;
+    }
 
     Response::success('Interments retrieved', $payload);
 }
 
-// =============================================================================
-// POST — create a manual interment
-// =============================================================================
 if ($method === 'POST') {
 
     $required = ['control_number', 'deceased_name', 'assistance_type'];
@@ -556,14 +563,13 @@ if ($method === 'POST') {
         Response::error("Invalid deceased_sex.", 400);
     }
 
-    // Inactive rows never carry a grave.
+    // Inactive rows never carry a grave
     $currentGraveId = !empty($rawData['current_grave_id']) ? (int) $rawData['current_grave_id'] : null;
     if ($status === 'Inactive') {
         $rawData['current_grave_id'] = null;
         $currentGraveId              = null;
     }
 
-    // Date validation
     $dateFields = [
         'deceased_date_of_birth',
         'deceased_date_of_death',
@@ -649,13 +655,13 @@ if ($method === 'POST') {
         $stmt->execute($values);
         $newId = (int) $pdo->lastInsertId();
 
-        // Log the initial placement if the row starts Active with a grave.
+        // Only Active rows with a grave represent a physical placement
         if ($status === 'Active' && $currentGraveId) {
             $afterStmt = $pdo->prepare("SELECT * FROM interments WHERE interment_id = ?");
             $afterStmt->execute([$newId]);
             $after = $afterStmt->fetch(PDO::FETCH_ASSOC);
 
-            // Synthetic "before": Pending, no grave.
+            // Synthetic before: Pending with no grave, so the log reads naturally
             $before = $after;
             $before['current_grave_id'] = null;
             $before['status']           = 'Pending';
@@ -701,9 +707,6 @@ if ($method === 'POST') {
     }
 }
 
-// =============================================================================
-// PUT — update an interment
-// =============================================================================
 if ($method === 'PUT') {
 
     if ($resourceId && is_numeric($resourceId)) {
@@ -716,7 +719,6 @@ if ($method === 'PUT') {
 
     $pdo->beginTransaction();
     try {
-        // Lock the row
         $stmt = $pdo->prepare("
             SELECT * FROM interments
             WHERE interment_id = ? AND deleted_at IS NULL
@@ -729,14 +731,13 @@ if ($method === 'PUT') {
             Response::error("Interment not found.", 404);
         }
 
-        // Reservation lock on the interment itself
         $lock = activePlanLockingInterment($pdo, $id);
         if ($lock !== null) {
             $pdo->rollBack();
             Response::error("This record is part of an Active reservation (#$lock). Cancel or Confirm the reservation first.", 409);
         }
 
-        // Never allow editing Pending rows via the Master File.
+        // Pending rows belong to the Reserve / Monitor flow, not the Master File
         if ($before['status'] === 'Pending') {
             $pdo->rollBack();
             Response::error("Cannot edit a Pending interment. Use Monitor to Confirm or Cancel its reservation.", 409);
@@ -829,7 +830,7 @@ if ($method === 'PUT') {
             $params[]  = $val !== '' ? $val : null;
         }
 
-        // Becoming Inactive without an explicit grave change: clear the grave.
+        // Becoming Inactive with no grave in the payload still needs the grave cleared
         if ($newStatus === 'Inactive' && !array_key_exists('current_grave_id', $rawData)) {
             if ($newGraveId !== null) {
                 $newGraveId   = null;
@@ -839,7 +840,7 @@ if ($method === 'PUT') {
             }
         }
 
-        // Non-Active rows must not have a grave.
+        // Non-Active rows must not have a grave (CHECK constraint)
         if ($newStatus !== 'Active' && $newGraveId !== null) {
             $pdo->rollBack();
             Response::error("Only Active interments may have a current_grave_id.", 400);
@@ -850,10 +851,10 @@ if ($method === 'PUT') {
             Response::error("No fields to update.", 400);
         }
 
-        // Lock affected graves in ascending order.
+        // Ascending order so two concurrent updates touching the same pair can't deadlock
         lockGraveRows($pdo, [$oldGraveId, $newGraveId]);
 
-        // If moving into a new grave, that grave must not be locked by a reservation.
+        // Moving into a new grave is blocked if a reservation is holding it
         if ($graveChanged && $newGraveId !== null) {
             $lock = activePlanLockingGrave($pdo, $newGraveId);
             if ($lock !== null) {
@@ -868,7 +869,6 @@ if ($method === 'PUT') {
             }
         }
 
-        // Audit + apply
         $updates[] = "updated_by = ?";
         $params[]  = $userId;
         $params[]  = $id;
@@ -877,17 +877,11 @@ if ($method === 'PUT') {
         $updStmt = $pdo->prepare($sql);
         $updStmt->execute($params);
 
-        // Read after
         $afterStmt = $pdo->prepare("SELECT * FROM interments WHERE interment_id = ?");
         $afterStmt->execute([$id]);
         $after = $afterStmt->fetch(PDO::FETCH_ASSOC);
 
-        // ---------------------------------------------------------------------
-        // Write placement history ONLY when the grave changed.
-        //
-        // Field edits (name, contacts, permits) are NOT logged.  They only
-        // modify the live interments row.
-        // ---------------------------------------------------------------------
+        // Only log a placement when the grave actually changed, field edits don't touch the log
         if ($graveChanged) {
             if ($before['current_grave_id'] === null) {
                 $eventType = 'Initial';
@@ -909,7 +903,6 @@ if ($method === 'PUT') {
             );
         }
 
-        // Re-derive affected graves.
         if ($graveChanged) {
             if ($oldGraveId) rederiveGraveStatus($pdo, $oldGraveId);
             if ($newGraveId) rederiveGraveStatus($pdo, $newGraveId);
@@ -949,9 +942,6 @@ if ($method === 'PUT') {
     }
 }
 
-// =============================================================================
-// DELETE — soft-delete
-// =============================================================================
 if ($method === 'DELETE') {
 
     if ($resourceId && is_numeric($resourceId)) {
@@ -977,13 +967,12 @@ if ($method === 'DELETE') {
             Response::error("Interment not found or already deleted.", 404);
         }
 
-        // Pending rows are owned by the Reserve / Monitor flow.
+        // Pending rows belong to the Reserve / Monitor flow
         if ($row['status'] === 'Pending') {
             $pdo->rollBack();
             Response::error("Cannot delete a Pending interment. Cancel the reservation first via Monitor.", 409);
         }
 
-        // Reservation lock on the interment.
         $lock = activePlanLockingInterment($pdo, $id);
         if ($lock !== null) {
             $pdo->rollBack();

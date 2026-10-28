@@ -1,57 +1,40 @@
 <?php
 
-/**
- * monitor.php – View Active reservations, edit them, Confirm or Cancel.
- *
- * GET    /monitor.php         : List all Active reservations (paginated, searchable)
- * GET    /monitor.php/{id}    : Get one Active reservation
- * POST   /monitor.php/{id}    : EDIT-AND-EXECUTE.  Accepts the SAME payload as
- *                               reserve.php POST.  Applies the edits to N's
- *                               interments row and to the reservation row,
- *                               then executes the moves in ONE transaction.
- * DELETE /monitor.php/{id}    : Cancel the reservation.
- *
- * POST (edit-and-execute) — atomic
- *   Anchors (LOCKED, from the existing reservation row; payload values are
- *   ignored):
- *       pending_interment_id, target_grave_id, old_interment_id
- *
- *   Editable (from the payload, same shape as reserve.php):
- *       - N's biography fields (control_number, deceased_name, contacts,
- *         permits, dates, remarks, ...)  → written to N's interments row
- *       - O's planned future (old_new_status, old_new_grave_id,
- *         old_new_assistance_type, old_new_remarks)
- *       - Permits for the move (exhumation_permit_number, transfer_permit_number)
- *       - reservation_notes
- *       - old_edited_fields (JSON DIFF of O's biography) — merged into
- *         the reservation; applied to O's interments row on execute
- *
- *   Flow:
- *     1. Lock reservation row.  Verify reservation_state = 'Active'.
- *     2. Read anchors (pending_interment_id, target_grave_id, old_interment_id).
- *     3. Parse payload → effective field values (payload overrides row).
- *     4. Lock graves (target + O's destination, ascending) and N and O.
- *     5. Re-validate every precondition.  Abort if anything drifted.
- *     6. UPDATE reservation SET editable non-anchor fields.
- *     7. Build one UPDATE for O: move + status + assistance_type + remarks
- *        + every staged biography field in old_edited_fields.
- *        Take snapshot_before / snapshot_after, write placement_history.
- *     8. Build one UPDATE for N: all biography fields from payload +
- *        status='Active' + current_grave_id=target.
- *        Take snapshot_before / snapshot_after, write placement_history.
- *     9. Re-derive grave statuses.
- *    10. Mark reservation Executed.
- *    11. Commit.
- *
- *   Field-name handling for old_edited_fields is identical to reserve.php:
- *     only changed fields are stored (a DIFF), whitelisted here too.
- *
- * CANCEL (atomic)
- *   1. Lock the reservation row.  Verify reservation_state = 'Active'.
- *   2. Soft-delete N.
- *   3. UPDATE reservation: reservation_state='Cancelled', actioned_at=NOW().
- *   O is NEVER touched.
- */
+// monitor.php - view Active reservations, edit them, Confirm or Cancel
+// GET    /monitor.php         lists all Active reservations, paginated and searchable
+// GET    /monitor.php/{id}    returns one Active reservation
+// POST   /monitor.php/{id}    edit-and-execute, same payload shape as reserve.php POST
+// DELETE /monitor.php/{id}    cancels the reservation
+//
+// POST is atomic
+// Anchors pending_interment_id, target_grave_id, old_interment_id come from the reservation row, payload values for them are ignored
+// Editable: N's biography fields, written to N's interments row
+// Editable: O's planned future (old_new_status, old_new_grave_id, old_new_assistance_type, old_new_remarks)
+// Editable: permits for the move (exhumation_permit_number, transfer_permit_number)
+// Editable: reservation_notes
+// Editable: old_edited_fields (JSON DIFF of O's biography), merged into the reservation and applied to O on execute
+//
+// POST flow
+// lock the reservation row and verify reservation_state = 'Active'
+// read anchors pending_interment_id, target_grave_id, old_interment_id from the row
+// parse payload into effective field values, payload overrides the row
+// lock graves (target and O's destination, ascending) then N and O
+// re-validate every precondition, abort if anything drifted
+// update the reservation with the editable non-anchor fields
+// update O in one statement covering move, status, assistance_type, remarks, and staged old_edited_fields
+// snapshot O before and after, then write placement_history
+// update N in one statement covering biography fields, status = 'Active', and current_grave_id = target
+// snapshot N before and after, then write placement_history
+// re-derive grave statuses
+// mark the reservation Executed
+// commit
+//
+// old_edited_fields follows reserve.php exactly, only changed fields are stored and the same whitelist applies
+//
+// CANCEL is atomic
+// lock the reservation row and verify reservation_state = 'Active'
+// soft-delete N
+// update the reservation to 'Cancelled' with actioned_at = NOW(), O is never touched
 
 define('ITS_ME_JUSTTOVERIFY', true);
 
@@ -78,17 +61,11 @@ $resourceId = array_shift($pathParts);
 
 $userId = (int) $userData['user_id'];
 
-// -----------------------------------------------------------------------------
-// Enum lists (shared between parse and validate steps)
-// -----------------------------------------------------------------------------
+// Enum lists shared between the parse and validate steps
 $ASSISTANCE_ENUM = ['Burial', 'Transfer the remains of the late', 'Other'];
 $SEX_ENUM        = ['Male', 'Female', 'Unknown'];
 
-// -----------------------------------------------------------------------------
-// Parse a payload's `old_edited_fields` (JSON DIFF) into a canonical JSON
-// string, or null if nothing valid was provided.  Same contract as reserve.php.
-// Returns the JSON string on success; throws on invalid input.
-// -----------------------------------------------------------------------------
+// Parse old_edited_fields into canonical JSON, or null when nothing valid (same contract as reserve.php)
 $parseOldEditedFields = function ($input) use ($ASSISTANCE_ENUM, $SEX_ENUM): ?string {
     if (is_string($input)) {
         $decoded = json_decode($input, true);
@@ -155,15 +132,14 @@ $parseOldEditedFields = function ($input) use ($ASSISTANCE_ENUM, $SEX_ENUM): ?st
     return empty($staged) ? null : json_encode($staged, JSON_UNESCAPED_UNICODE);
 };
 
-// -----------------------------------------------------------------------------
-// Formatter
-// -----------------------------------------------------------------------------
+// Shape a reservation row into the JSON structure the client expects
 $formatReservation = function (array $r): array {
     return [
         'reservation_id'    => (int) $r['reservation_id'],
         'reservation_state' => $r['reservation_state'],
         'reservation_notes' => $r['reservation_notes'],
         'created_at'        => $r['created_at'],
+        'updated_at'        => $r['updated_at'],
         'created_by'        => $r['created_by'] ? (int) $r['created_by'] : null,
         'created_by_name'   => $r['creator_name'],
         'actioned_at'       => $r['actioned_at'],
@@ -256,9 +232,6 @@ $formatReservation = function (array $r): array {
     ];
 };
 
-// -----------------------------------------------------------------------------
-// Base SELECT for a reservation
-// -----------------------------------------------------------------------------
 $baseReservationSelect = "
     SELECT
         rs.*,
@@ -336,9 +309,6 @@ $baseReservationSelect = "
     LEFT  JOIN blocks    obg ON obg.block_id = og.block_id        AND obg.deleted_at IS NULL
 ";
 
-// =============================================================================
-// GET — List/View Reservations
-// =============================================================================
 if ($method === 'GET') {
 
     if ($resourceId) {
@@ -396,6 +366,70 @@ if ($method === 'GET') {
             $parts[] = "$c LIKE ?";
             $searchParams[] = $like;
         }
+
+        // Date search covers the reservation, N, and O
+        // convert_dates() returns empty arrays for plain text, so the extra cost is zero
+        // DATE()/MONTH()/DAY()/YEAR() skip indexes but LIKE '%...%' already forced a scan
+        // o.* columns are NULL when there is no old occupant, so those matches safely return NULL
+        $dateCriteria = convert_dates($searchTerm);
+
+        $dateCols = [
+            // Reservation
+            'rs.created_at',
+            'rs.updated_at',
+            // Pending interment (N)
+            'p.deceased_date_of_birth',
+            'p.deceased_date_of_death',
+            'p.burial_permit_date',
+            'p.transfer_permit_date',
+            'p.exhumation_permit_date',
+            'p.date_buried',
+            'p.date_exhumed',
+            'p.burial_clearance_date',
+            'p.lease_expiration_date',
+            'p.created_at',
+            'p.updated_at',
+            // Old occupant (O)
+            'o.deceased_date_of_birth',
+            'o.deceased_date_of_death',
+            'o.burial_permit_date',
+            'o.transfer_permit_date',
+            'o.exhumation_permit_date',
+            'o.date_buried',
+            'o.date_exhumed',
+            'o.burial_clearance_date',
+            'o.lease_expiration_date',
+            'o.created_at',
+            'o.updated_at',
+        ];
+
+        foreach ($dateCriteria['exact_dates'] as $d) {
+            foreach ($dateCols as $col) {
+                $parts[] = "DATE($col) = ?";
+                $searchParams[] = $d;
+            }
+        }
+        foreach ($dateCriteria['month_days'] as $md) {
+            foreach ($dateCols as $col) {
+                $parts[] = "(MONTH($col) = ? AND DAY($col) = ?)";
+                $searchParams[] = $md['m'];
+                $searchParams[] = $md['d'];
+            }
+        }
+        foreach ($dateCriteria['year_months'] as $ym) {
+            foreach ($dateCols as $col) {
+                $parts[] = "(YEAR($col) = ? AND MONTH($col) = ?)";
+                $searchParams[] = $ym['y'];
+                $searchParams[] = $ym['m'];
+            }
+        }
+        foreach ($dateCriteria['years'] as $y) {
+            foreach ($dateCols as $col) {
+                $parts[] = "YEAR($col) = ?";
+                $searchParams[] = $y;
+            }
+        }
+
         $searchSQL = ' AND (' . implode(' OR ', $parts) . ')';
     }
 
@@ -441,9 +475,6 @@ if ($method === 'GET') {
     Response::success('Active reservations retrieved', $payload);
 }
 
-// =============================================================================
-// DELETE – Cancel reservation
-// =============================================================================
 if ($method === 'DELETE') {
     if ($resourceId && is_numeric($resourceId)) {
         $rawData['reservation_id'] = (int) $resourceId;
@@ -515,9 +546,6 @@ if ($method === 'DELETE') {
     }
 }
 
-// =============================================================================
-// POST – Edit-and-execute reservation
-// =============================================================================
 if ($method === 'POST') {
     if ($resourceId && is_numeric($resourceId)) {
         $rawData['reservation_id'] = (int) $resourceId;
@@ -527,7 +555,7 @@ if ($method === 'POST') {
     }
     $reservationId = (int) $rawData['reservation_id'];
 
-    // ---- Validate N's required biography fields (same as reserve.php) ----
+    // Validate N's required biography fields (same set as reserve.php)
     $required = [
         'control_number',
         'deceased_name',
@@ -549,14 +577,13 @@ if ($method === 'POST') {
         Response::error("Invalid deceased_sex.", 400);
     }
 
-    // ---- Parse old_edited_fields ----
     try {
         $oldEditedFieldsJson = $parseOldEditedFields($rawData['old_edited_fields'] ?? null);
     } catch (InvalidArgumentException $e) {
         Response::error($e->getMessage(), 400);
     }
 
-    // ---- Parse old_new_status / old_new_grave_id / old_new_assistance_type / remarks ----
+    // Parse O-future inputs, each records whether the payload set it
     $oldNewStatusInput = null;
     if (!empty($rawData['old_new_status'])) {
         $candidate = (string) $rawData['old_new_status'];
@@ -613,7 +640,6 @@ if ($method === 'POST') {
         ? ($rawData['reservation_notes'] !== '' ? (string) $rawData['reservation_notes'] : null)
         : false;
 
-    // ---- Date validation for N's biography ----
     $nDateFields = [
         'deceased_date_of_birth',
         'deceased_date_of_death',
@@ -631,7 +657,6 @@ if ($method === 'POST') {
         }
     }
 
-    // ---- N biography fields to write ----
     $nBioFields = [
         'control_number',
         'deceased_name',
@@ -662,7 +687,6 @@ if ($method === 'POST') {
 
     $pdo->beginTransaction();
     try {
-        // 1. Lock reservation row
         $resStmt = $pdo->prepare("
             SELECT * FROM reservations
             WHERE reservation_id = ? AND reservation_state = 'Active'
@@ -675,12 +699,12 @@ if ($method === 'POST') {
             Response::error("Active reservation not found (it may have already been actioned).", 404);
         }
 
-        // 2. Anchors come from the reservation row
+        // Anchors come from the row, payload values are ignored
         $pendingId      = (int) $reservation['pending_interment_id'];
         $targetGraveId  = (int) $reservation['target_grave_id'];
         $oldIntermentId = $reservation['old_interment_id'] !== null ? (int) $reservation['old_interment_id'] : null;
 
-        // 3. Effective O-future values: payload override, else reservation value
+        // Effective O-future values: payload overrides the row when present
         $oldNewGraveId = $oldNewGraveProvided
             ? $oldNewGraveIdInput
             : ($reservation['old_new_grave_id'] !== null ? (int) $reservation['old_new_grave_id'] : null);
@@ -720,12 +744,11 @@ if ($method === 'POST') {
             ? $oldEditedFieldsJson
             : $reservation['old_edited_fields'];
 
-        // 4. Lock all graves in ascending order
+        // Lock in ascending order to prevent deadlocks
         $gravesToLock = [$targetGraveId];
         if ($oldNewGraveId) $gravesToLock[] = $oldNewGraveId;
         lockGraveRows($pdo, $gravesToLock);
 
-        // 5. Lock N
         $nStmt = $pdo->prepare("
             SELECT * FROM interments
             WHERE interment_id = ? AND deleted_at IS NULL
@@ -737,7 +760,6 @@ if ($method === 'POST') {
         if ($nBefore['status'] !== 'Pending') throw new Exception("Incoming person is no longer Pending; cannot confirm.");
         if ($nBefore['current_grave_id'] !== null) throw new Exception("Incoming person already has a grave; cannot confirm.");
 
-        // 6. Lock O (if any)
         $oBefore = null;
         if ($oldIntermentId) {
             $oStmt = $pdo->prepare("
@@ -754,7 +776,7 @@ if ($method === 'POST') {
             }
         }
 
-        // 7. Re-validate target grave
+        // Re-validate the target grave and its occupant count
         $gStmt = $pdo->prepare("SELECT * FROM graves WHERE grave_id = ? AND deleted_at IS NULL");
         $gStmt->execute([$targetGraveId]);
         if (!$gStmt->fetch()) throw new Exception("Target grave no longer exists.");
@@ -772,7 +794,7 @@ if ($method === 'POST') {
             if ($occupantCount !== 0) throw new Exception("Target grave is no longer vacant; reservation is stale.");
         }
 
-        // 8. Re-validate O's destination (if any)
+        // Re-validate O's destination if one is set
         if ($oldNewGraveId) {
             $dStmt = $pdo->prepare("SELECT * FROM graves WHERE grave_id = ? AND deleted_at IS NULL");
             $dStmt->execute([$oldNewGraveId]);
@@ -789,7 +811,7 @@ if ($method === 'POST') {
             }
         }
 
-        // 9. Persist reservation edits
+        // Persist reservation-level edits before touching interments
         $resUpdates = [
             'old_new_grave_id = ?',
             'old_new_status = ?',
@@ -818,7 +840,7 @@ if ($method === 'POST') {
         );
         $updResRow->execute($resParams);
 
-        // 10. Apply O's move + staged biography edits (if replacement)
+        // Apply O's move plus any staged biography edits
         if ($oBefore) {
             $setClauses = ['current_grave_id = ?', 'status = ?'];
             $setParams  = [$oldNewGraveId, $oldNewStatus];
@@ -891,7 +913,7 @@ if ($method === 'POST') {
             logPlacement($pdo, $oBefore, $oAfter, $eventType, $reason, $reservationId, $pendingId, $userId);
         }
 
-        // 11. Apply N's biography + activate N (single UPDATE)
+        // Activate N in one UPDATE alongside the biography fields
         $nSetClauses = [];
         $nSetParams  = [];
         foreach ($nBioFields as $f) {
@@ -922,11 +944,9 @@ if ($method === 'POST') {
 
         logPlacement($pdo, $nBefore, $nAfter, 'Initial', $nReason, $reservationId, $oldIntermentId, $userId);
 
-        // 12. Re-derive grave statuses
         rederiveGraveStatus($pdo, $targetGraveId);
         if ($oldNewGraveId) rederiveGraveStatus($pdo, $oldNewGraveId);
 
-        // 13. Mark reservation Executed
         $updRes = $pdo->prepare("
             UPDATE reservations
             SET reservation_state = 'Executed',

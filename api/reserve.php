@@ -1,79 +1,59 @@
 <?php
 
-/**
- * reserve.php – Discover graves and create a reservation (REST API)
- *
- * GET    /reserve.php         : List all graves eligible for a reservation (paginated)
- * GET    /reserve.php/{id}    : Check eligibility of a specific grave by ID
- * POST   /reserve.php         : Create a reservation
- * POST   /reserve.php/{id}    : Create a reservation specifically for grave {id}
- *
- * ELIGIBLE GRAVES
- *   A grave is eligible if it is:
- *     - Vacant (no Active occupant), OR
- *     - Occupied by EXACTLY ONE Active occupant whose lease is expiring
- *       (<= CURDATE() + 1 month) or expired (< CURDATE()).
- *   Co-interment graves (2+ Active occupants) are never eligible.
- *   Graves already referenced by an Active reservation (as target or
- *   destination) are excluded.
- *
- * RESERVATION CREATION
- *   A reservation is a proposal to place an incoming person N into a
- *   target grave G, optionally displacing an existing occupant O.  Once
- *   created, the reservation is FROZEN.  It can only be Confirmed or
- *   Cancelled in monitor.php.  To change it, cancel it and create a new
- *   one.
- *
- *   Two modes:
- *     1. Vacant  – {grave_id or grave_code}, N incoming, no O.
- *     2. Replace – {old_interment_id}, O leaving, N incoming into O's grave.
- *
- *   Nothing is moved at reservation-creation time.  N is created as
- *   'Pending' with no grave; O is untouched; no placement_history is
- *   written.  Movements happen only when the reservation is Confirmed
- *   (monitor.php).
- *
- * OLD OCCUPANT BIOGRAPHY EDITS
- *   When replacing an occupant, staff may optionally stage edits to O's
- *   biography alongside the reservation.  The edits live in
- *   reservations.old_edited_fields as a JSON DIFF — only fields the user
- *   actually changed.  They are applied to O's interments row ONLY on
- *   Confirm.  On Cancel, they are discarded and O is untouched.
- *
- *   Editable O fields (staged into old_edited_fields):
- *     deceased_name, deceased_sex, last_known_address, death_certificate,
- *     deceased_date_of_birth, deceased_date_of_death,
- *     contact_person_name, contact_person_phone_number, contact_person_email,
- *     contact_person_address, contact_person_address_barangay,
- *     burial_permit_number, burial_permit_date,
- *     transfer_permit_number, transfer_permit_issued_by, transfer_permit_date,
- *     exhumation_permit_number, exhumation_permit_date,
- *     date_exhumed, burial_clearance_date,
- *     remarks
- *
- *   NOTE: assistance_type is intentionally NOT in the list above. It has a
- *   dedicated column on reservations (old_new_assistance_type) and would
- *   conflict with it on Confirm.
- *
- *   Locked O fields (never editable via reserve):
- *     control_number  (identity — cancel/re-reserve to fix)
- *     current_grave_id (the target grave — defines the reservation)
- *     status          (Active — decided by old_new_status)
- *     date_buried     (historical)
- *     lease_expiration_date (historical)
- *
- * ROLE SCOPING
- *   ADMIN / OFFICE : full access (GET + POST).
- *   GROUNDS        : view-only (GET). Sensitive interment data
- *                    (deceased identity, contacts, addresses, permits,
- *                    certificates, dates) is redacted from responses,
- *                    and the search_term cannot be matched against
- *                    those fields.
- *
- * TIMESTAMPS
- *   created_at / updated_at are maintained by the database.  This file
- *   never writes them.
- */
+// reserve.php - discover graves and create a reservation
+// GET    /reserve.php         lists all graves eligible for a reservation, paginated, returns expired, expiring and vacant graves
+// GET    /reserve.php/{id}    checks eligibility of a specific grave by ID
+// POST   /reserve.php         creates a reservation
+// POST   /reserve.php/{id}    creates a reservation specifically for grave {id}
+//
+// ELIGIBLE GRAVES
+// a grave is eligible if it is vacant with no Active occupant
+// or if it is occupied by exactly one Active occupant whose lease is expiring within a month or already expired
+// co-interment graves with 2 or more Active occupants are never eligible
+// graves already referenced by an Active reservation as target or destination are excluded
+//
+// RESERVATION CREATION
+// a reservation is a proposal to place an incoming person N into a target grave G, optionally displacing an existing occupant O
+// once created the reservation is frozen
+// it can only be Confirmed or Cancelled in monitor.php
+// to change it, cancel it and create a new one
+// mode 1 Vacant uses grave_id or grave_code, N incoming, no O
+// mode 2 Replace uses old_interment_id, O leaving, N incoming into O's grave
+// nothing is moved at reservation-creation time
+// N is created as Pending with no grave, O is untouched, and no placement_history is written
+// movements happen only when the reservation is Confirmed in monitor.php
+//
+// OLD OCCUPANT BIOGRAPHY EDITS
+// when replacing an occupant, staff may optionally stage edits to O's biography alongside the reservation
+// the edits live in reservations.old_edited_fields as a JSON DIFF, only fields the user actually changed
+// they are applied to O's interments row only on Confirm
+// on Cancel they are discarded and O is untouched
+// editable O fields staged into old_edited_fields: deceased_name, deceased_sex, last_known_address, death_certificate
+// also editable: deceased_date_of_birth, deceased_date_of_death
+// also editable: contact_person_name, contact_person_phone_number, contact_person_email
+// also editable: contact_person_address, contact_person_address_barangay
+// also editable: burial_permit_number, burial_permit_date
+// also editable: transfer_permit_number, transfer_permit_issued_by, transfer_permit_date
+// also editable: exhumation_permit_number, exhumation_permit_date
+// also editable: date_exhumed, burial_clearance_date, remarks
+// assistance_type is intentionally not in the list above
+// it has a dedicated column on reservations called old_new_assistance_type and would conflict with it on Confirm
+// locked O fields that are never editable via reserve
+// control_number is identity, cancel and re-reserve to fix it
+// current_grave_id is the target grave and defines the reservation
+// status is Active and decided by old_new_status
+// date_buried is historical
+// lease_expiration_date is historical
+//
+// ROLE SCOPING
+// ADMIN and OFFICE have full access, GET and POST
+// GROUNDS is view-only, GET only
+// for GROUNDS, sensitive interment data is redacted from responses, that is deceased identity, contacts, addresses, permits, certificates, and dates
+// for GROUNDS, search_term cannot be matched against those fields
+//
+// TIMESTAMPS
+// created_at and updated_at are maintained by the database
+// this file never writes them
 
 define('ITS_ME_JUSTTOVERIFY', true);
 
@@ -84,11 +64,7 @@ require_once 'reusable_functions.php';
 $userData = checkuser();
 $method   = $_SERVER['REQUEST_METHOD'] ?? null;
 
-// -----------------------------------------------------------------------------
-// Role gate
-//   ADMIN / OFFICE : full access (GET + POST)
-//   GROUNDS        : read-only — GET only
-// -----------------------------------------------------------------------------
+// ADMIN and OFFICE can read and write, GROUNDS is read-only
 $role         = $userData['role'] ?? null;
 $allowedRoles = [ROLE_ADMIN, ROLE_OFFICE, ROLE_GROUNDS];
 if (!in_array($role, $allowedRoles, true)) {
@@ -98,20 +74,15 @@ if ($role === ROLE_GROUNDS && $method !== 'GET') {
     Response::error("Forbidden. ROLE_GROUNDS has view-only access and may only perform GET requests.", 403);
 }
 
-// Hybrid input parser (JSON + form)
 $rawData = array_merge(
     json_decode(file_get_contents("php://input"), true) ?: [],
     $_POST ?? []
 );
 
-// Parse path: /reserve.php/{id}
 $pathInfo   = $_GET['path_info'] ?? $_SERVER['PATH_INFO'] ?? '';
 $pathParts  = array_filter(explode('/', trim($pathInfo, '/')));
 $resourceId = array_shift($pathParts);
 
-// -----------------------------------------------------------------------------
-// Item formatter
-// -----------------------------------------------------------------------------
 $formatItem = function (array $row): array {
     return [
         'type'          => $row['type'],
@@ -155,26 +126,17 @@ $formatItem = function (array $row): array {
             'lease_expiration_date'           => $row['lease_expiration_date'],
             'status'                          => $row['interment_status'],
             'remarks'                         => $row['interment_remarks'],
+            'created_at'                      => $row['interment_created_at'],
+            'updated_at'                      => $row['interment_updated_at'],
         ] : null,
     ];
 };
 
-// -----------------------------------------------------------------------------
-// ROLE_GROUNDS redaction
-//   Grounds staff only need to locate graves and see why a grave is
-//   eligible. Deceased identity, contact details, addresses, permit
-//   numbers, certificates and birth/death dates are stripped before the
-//   response leaves the server.
-//
-//   Response shape is preserved (fields become null) so frontends that
-//   already handle "interment: null" for vacant graves need no changes.
-//
-//   To let grounds see the deceased's name (e.g. for on-site
-//   identification), add 'deceased_name' to $keep below.
-// -----------------------------------------------------------------------------
+// Strip sensitive interment fields for GROUNDS but keep the response shape so the frontend stays the same
+// To show the deceased's name to grounds, add 'deceased_name' to $keep below
 $redactForGrounds = function (array $item): array {
     if ($item['interment'] === null) {
-        return $item; // vacant grave — no interment fields to redact
+        return $item; // vacant grave, nothing to redact
     }
     $keep = ['interment_id', 'current_grave_id', 'status', 'lease_expiration_date'];
     foreach ($item['interment'] as $k => $v) {
@@ -185,9 +147,7 @@ $redactForGrounds = function (array $item): array {
     return $item;
 };
 
-// -----------------------------------------------------------------------------
-// SELECT fragments (unchanged)
-// -----------------------------------------------------------------------------
+// The two eligibility queries: one for vacant graves, one for single-occupant graves whose lease is ending
 $vacantSelect = "
     SELECT
         'vacant' AS type,
@@ -208,7 +168,8 @@ $vacantSelect = "
         NULL AS exhumation_permit_date,
         NULL AS date_buried, NULL AS date_exhumed, NULL AS burial_clearance_date,
         NULL AS lease_expiration_date,
-        NULL AS interment_status, NULL AS interment_remarks
+        NULL AS interment_status, NULL AS interment_remarks,
+        NULL AS interment_created_at, NULL AS interment_updated_at
     FROM graves g
     LEFT JOIN blocks b ON g.block_id = b.block_id AND b.deleted_at IS NULL
     WHERE g.deleted_at IS NULL
@@ -246,7 +207,8 @@ $expiringSelect = "
         i.exhumation_permit_date,
         i.date_buried, i.date_exhumed, i.burial_clearance_date,
         i.lease_expiration_date,
-        i.status AS interment_status, i.remarks AS interment_remarks
+        i.status AS interment_status, i.remarks AS interment_remarks,
+        i.created_at AS interment_created_at, i.updated_at AS interment_updated_at
     FROM interments i
     INNER JOIN graves g ON i.current_grave_id = g.grave_id AND g.deleted_at IS NULL
     LEFT JOIN blocks b ON g.block_id = b.block_id AND b.deleted_at IS NULL
@@ -272,9 +234,6 @@ $expiringSelect = "
       )
 ";
 
-// -----------------------------------------------------------------------------
-// 1. GET – list eligible graves OR check a specific grave
-// -----------------------------------------------------------------------------
 if ($method === 'GET') {
 
     if ($resourceId) {
@@ -327,6 +286,7 @@ if ($method === 'GET') {
         || in_array('expired',  $wantedStatuses)
         || in_array('expiring', $wantedStatuses);
 
+    // Only narrow to expired or expiring when exactly one of them is asked for
     $expiringDateClause = '';
     if (!empty($wantedStatuses)) {
         $hasExpired  = in_array('expired',  $wantedStatuses);
@@ -346,10 +306,8 @@ if ($method === 'GET') {
         if ($searchTerm !== '') {
             $like = '%' . $searchTerm . '%';
             if ($role === ROLE_GROUNDS) {
-                // Grounds may only search grave-side fields. Otherwise they
-                // could confirm the existence of a person by name / phone /
-                // email even though those values are redacted from the
-                // response (an existence oracle).
+                // Grounds may only search grave-side fields plus the lease date they can already see
+                // Matching against redacted interment columns would leak that a person exists by name, phone, or email
                 $cols = ['g.grave_code', 'g.status', 'g.remarks', 'b.block_name', 'b.block_type'];
             } else {
                 $cols = [
@@ -381,6 +339,56 @@ if ($method === 'GET') {
                 $parts[] = "$c LIKE ?";
                 $searchParams[] = $like;
             }
+
+            // Date search covers only the columns each role can actually see
+            // convert_dates() returns empty arrays for plain text, so a text search adds nothing here
+            $dateCriteria = convert_dates($searchTerm);
+            if ($role === ROLE_GROUNDS) {
+                $expiringDateCols = [
+                    'i.lease_expiration_date',
+                ];
+            } else {
+                $expiringDateCols = [
+                    'i.deceased_date_of_birth',
+                    'i.deceased_date_of_death',
+                    'i.burial_permit_date',
+                    'i.transfer_permit_date',
+                    'i.exhumation_permit_date',
+                    'i.date_buried',
+                    'i.date_exhumed',
+                    'i.burial_clearance_date',
+                    'i.lease_expiration_date',
+                    'i.created_at',
+                    'i.updated_at',
+                ];
+            }
+            foreach ($dateCriteria['exact_dates'] as $d) {
+                foreach ($expiringDateCols as $col) {
+                    $parts[] = "DATE($col) = ?";
+                    $searchParams[] = $d;
+                }
+            }
+            foreach ($dateCriteria['month_days'] as $md) {
+                foreach ($expiringDateCols as $col) {
+                    $parts[] = "(MONTH($col) = ? AND DAY($col) = ?)";
+                    $searchParams[] = $md['m'];
+                    $searchParams[] = $md['d'];
+                }
+            }
+            foreach ($dateCriteria['year_months'] as $ym) {
+                foreach ($expiringDateCols as $col) {
+                    $parts[] = "(YEAR($col) = ? AND MONTH($col) = ?)";
+                    $searchParams[] = $ym['y'];
+                    $searchParams[] = $ym['m'];
+                }
+            }
+            foreach ($dateCriteria['years'] as $y) {
+                foreach ($expiringDateCols as $col) {
+                    $parts[] = "YEAR($col) = ?";
+                    $searchParams[] = $y;
+                }
+            }
+
             $expiringSearchSQL = ' AND (' . implode(' OR ', $parts) . ')';
         }
         $subqueries[] = "($expiringSelect $expiringDateClause $expiringSearchSQL)";
@@ -389,6 +397,7 @@ if ($method === 'GET') {
     if ($runVacant) {
         $vacantSearchSQL = '';
         if ($searchTerm !== '') {
+            // Vacant graves have no interment row, so text search stays on grave-side fields only
             $like = '%' . $searchTerm . '%';
             $cols = ['g.grave_code', 'g.status', 'g.remarks', 'b.block_name', 'b.block_type'];
             $parts = [];
@@ -423,6 +432,7 @@ if ($method === 'GET') {
     $page       = min($page, max(1, $totalPages));
     $offset     = ($page - 1) * $limit;
 
+    // Vacant first, then expired, then expiring, and oldest lease first inside each group
     $pageSQL = "
         SELECT *
         FROM ($unionSQL) AS combined
@@ -462,16 +472,12 @@ if ($method === 'GET') {
     Response::success('Eligible graves retrieved', $payload);
 }
 
-// -----------------------------------------------------------------------------
-// 2. POST – create a reservation
-// -----------------------------------------------------------------------------
 if ($method === 'POST') {
 
     if ($resourceId && is_numeric($resourceId)) {
         $rawData['grave_id'] = (int) $resourceId;
     }
 
-    // --- Required fields ----------------------------------------------------
     $required = [
         'control_number',
         'deceased_name',
@@ -488,7 +494,6 @@ if ($method === 'POST') {
         }
     }
 
-    // --- Enum validation (N) ------------------------------------------------
     if (!in_array($rawData['assistance_type'], ['Burial', 'Transfer the remains of the late', 'Other'], true)) {
         Response::error("Invalid assistance_type.", 400);
     }
@@ -499,13 +504,13 @@ if ($method === 'POST') {
         Response::error("Invalid deceased_sex.", 400);
     }
 
-    // --- Mode detection -----------------------------------------------------
     $oldIntermentId = !empty($rawData['old_interment_id']) && is_numeric($rawData['old_interment_id'])
         ? (int) $rawData['old_interment_id'] : null;
 
     $graveId = !empty($rawData['grave_id']) && is_numeric($rawData['grave_id'])
         ? (int) $rawData['grave_id'] : null;
 
+    // Accept grave_code as an alternative to grave_id for convenience
     if (!$graveId && !empty($rawData['grave_code'])) {
         $g = $pdo->prepare("SELECT grave_id FROM graves WHERE grave_code = ? AND deleted_at IS NULL");
         $g->execute([trim((string) $rawData['grave_code'])]);
@@ -524,12 +529,11 @@ if ($method === 'POST') {
         );
     }
 
-    // --- Old-occupant PLANNED-FUTURE fields ---------------------------------
     $oldNewGraveId        = null;
     $oldNewStatus         = null;
     $oldNewAssistanceType = null;
     $oldNewRemarks        = null;
-    $oldEditedFieldsJson  = null;   // staged O biography edits
+    $oldEditedFieldsJson  = null;
 
     if ($oldIntermentId) {
         if (empty($rawData['old_new_status'])) {
@@ -566,20 +570,9 @@ if ($method === 'POST') {
         $oldNewRemarks = isset($rawData['old_new_remarks']) && $rawData['old_new_remarks'] !== ''
             ? (string) $rawData['old_new_remarks'] : null;
 
-        // -------------------------------------------------------------------
-        // Staged O biography edits → reservations.old_edited_fields (JSON)
-        //
-        // Contract: only fields present in the request payload are staged.
-        // A missing field means "leave O's existing value alone". This keeps
-        // the JSON minimal (a DIFF) and makes partial edits unambiguous.
-        //
-        // Locked fields (silently ignored if present): control_number,
-        // current_grave_id, status, date_buried, lease_expiration_date.
-        //
-        // NOTE: assistance_type is deliberately NOT in the allow-list. It has
-        // a dedicated column on reservations (old_new_assistance_type), and
-        // allowing it here would mean two sources of truth for the same field.
-        // -------------------------------------------------------------------
+        // Only fields actually present in the payload get staged, a missing key means keep O's current value
+        // That keeps the JSON a real DIFF so a partial edit can't accidentally wipe fields
+        // assistance_type is not in the allow-list because it has its own column on reservations
         $oldEditInput = $rawData['old_edited_fields'] ?? null;
         if (is_string($oldEditInput)) {
             $decoded = json_decode($oldEditInput, true);
@@ -613,8 +606,6 @@ if ($method === 'POST') {
                 'date_exhumed',
                 'burial_clearance_date',
             ];
-            // Only true biography-edit enums belong here. assistance_type
-            // lives on reservations.old_new_assistance_type instead.
             $allowedEnum = [
                 'deceased_sex' => ['Male', 'Female', 'Unknown'],
             ];
@@ -664,7 +655,6 @@ if ($method === 'POST') {
     $reservationNotes = isset($rawData['reservation_notes']) && $rawData['reservation_notes'] !== ''
         ? (string) $rawData['reservation_notes'] : null;
 
-    // --- Date validation (N) ------------------------------------------------
     $dateFields = [
         'deceased_date_of_birth',
         'deceased_date_of_death',
@@ -686,9 +676,7 @@ if ($method === 'POST') {
 
     $pdo->beginTransaction();
     try {
-        // -------------------------------------------------------------------
-        // Determine target grave + validate
-        // -------------------------------------------------------------------
+        // Resolve the target grave and lock it, replacement mode uses O's current grave
         if ($oldIntermentId) {
             $oldStmt = $pdo->prepare("
                 SELECT * FROM interments
@@ -764,9 +752,7 @@ if ($method === 'POST') {
             }
         }
 
-        // -------------------------------------------------------------------
-        // Check no Active reservation conflicts
-        // -------------------------------------------------------------------
+        // No Active reservation may already hold the target, O's destination, or O itself
         $r1 = $pdo->prepare("
             SELECT reservation_id FROM reservations
             WHERE reservation_state = 'Active'
@@ -803,9 +789,7 @@ if ($method === 'POST') {
             }
         }
 
-        // -------------------------------------------------------------------
-        // Insert N (Pending, no grave)
-        // -------------------------------------------------------------------
+        // N is created Pending with no grave, the move only happens on Confirm
         $insertFields = [
             'control_number',
             'deceased_name',
@@ -859,9 +843,7 @@ if ($method === 'POST') {
         $stmt->execute($values);
         $newIntermentId = (int) $pdo->lastInsertId();
 
-        // -------------------------------------------------------------------
-        // Insert the reservation (Active, frozen)
-        // -------------------------------------------------------------------
+        // The reservation is frozen here, only monitor.php can Confirm or Cancel it
         $resStmt = $pdo->prepare("
             INSERT INTO reservations (
                 pending_interment_id,
