@@ -9,21 +9,16 @@ require_once 'logger.php';
 
 $method = $_SERVER['REQUEST_METHOD'] ?? null;
 
-// --- REST ROUTING: PARSE THE URI ---
 $pathInfo  = $_GET['path_info'] ?? $_SERVER['PATH_INFO'] ?? '';
 $pathParts = array_values(array_filter(explode('/', trim($pathInfo, '/'))));
 $resourceId = array_shift($pathParts);
 
-// --- AUTHENTICATION GATEKEEPER ---
 $isPublicEndpoint = ($method === 'POST' && ($resourceId === null || $resourceId === 'forgot-password'));
 $userData = $isPublicEndpoint ? checkuser(false) : checkuser();
 
-// ==========================================
-// 1. GET: RETRIEVE RESOURCES
-// ==========================================
 if ($method === 'GET') {
 
-    // SCENARIO A: GET /users.php/me (Get own profile)
+    //users.php/me (Get own profile)
     if ($resourceId === 'me' || (string)$resourceId === (string)$userData['user_id']) {
         $stmt = $pdo->prepare("
             SELECT user_id, username, email, role, status, phone_number, name
@@ -42,7 +37,7 @@ if ($method === 'GET') {
         Response::error("Forbidden", 403);
     }
 
-    // SCENARIO B: GET /users.php/{id} (Get specific user)
+    //users.php/{id} (Get specific user)
     if (is_numeric($resourceId)) {
         $stmt = $pdo->prepare("
             SELECT user_id, username, email, role, status, phone_number, name
@@ -59,10 +54,9 @@ if ($method === 'GET') {
         Response::error("User not found", 404);
     }
 
-    // SCENARIO C: GET /users.php (List with search + role + status + pagination)
+    // users.php (List with search + role + status + pagination)
     if ($resourceId === null) {
 
-        // ---- Inputs ----
         $searchTerm = isset($_GET['search_term']) ? trim((string) $_GET['search_term']) : '';
         if ($searchTerm !== '' && mb_strlen($searchTerm) < 3) {
             Response::error("Search term must be at least 3 characters long", 400);
@@ -71,7 +65,6 @@ if ($method === 'GET') {
         $limit = 20;
         $page  = max(1, (int) ($_GET['page'] ?? 1));
 
-        // ---- Role filter (admin | office | grounds, comma-separated) ----
         $roleRaw = $_GET['role'] ?? '';
         if (is_array($roleRaw)) {
             $roleRaw = implode(',', $roleRaw);
@@ -97,7 +90,6 @@ if ($method === 'GET') {
             }
         }
 
-        // ---- Status filter (verified | unverified, comma-separated) ----
         $statusRaw = $_GET['status'] ?? '';
         if (is_array($statusRaw)) {
             $statusRaw = implode(',', $statusRaw);
@@ -122,7 +114,6 @@ if ($method === 'GET') {
             }
         }
 
-        // ---- Build WHERE + params ----
         $where  = 'deleted_at IS NULL';
         $params = [];
 
@@ -152,7 +143,6 @@ if ($method === 'GET') {
             $params[] = $phoneLike;
         }
 
-        // ---- Count ----
         $countStmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE $where");
         $countStmt->execute($params);
         $totalUsers = (int) $countStmt->fetchColumn();
@@ -161,7 +151,7 @@ if ($method === 'GET') {
         $page       = min($page, $totalPages);
         $offset     = ($page - 1) * $limit;
 
-        // $limit / $offset are strict ints at this point → safe to interpolate.
+        // $limit / $offset are strict ints at this point, safe to interpolate
         $sql = "
             SELECT user_id, username, email, role, status, phone_number, name
             FROM users
@@ -198,15 +188,12 @@ if ($method === 'GET') {
     Response::error("User not found", 404);
 }
 
-// --- HYBRID INPUT PARSER ---
 $rawData = array_merge(
     json_decode(file_get_contents("php://input"), true) ?: [],
     $_POST ?? []
 );
 
-// ==========================================
-// 2. POST: CREATE RESOURCES
-// ==========================================
+// CREATE RESOURCES / users
 if ($method === 'POST') {
 
     if ($userData) {
@@ -217,10 +204,9 @@ if ($method === 'POST') {
     $email        = trim((string)($rawData['email'] ?? ''));
     $username     = trim((string)($rawData['username'] ?? ''));
     $name         = trim((string)($rawData['name'] ?? ''));
-    $phone_number = formatPhNumber(trim((string)($rawData['phone_number'] ?? '')));
+    $phone_number = validatePhone(trim((string)($rawData['phone_number'] ?? '')));
     $password     = (string)($rawData['password'] ?? '');
 
-    // --- VALIDATION ---
     if (empty($username) || !preg_match('/^[a-zA-Z0-9_]{3,20}$/', $username)) {
         Response::error("Username must be 3-20 characters long and contain only letters, numbers, and underscores.", 400);
     }
@@ -230,19 +216,13 @@ if ($method === 'POST') {
     if (empty($name) || !preg_match('/^[a-zA-Z\s.\'-]{2,100}$/', $name)) {
         Response::error("Full name contains invalid characters and must be between 2 and 100 characters long.", 400);
     }
-    if (!$phone_number) {
-        Response::error("Invalid Philippines phone number format.", 400);
-    }
     if (empty($password) || !preg_match('/^(?=.*[A-Z])(?=.*[a-z])(?=.*\d).{6,}$/', $password)) {
         Response::error("Password must be at least 6 characters and includes an uppercase, lowercase, and a number.", 400);
     }
 
     $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
 
-    // SCENARIO A: POST /users.php/forgot-password
-    // NOTE: this is a knowledge-based reset (no OTP). It relies entirely on
-    // the four identity fields. Rate limiting on this endpoint is essential;
-    // see the reverse-proxy note near the top of this file.
+    // this is a knowledge-based reset (no OTP and all i guess). It relies entirely on the four identity fields. Rate limiting on this endpoint is essential
     if ($resourceId === 'forgot-password') {
         $stmt = $pdo->prepare("
             UPDATE users
@@ -274,7 +254,7 @@ if ($method === 'POST') {
         Response::error("Not Found: Could not reset password for those credentials. Make sure all details are correct.", 404);
     }
 
-    // SCENARIO B: POST /users.php (Register New User)
+    // Register New User
     elseif ($resourceId === null) {
         try {
             $stmt = $pdo->prepare("
@@ -309,9 +289,7 @@ if ($method === 'POST') {
     Response::error("Endpoint not found", 404);
 }
 
-// ==========================================
-// 3. DELETE: SOFT DELETE RESOURCES
-// ==========================================
+// DELETE: SOFT DELETE RESOURCES / users
 if ($method === 'DELETE') {
 
     if ($userData['role'] !== ROLE_ADMIN) {
@@ -325,7 +303,7 @@ if ($method === 'DELETE') {
     }
 
     try {
-        // Look up the target first so we can enforce the co-admin rule.
+        // Look up the target first so we can enforce the co-admin rule
         $stmt = $pdo->prepare("
             SELECT user_id, username, name, role
             FROM users
@@ -339,9 +317,7 @@ if ($method === 'DELETE') {
             Response::error("Not Found: User does not exist or already deleted", 404);
         }
 
-        // ---- CO-ADMIN PROTECTION ----
-        // Admins may not delete other admins. Together with the self-delete
-        // guard above, this means admins can only delete non-admin accounts.
+        // Admins may not delete other admins
         if ($targetUser['role'] === ROLE_ADMIN) {
             systemLog(
                 "{$userData['name']} ({$userData['username']}) attempted to delete fellow admin " .
@@ -375,9 +351,7 @@ if ($method === 'DELETE') {
     }
 }
 
-// ==========================================
-// 4. PUT: UPDATE RESOURCES
-// ==========================================
+// PUT: UPDATE RESOURCES / users
 if ($method === 'PUT') {
 
     if ($resourceId === 'me' || (string)$resourceId === (string)$userData['user_id']) {
@@ -406,7 +380,7 @@ if ($method === 'PUT') {
     $queryParams  = [];
     $isVerifying  = false;
 
-    // Strict-int comparison (previously string === int, always false).
+    // Strict-int comparison
     $isSelf  = ((int)$userData['user_id'] === $targetId);
     $isAdmin = ($userData['role'] === ROLE_ADMIN);
 
@@ -414,21 +388,9 @@ if ($method === 'PUT') {
         Response::error("Forbidden: You do not have permission to edit this user", 403);
     }
 
-    // ==========================================================
-    // CO-ADMIN PROTECTION (PUT side)
-    // ==========================================================
-    // A peer admin may not perform actions that enable demotion,
-    // lockout, or impersonation against another admin:
-    //
-    //   - role   → only if NOT demoting (role=admin is a no-op, allowed)
-    //   - status → only if VERIFYING (verified), never un-verifying
-    //   - password     → forbidden (impersonation)
-    //   - phone_number → forbidden (impersonation / hijack of resets)
-    //
-    // Allowing "status = verified" is intentional: it lets an admin
-    // repair a legacy unverified-admin state (see the pairing rule
-    // below) without weakening the actual security boundaries.
-    // ==========================================================
+    // Co-admin protection: a peer admin cannot demote, lock out, or impersonate another admin
+    // role changes are allowed only if not a demotion
+    // status may only be set to verified, and password/phone changes are forbidden
     if ($user['role'] === ROLE_ADMIN && !$isSelf) {
 
         foreach (['password', 'phone_number'] as $f) {
@@ -458,7 +420,7 @@ if ($method === 'PUT') {
         }
     }
 
-    // --- ROLE & STATUS GATEKEEPER ---
+    // ROLE & STATUS GATEKEEPER
     if (isset($rawData['role']) || isset($rawData['status'])) {
         if (!$isAdmin) {
             Response::error("Forbidden: Only administrators can change roles and statuses", 403);
@@ -468,15 +430,7 @@ if ($method === 'PUT') {
         }
     }
 
-    // ==========================================================
-    // PROMOTION PAIRING RULE (primary fix)
-    // ==========================================================
-    // Promoting a user to admin MUST be atomic with verification.
-    // Otherwise a "verified role + unverified status" state is created,
-    // which used to be unrecoverable (co-admin protection blocked the
-    // subsequent status update). Requiring both in the same payload
-    // guarantees we never produce that broken state going forward.
-    // ==========================================================
+    // promoting a user to admin must also verify them in the same request, preventing a broken verified-admin-but-unverified state
     if ($isAdmin && !empty($rawData['role']) && $rawData['role'] === ROLE_ADMIN) {
         $effectiveStatus = $rawData['status'] ?? $user['status'];
         if ($effectiveStatus !== STATUS_VERIFIED) {
@@ -488,7 +442,7 @@ if ($method === 'PUT') {
         }
     }
 
-    // --- STANDARD FIELD VALIDATIONS (Self AND Admin) ---
+    // STANDARD FIELD VALIDATIONS
     if (!empty($rawData['name'])) {
         if (!preg_match('/^[a-zA-Z\s.\'-]{2,100}$/', $rawData['name'])) Response::error("Invalid full name format.", 400);
         $updateFields[] = "name = :name";
@@ -500,8 +454,7 @@ if ($method === 'PUT') {
         $queryParams[':username'] = trim($rawData['username']);
     }
     if (!empty($rawData['phone_number'])) {
-        $phone = formatPhNumber($rawData['phone_number']);
-        if (!$phone) Response::error("Invalid Philippines phone number format.", 400);
+        $phone = validatePhone($rawData['phone_number']);
         $updateFields[] = "phone_number = :phone";
         $queryParams[':phone'] = $phone;
     }
@@ -516,7 +469,7 @@ if ($method === 'PUT') {
         $queryParams[':password_hash'] = password_hash($rawData['password'], PASSWORD_DEFAULT);
     }
 
-    // --- ADMIN-ONLY FIELD VALIDATIONS ---
+    // ADMIN-ONLY FIELD VALIDATIONS
     if ($isAdmin) {
         if (!empty($rawData['role'])) {
             if (!in_array($rawData['role'], ALLOWED_ROLES, true)) Response::error("Invalid role value.", 400);
@@ -582,5 +535,5 @@ if ($method === 'PUT') {
     }
 }
 
-// --- FALLBACK ---
+// FALLBACK
 Response::error("Method Not Allowed", 405);

@@ -1,36 +1,11 @@
 <?php
 
-/**
- * Payment Management Endpoint
- *
- * GET    : List all payments (paginated, role‑filtered) or fetch one by ID
- * POST   : Create a new payment (public, requires image upload)
- * PUT    : Confirm/unconfirm office/grounds, edit details, or edit a single remark
- * DELETE : Soft‑delete a payment (ADMIN ONLY)
- *
- * Role rules:
- *   - Admin  : can confirm/unconfirm BOTH office & grounds, but STILL follows
- *              the order: office first → then grounds. To fully confirm, tap
- *              twice (office, then grounds). To fully unconfirm, tap twice
- *              (grounds, then office). Can edit any remark, can soft-delete.
- *   - Office : can confirm/unconfirm OFFICE only (unconfirm is blocked while
- *              grounds is still confirmed). Can add/edit OFFICE remarks only.
- *   - Grounds: can confirm GROUNDS only (requires office confirmed first),
- *              can unconfirm GROUNDS, can add/edit GROUNDS remarks only.
- *   - Payer remarks are read-only via this API.
- *
- * Concurrency model:
- *   - Confirm/unconfirm actions are single-statement atomic UPDATEs with
- *     their business preconditions folded into the WHERE clause. There is
- *     no read-then-write race; the DB is the source of truth for whether
- *     the action is valid, and rowCount() == 0 means "lost the race or
- *     precondition unmet" — we then do a follow-up SELECT only to produce
- *     a useful error message (not for correctness).
- *   - DELETE is a single UPDATE with deleted_at IS NULL guard (already safe).
- *   - POST relies on the UNIQUE(reference_number) constraint for duplicate
- *     prevention, and ImageManager's unique filename suffixing for image
- *     safety (a losing POST deletes only its own file).
- */
+// Payment management endpoint
+// GET lists payments or fetches one, POST creates a new payment (public), PUT edits/confirms, DELETE soft-deletes (admin only)
+// Admin still follows office-then-grounds order even though it can do both
+// Office only touches office side, grounds only touches grounds side, payer remarks are read-only here
+// Confirms and deletes are single atomic UPDATEs; the WHERE clause is the precondition, rowCount()==0 means the race was lost
+// The post-mortem SELECT after rowCount()==0 is only for a nicer error message, never for correctness
 
 define('ITS_ME_JUSTTOVERIFY', true);
 
@@ -39,9 +14,6 @@ require_once 'logger.php';
 require_once 'imagemanager.php';
 require_once 'reusable_functions.php';
 
-// -----------------------------------------------------------------------------
-// 1. Authentication & Role
-// -----------------------------------------------------------------------------
 $userData = checkuser(false); // false = allow public clients (returns null)
 $role     = $userData['role'] ?? null;
 
@@ -50,9 +22,6 @@ $isOffice  = ($role === ROLE_OFFICE);
 $isGrounds = ($role === ROLE_GROUNDS);
 $isStaff   = in_array($role, [ROLE_ADMIN, ROLE_OFFICE, ROLE_GROUNDS]);
 
-// -----------------------------------------------------------------------------
-// 2. HTTP Method & Routing
-// -----------------------------------------------------------------------------
 $method = $_SERVER['REQUEST_METHOD'] ?? null;
 
 $pathInfo   = $_GET['path_info'] ?? $_SERVER['PATH_INFO'] ?? '';
@@ -66,10 +35,7 @@ $input = array_merge(
 
 $imageManager = new ImageManager();
 
-// -----------------------------------------------------------------------------
-// 3. Helper Functions
-// -----------------------------------------------------------------------------
-
+// Stop the request with 403 unless the role is in the allowed list
 function requireRole($allowedRoles, $userRole)
 {
     if (!is_array($allowedRoles)) {
@@ -80,15 +46,7 @@ function requireRole($allowedRoles, $userRole)
     }
 }
 
-function validatePhone($phone)
-{
-    $formatted = formatPhNumber($phone);
-    if (!$formatted) {
-        Response::error('Invalid Philippines phone number format.', 400);
-    }
-    return $formatted;
-}
-
+// Return the shared SELECT used by the list and single-payment queries
 function getPaymentSelectSQL()
 {
     return "
@@ -109,13 +67,16 @@ function getPaymentSelectSQL()
             p.confirmed_office_staff,
             u1.name AS office_staff_name,
             p.confirmed_ground_staff,
-            u2.name AS ground_staff_name
+            u2.name AS ground_staff_name,
+            p.created_at,
+            p.updated_at
         FROM payments p
         LEFT JOIN users u1 ON p.confirmed_office_staff = u1.user_id
         LEFT JOIN users u2 ON p.confirmed_ground_staff = u2.user_id
     ";
 }
 
+// Shape a DB row into the JSON structure the client expects
 function formatPayment($row)
 {
     $status = 'Pending Office';
@@ -146,17 +107,13 @@ function formatPayment($row)
         'grounds_confirmed'     => (bool) $row['confirmed_ground_staff'],
         'grounds_staff_id'      => $row['confirmed_ground_staff'],
         'grounds_staff_name'    => $row['ground_staff_name'],
+        'created_at'            => $row['created_at'],
+        'updated_at'            => $row['updated_at']
     ];
 }
 
-/**
- * Read current confirmation state — used ONLY to produce error messages
- * after a failed atomic UPDATE. Never use this to decide whether an
- * action is allowed: by the time you act, the state may have changed.
- * Correctness comes from the UPDATE's WHERE clause.
- *
- * @return array|false  ['confirmed_office_staff'=>?, 'confirmed_ground_staff'=>?] or false if not found / deleted.
- */
+// Return the current confirm flags for a payment, or false if missing/deleted
+// Only used to build error messages after a failed UPDATE, never to decide what's allowed
 function getPaymentConfirmationState($pdo, $paymentId)
 {
     $stmt = $pdo->prepare("
@@ -168,14 +125,9 @@ function getPaymentConfirmationState($pdo, $paymentId)
     return $stmt->fetch(PDO::FETCH_ASSOC);
 }
 
-// -----------------------------------------------------------------------------
-// 4. Handle Each HTTP Method
-// -----------------------------------------------------------------------------
-
 try {
     switch ($method) {
 
-        // ---------- GET ----------
         case 'GET':
             if (!$isStaff) {
                 Response::error('Forbidden. You do not have access to view payment records.', 403);
@@ -258,6 +210,37 @@ try {
                     $parts[] = "$c LIKE ?";
                     $params[] = $like;
                 }
+
+                // Also match date-shaped search terms against created_at
+                // convert_dates() only returns criteria when the term actually looks like a date, so plain text costs nothing extra
+                // DATE()/MONTH()/DAY()/YEAR() skip indexes, but LIKE '%...%' already forced a scan, so it doesn't matter here
+                $dateCriteria = convert_dates($searchTerm);
+
+                foreach ($dateCriteria['exact_dates'] as $d) {
+                    $parts[]  = '(DATE(p.created_at) = ? OR DATE(p.updated_at) = ?)';
+                    $params[] = $d;
+                    $params[] = $d;
+                }
+                foreach ($dateCriteria['month_days'] as $md) {
+                    $parts[]  = '((MONTH(p.created_at) = ? AND DAY(p.created_at) = ?) OR (MONTH(p.updated_at) = ? AND DAY(p.updated_at) = ?))';
+                    $params[] = $md['m'];
+                    $params[] = $md['d'];
+                    $params[] = $md['m'];
+                    $params[] = $md['d'];
+                }
+                foreach ($dateCriteria['year_months'] as $ym) {
+                    $parts[]  = '((YEAR(p.created_at) = ? AND MONTH(p.created_at) = ?) OR (YEAR(p.updated_at) = ? AND MONTH(p.updated_at) = ?))';
+                    $params[] = $ym['y'];
+                    $params[] = $ym['m'];
+                    $params[] = $ym['y'];
+                    $params[] = $ym['m'];
+                }
+                foreach ($dateCriteria['years'] as $y) {
+                    $parts[]  = '(YEAR(p.created_at) = ? OR YEAR(p.updated_at) = ?)';
+                    $params[] = $y;
+                    $params[] = $y;
+                }
+
                 $where .= ' AND (' . implode(' OR ', $parts) . ')';
             }
 
@@ -276,6 +259,7 @@ try {
             $page       = min($page, max(1, $totalPages));
             $offset     = ($page - 1) * $limit;
 
+            // Pending items float to the top so staff see work that needs action first
             $orderSql = "
                 ORDER BY
                     CASE
@@ -314,7 +298,6 @@ try {
             Response::success('Payments retrieved', $payload);
             break;
 
-        // ---------- POST ----------
         case 'POST':
             $required = [
                 'reference_number',
@@ -363,12 +346,8 @@ try {
             $imageLink = $uploadResult['url'];
             $filename  = $uploadResult['filename'];
 
-            // Isolate the INSERT so that only a failed INSERT triggers image
-            // cleanup. If systemLog() or Response::success() fail AFTER the
-            // row is committed, we must NOT delete the image (the row still
-            // points to it). ImageManager guarantees the filename is unique
-            // to this request, so a losing POST's cleanup only removes its
-            // own file, never the winner's.
+            // Only the INSERT is wrapped, so a failing systemLog or Response won't delete the image after the row commits
+            // ImageManager gives every upload a unique filename, so a losing POST cleans up only its own file
             $newId = null;
             try {
                 $stmt = $pdo->prepare("
@@ -394,8 +373,7 @@ try {
             } catch (PDOException $e) {
                 $cleanup = $imageManager->deleteImage($filename);
                 if (empty($cleanup['success'])) {
-                    // Non-fatal — the request is failing anyway. Log so we
-                    // can sweep orphaned images manually or via cron.
+                    // Request is already failing, so just log so we can sweep orphaned images later
                     systemLog(
                         "Orphaned image cleanup failed for $filename: "
                             . ($cleanup['error'] ?? 'unknown'),
@@ -413,7 +391,6 @@ try {
             Response::success('Payment proof submitted successfully. Pending office review.', ['payment_id' => $newId], 201);
             break;
 
-        // ---------- PUT ----------
         case 'PUT':
             if (!is_numeric($resourceId)) {
                 Response::error('Payment ID required.', 400);
@@ -430,17 +407,11 @@ try {
 
             switch ($action) {
 
-                // -------------------------------------------------------------
-                // OFFICE verification — admin or office.
-                //
-                // Atomic: the "confirmed_office_staff IS NULL" guard means
-                // only the FIRST concurrent caller wins. A second tap (from
-                // the same or another device) receives a 409 instead of a
-                // silent re-write + duplicate audit log.
-                // -------------------------------------------------------------
                 case 'confirm_office':
                     requireRole([ROLE_ADMIN, ROLE_OFFICE], $role);
 
+                    // Atomic: the "confirmed_office_staff IS NULL" guard means only the first caller wins
+                    // A second tap gets a 409 instead of silently rewriting and double-logging
                     $stmt = $pdo->prepare("
                         UPDATE payments 
                         SET confirmed_office_staff = ?, 
@@ -453,7 +424,7 @@ try {
                     $stmt->execute([$userId, $input['remarks_office'] ?? null, $userId, $resourceId]);
 
                     if ($stmt->rowCount() === 0) {
-                        // Post-mortem SELECT — for error messaging only.
+                        // Post-mortem only, for a helpful error message
                         $state = getPaymentConfirmationState($pdo, $resourceId);
                         if (!$state) {
                             Response::error('Payment not found or already deleted.', 404);
@@ -468,18 +439,12 @@ try {
                     Response::success('Payment confirmed by Office.');
                     break;
 
-                // -------------------------------------------------------------
-                // OFFICE unconfirm — admin or office.
-                // Blocked if grounds already confirmed, for EVERYONE (incl. admin).
-                // To fully undo, admin must unconfirm grounds first, then office.
-                //
-                // Atomic: both preconditions are in the WHERE clause:
-                //   - confirmed_ground_staff IS NULL  → grounds not yet done
-                //   - confirmed_office_staff IS NOT NULL → office currently set
-                // -------------------------------------------------------------
                 case 'unconfirm_office':
                     requireRole([ROLE_ADMIN, ROLE_OFFICE], $role);
 
+                    // Atomic: both guards are in the WHERE
+                    // Grounds not yet done AND office currently set
+                    // Even admin must unconfirm grounds first
                     $stmt = $pdo->prepare("
                         UPDATE payments 
                         SET confirmed_office_staff = NULL,
@@ -512,16 +477,10 @@ try {
                     Response::success('Payment confirmation reverted.');
                     break;
 
-                // -------------------------------------------------------------
-                // GROUNDS verification — admin or grounds.
-                // Office must be confirmed FIRST — for EVERYONE (incl. admin).
-                //
-                // Atomic: "office IS NOT NULL" enforces the ordering invariant
-                // even if office and grounds staff tap simultaneously.
-                // -------------------------------------------------------------
                 case 'confirm_grounds':
                     requireRole([ROLE_ADMIN, ROLE_GROUNDS], $role);
 
+                    // Atomic: the "office IS NOT NULL" guard enforces office-then-grounds even under simultaneous taps
                     $stmt = $pdo->prepare("
                         UPDATE payments 
                         SET confirmed_ground_staff = ?, 
@@ -555,11 +514,6 @@ try {
                     Response::success('Work completion confirmed by Grounds.');
                     break;
 
-                // -------------------------------------------------------------
-                // GROUNDS unconfirm — admin or grounds.
-                //
-                // Atomic: only succeeds if grounds is currently set.
-                // -------------------------------------------------------------
                 case 'unconfirm_grounds':
                     requireRole([ROLE_ADMIN, ROLE_GROUNDS], $role);
 
@@ -588,19 +542,6 @@ try {
                     Response::success('Ground work confirmation reverted.');
                     break;
 
-                // -------------------------------------------------------------
-                // REMARK edit — per-department.
-                //   Office  → may only edit OFFICE remarks.
-                //   Grounds → may only edit GROUNDS remarks.
-                //   Admin   → may edit any (office / grounds / admin).
-                //   Payer remarks are read-only.
-                //
-                // Concurrency: this is intentionally last-write-wins. Two
-                // simultaneous edits by the same role overwrite each other,
-                // which is acceptable for a free-text note field. If you
-                // need it to be lossless, add optimistic locking via a
-                // version column and require the client to send it.
-                // -------------------------------------------------------------
                 case 'edit_remark':
                     $remarkType = strtolower(trim((string) ($input['remark_type'] ?? '')));
 
@@ -655,18 +596,6 @@ try {
                     );
                     break;
 
-                // -------------------------------------------------------------
-                // General detail edit (admin + office).
-                // Remarks are NOT touched here — they must go through
-                // `edit_remark` so the per-role rules above are enforced.
-                //
-                // Concurrency: COALESCE(?, column) means "skip this field if
-                // the client sent null". So two concurrent editors touching
-                // DIFFERENT fields do not clobber each other. If your client
-                // sends the full row every time, this is last-write-wins per
-                // field — add optimistic locking (version column) if that
-                // matters for your workflow.
-                // -------------------------------------------------------------
                 case 'edit_details':
                 default:
                     requireRole([ROLE_ADMIN, ROLE_OFFICE], $role);
@@ -682,6 +611,8 @@ try {
                     $newPayer    = $input['payers_name'] ?? null;
                     $newChannel  = $input['payment_channel'] ?? null;
 
+                    // COALESCE(?, column) skips any field the client sent as null, so concurrent editors touching different fields don't clobber each other
+                    // Remarks are not editable here, they go through edit_remark so the per-role rules still apply
                     $stmt = $pdo->prepare("
                         UPDATE payments 
                         SET 
@@ -713,17 +644,14 @@ try {
             }
             break;
 
-        // ---------- DELETE (Soft Delete) ----------
         case 'DELETE':
-            // Only ADMIN can soft-delete.
             requireRole([ROLE_ADMIN], $role);
 
             if (!is_numeric($resourceId)) {
                 Response::error('Payment ID required.', 400);
             }
 
-            // Already atomic — the deleted_at IS NULL guard means a second
-            // concurrent delete gets rowCount() === 0 and a clean 404.
+            // Atomic: the deleted_at IS NULL guard means a second concurrent delete gets rowCount()==0 and a clean 404
             $stmt = $pdo->prepare("
                 UPDATE payments 
                 SET deleted_at = NOW(), updated_by = ? 

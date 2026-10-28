@@ -2,6 +2,8 @@
 
 require_once 'notallowed.php';
 
+// Normalize 09xxxxxxxxx, 9xxxxxxxxx, or 639xxxxxxxxx to +639xxxxxxxxx
+// Strict mode returns false for anything else, non-strict returns the input unchanged
 function formatPhNumber($number, $strict = true)
 {
     $clean = preg_replace('/[^0-9]/', '', $number);
@@ -17,41 +19,25 @@ function formatPhNumber($number, $strict = true)
     return false;
 }
 
-/**
- * reusable_functions.php
- *
- * Shared helpers for the cemetery system.
- * Used by reserve.php, monitor.php, records.php.
- *
- * Contains:
- *   - rederiveGraveStatus()            Grave status derivation from interments
- *   - lockGraveRows()                  FOR UPDATE locks in ascending order
- *   - logPlacement()                   Append-only write to placement_history
- *   - activePlanLockingInterment()     Is this interment referenced by an Active reservation?
- *   - activePlanLockingGrave()         Is this grave referenced by an Active reservation?
- *
- * Design rules enforced here:
- *   - logPlacement is the ONLY function that inserts into placement_history.
- *   - Grave status is always derived from interments, never set blindly.
- *   - Grave locks are always taken in ascending grave_id order.
- *   - Reservation-lock checks are always scoped to reservation_state = 'Active'.
- */
+// Return a normalized PH phone number, or 400 if it can't be parsed
+function validatePhone($phone)
+{
+    $formatted = formatPhNumber($phone);
+    if (!$formatted) {
+        Response::error('Invalid Philippines phone number format.', 400);
+    }
+    return $formatted;
+}
 
-// -----------------------------------------------------------------------------
-// Grave status re-derivation
-// -----------------------------------------------------------------------------
+// Shared helpers used by reserve.php, monitor.php, records.php
+// logPlacement is the only thing that inserts into placement_history
+// Grave status is always derived from interments, never set by hand
+// Grave locks are always taken in ascending grave_id order to avoid deadlocks
+// Reservation checks always filter on reservation_state = 'Active'
 
-/**
- * Re-derive a grave's status from the interments table, atomically.
- *
- *   Occupied  <=> at least one Active, non-deleted interment references it.
- *   Vacant    otherwise.
- *
- * The caller MUST hold a FOR UPDATE lock on this grave row, otherwise
- * the derivation is racy.
- *
- * Returns the new status, or null if the grave no longer exists.
- */
+// Update a grave's status from its interments and return the new status, or null if the grave is gone
+// Occupied means at least one Active non-deleted interment, Vacant means none
+// Caller must already hold a FOR UPDATE lock on this grave or the result is racy
 function rederiveGraveStatus(PDO $pdo, int $graveId): ?string
 {
     $stmt = $pdo->prepare("
@@ -75,17 +61,8 @@ function rederiveGraveStatus(PDO $pdo, int $graveId): ?string
     return $val === false ? null : (string) $val;
 }
 
-// -----------------------------------------------------------------------------
-// Lock helpers – must be called inside an active transaction
-// -----------------------------------------------------------------------------
-
-/**
- * Take FOR UPDATE locks on one or more grave rows, in ascending grave_id
- * order.  Ascending order prevents deadlocks between concurrent requests
- * that each need the same pair of graves.
- *
- * NULLs, zeros, and negatives are dropped silently.
- */
+// Take FOR UPDATE locks on these graves in ascending grave_id order so two requests needing the same pair don't deadlock
+// Nulls, zeros, and negatives are dropped
 function lockGraveRows(PDO $pdo, array $graveIds): void
 {
     $graveIds = array_values(array_unique(array_filter(
@@ -107,31 +84,10 @@ function lockGraveRows(PDO $pdo, array $graveIds): void
     }
 }
 
-// -----------------------------------------------------------------------------
-// Placement history logging
-// -----------------------------------------------------------------------------
-
-/**
- * Append a row to placement_history.
- *
- * The caller passes the full interment row as it was BEFORE the change
- * (read just before the UPDATE) and as it is AFTER the change (read just
- * after the UPDATE).  Both are stored as JSON snapshots so the history is
- * self-contained and can be replayed without touching `interments`.
- *
- * This is the ONLY function that inserts into placement_history.  Every
- * physical movement — reservation Confirm, manual move, manual removal —
- * goes through it.
- *
- * FIELD EDITS ARE NOT LOGGED.  If a caller changes only non-grave fields
- * (name, contact, permits), it must NOT call this function.  This keeps
- * placement_history semantically about *physical placement*, not about
- * form-field churn.
- *
- * $eventType must be 'Initial', 'Move', or 'Removal'.
- *
- * Returns the new history_id.
- */
+// Append one placement_history row, storing the before/after interment snapshots as JSON
+// This is the only place that inserts into placement_history, every physical move goes through it
+// Field edits (name, contact, permits) must NOT call this, only real moves
+// event_type must be Initial, Move, or Removal
 function logPlacement(
     PDO $pdo,
     array $before,
@@ -178,23 +134,10 @@ function logPlacement(
     return (int) $pdo->lastInsertId();
 }
 
-// -----------------------------------------------------------------------------
-// Reservation-lock checks
-// -----------------------------------------------------------------------------
-//
-// While a reservation is Active, its anchors are locked:
-//   - target_grave_id
-//   - pending_interment_id   (N)
-//   - old_interment_id       (O)
-//   - old_new_grave_id       (O's destination, if any)
-//
-// records.php calls these before allowing an edit / move / delete.
-// reserve.php calls these before allowing a new reservation.
+// While a reservation is Active its anchors are locked: target_grave_id, pending_interment_id, old_interment_id, old_new_grave_id
+// records.php and reserve.php call these before touching anything the reservation depends on
 
-/**
- * Is this interment referenced by an Active reservation?
- * Returns the reservation_id if locked, or null if free.
- */
+// Return the reservation_id that is holding this interment, or null if none
 function activePlanLockingInterment(PDO $pdo, int $intermentId): ?int
 {
     $stmt = $pdo->prepare("
@@ -208,10 +151,7 @@ function activePlanLockingInterment(PDO $pdo, int $intermentId): ?int
     return $id === false ? null : (int) $id;
 }
 
-/**
- * Is this grave referenced by an Active reservation?
- * Returns the reservation_id if locked, or null if free.
- */
+// Return the reservation_id that is holding this grave, or null if none
 function activePlanLockingGrave(PDO $pdo, int $graveId): ?int
 {
     $stmt = $pdo->prepare("
@@ -223,4 +163,180 @@ function activePlanLockingGrave(PDO $pdo, int $graveId): ?int
     $stmt->execute([$graveId, $graveId]);
     $id = $stmt->fetchColumn();
     return $id === false ? null : (int) $id;
+}
+
+// Turn a free-text search term into structured date criteria the SQL builder can use
+// Returns ['exact_dates'=>[], 'month_days'=>[], 'year_months'=>[], 'years'=>[]]
+// Deliberately not using strtotime() since it turns things like "next week" or "abc" into dates
+function convert_dates($searchTerm)
+{
+    $result = [
+        'exact_dates' => [],
+        'month_days'  => [],
+        'year_months' => [],
+        'years'       => [],
+    ];
+
+    $term = trim((string) $searchTerm);
+    if ($term === '') {
+        return $result;
+    }
+
+    // Strip ordinal suffixes: 1st / 2nd / 3rd / 12th to 1 / 2 / 3 / 12
+    $term  = preg_replace('/(\d+)(st|nd|rd|th)\b/i', '$1', $term);
+    $term  = preg_replace('/\s+/', ' ', $term);
+    $lower = strtolower($term);
+
+    $monthNames = [
+        'january' => 1,
+        'jan' => 1,
+        'february' => 2,
+        'feb' => 2,
+        'march' => 3,
+        'mar' => 3,
+        'april' => 4,
+        'apr' => 4,
+        'may' => 5,
+        'june' => 6,
+        'jun' => 6,
+        'july' => 7,
+        'jul' => 7,
+        'august' => 8,
+        'aug' => 8,
+        'september' => 9,
+        'sep' => 9,
+        'sept' => 9,
+        'october' => 10,
+        'oct' => 10,
+        'november' => 11,
+        'nov' => 11,
+        'december' => 12,
+        'dec' => 12,
+    ];
+    $monthRegex = implode('|', array_keys($monthNames));
+
+    // 2025-10-12, 2025/10/12, or 2025.10.12
+    if (preg_match('/\b(\d{4})[-\/.](\d{1,2})[-\/.](\d{1,2})\b/', $term, $m)) {
+        $y = (int) $m[1];
+        $mo = (int) $m[2];
+        $d = (int) $m[3];
+        if (checkdate($mo, $d, $y)) {
+            $result['exact_dates'][] = sprintf('%04d-%02d-%02d', $y, $mo, $d);
+        }
+    }
+
+    // 10/12/2025, 10-12-2025, or 10.12.2025 (US order)
+    if (preg_match('/\b(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{4})\b/', $term, $m)) {
+        $mo = (int) $m[1];
+        $d = (int) $m[2];
+        $y = (int) $m[3];
+        if (checkdate($mo, $d, $y)) {
+            $result['exact_dates'][] = sprintf('%04d-%02d-%02d', $y, $mo, $d);
+        }
+    }
+
+    // 10/12/25 or 10-12-25, assumes 2025
+    if (preg_match('/\b(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2})\b/', $term, $m)) {
+        $mo = (int) $m[1];
+        $d = (int) $m[2];
+        $y = 2000 + (int) $m[3];
+        if (checkdate($mo, $d, $y)) {
+            $result['exact_dates'][] = sprintf('%04d-%02d-%02d', $y, $mo, $d);
+        }
+    }
+
+    // Day then month name: "12 oct 2025" or "12 october"
+    // The \b after day stops "12 oct 2025" from being read as "12 20"
+    if (preg_match("/\b(\d{1,2})\s+($monthRegex)\b(?:,?\s+(\d{4}))?/i", $lower, $m)) {
+        $d  = (int) $m[1];
+        $mo = $monthNames[strtolower($m[2])];
+        $y  = isset($m[3]) ? (int) $m[3] : null;
+        if ($y !== null) {
+            if (checkdate($mo, $d, $y)) {
+                $result['exact_dates'][] = sprintf('%04d-%02d-%02d', $y, $mo, $d);
+            }
+        } elseif ($d >= 1 && $d <= 31) {
+            $result['month_days'][] = ['m' => $mo, 'd' => $d];
+        }
+    }
+
+    // Month then day: "oct 12 2025" or "october 12, 2025"
+    // The \b after day stops "may 2025" from being read as "may 20"
+    if (preg_match("/\b($monthRegex)\s+(\d{1,2})\b(?:,?\s+(\d{4}))?/i", $lower, $m)) {
+        $mo = $monthNames[strtolower($m[1])];
+        $d  = (int) $m[2];
+        $y  = isset($m[3]) ? (int) $m[3] : null;
+        if ($y !== null) {
+            if (checkdate($mo, $d, $y)) {
+                $result['exact_dates'][] = sprintf('%04d-%02d-%02d', $y, $mo, $d);
+            }
+        } elseif ($d >= 1 && $d <= 31) {
+            $result['month_days'][] = ['m' => $mo, 'd' => $d];
+        }
+    }
+
+    // Month name and year only: "oct 2025"
+    // Anchored so "12 oct 2025" doesn't also match the whole month
+    if (preg_match('/^\s*(' . $monthRegex . ')\s+(\d{4})\s*\z/i', $lower, $m)) {
+        $mo = $monthNames[strtolower($m[1])];
+        $y  = (int) $m[2];
+        if ($y >= 1900 && $y <= 2100) {
+            $result['year_months'][] = ['y' => $y, 'm' => $mo];
+        }
+    }
+
+    // MM/YYYY or MM-YYYY
+    // Anchored so "10/12/2025" doesn't also match "12/2025"
+    if (preg_match('/^\s*(\d{1,2})[-\/.](\d{4})\s*\z/', $term, $m)) {
+        $mo = (int) $m[1];
+        $y = (int) $m[2];
+        if ($mo >= 1 && $mo <= 12 && $y >= 1900 && $y <= 2100) {
+            $result['year_months'][] = ['y' => $y, 'm' => $mo];
+        }
+    }
+
+    // Bare MM/DD with no year
+    // Anchored so it only fires when the whole term is a month/day pair
+    if (preg_match('#^\s*(\d{1,2})/(\d{1,2})\s*\z#', $term, $m)) {
+        $mo = (int) $m[1];
+        $d = (int) $m[2];
+        if ($mo >= 1 && $mo <= 12 && $d >= 1 && $d <= 31) {
+            $result['month_days'][] = ['m' => $mo, 'd' => $d];
+        }
+    }
+
+    // Bare year like 2025
+    if (preg_match('/^\d{4}\z/', $term)) {
+        $y = (int) $term;
+        if ($y >= 1900 && $y <= 2100) {
+            $result['years'][] = $y;
+        }
+    }
+
+    // Drop duplicates
+    $result['exact_dates'] = array_values(array_unique($result['exact_dates']));
+    $result['years']       = array_values(array_unique($result['years']));
+
+    $seen = [];
+    $result['month_days'] = array_values(array_filter(
+        $result['month_days'],
+        function ($x) use (&$seen) {
+            $k = $x['m'] . '-' . $x['d'];
+            if (isset($seen[$k])) return false;
+            $seen[$k] = true;
+            return true;
+        }
+    ));
+    $seen = [];
+    $result['year_months'] = array_values(array_filter(
+        $result['year_months'],
+        function ($x) use (&$seen) {
+            $k = $x['y'] . '-' . $x['m'];
+            if (isset($seen[$k])) return false;
+            $seen[$k] = true;
+            return true;
+        }
+    ));
+
+    return $result;
 }
