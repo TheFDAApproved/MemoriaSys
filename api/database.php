@@ -18,12 +18,21 @@ $timezone = DB_TIMEZONE;
 
 $dsn = "mysql:host=$host;dbname=$db;charset=$charset";
 
-$options = [
+$baseOptions = [
     PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
     PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
     PDO::ATTR_EMULATE_PREPARES   => false,
-    PDO::MYSQL_ATTR_INIT_COMMAND => "SET time_zone = '$timezone'"
 ];
+
+if (PHP_VERSION_ID >= 80500) {
+    $options = $baseOptions + [
+        Pdo\Mysql::ATTR_INIT_COMMAND => "SET time_zone = '$timezone'",
+    ];
+} else {
+    $options = $baseOptions + [
+        PDO::MYSQL_ATTR_INIT_COMMAND => "SET time_zone = '$timezone'",
+    ];
+}
 
 
 try {
