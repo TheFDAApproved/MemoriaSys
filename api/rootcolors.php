@@ -1,51 +1,24 @@
 <?php
 
-/**
- * ============================================================
- *  api/style.php  —  dynamic stylesheet
- * ============================================================
- *  Works unchanged on:
- *      Laragon : http://capstone.test/api/style.php
- *      XAMPP   : http://localhost/capstone/api/style.php
- *      Live    : https://example.com/whatever/api/style.php
- *
- *  The background URL is emitted as a ROOT-RELATIVE path
- *  (/api/images/...  or  /capstone/api/images/...) so we never
- *  have to guess protocol, host or sub-folder.
- * ============================================================
- */
-
-declare(strict_types=1);
+// Dynamic stylesheet endpoint
+// Reads main color and background image from settings and emits CSS variables
+// Uses root-relative URLs so it works unchanged on any server or subfolder
 
 define('ITS_ME_JUSTTOVERIFY', true);
 
-// A stray notice/warning would corrupt the CSS -> never print errors.
+// A stray notice or warning would corrupt the CSS, so never print errors
 @ini_set('display_errors', '0');
 @ini_set('log_errors', '1');
 error_reporting(E_ALL);
 
-
-/* ============================================================
- *  HELPERS
- * ========================================================== */
-
-/** Escape a value for use inside a quoted CSS string / url(). */
+// Escape a value for use inside a quoted CSS string or url()
 function its_css_escape(string $value): string
 {
     return addcslashes($value, "\\'\"\n\r\f");
 }
 
-/**
- * Root-relative URL prefix of the folder THIS file lives in.
- *
- *   Laragon (vhost, docroot = capstone/) : /api
- *   XAMPP   (subfolder)                  : /capstone/api
- *
- * Strategy:
- *   1. realpath(__DIR__) minus realpath(DOCUMENT_ROOT)   <- most reliable
- *   2. dirname($_SERVER['SCRIPT_NAME'])                  <- fallback
- *   3. '.'                                               <- relative to the CSS file
- */
+// Return the root-relative URL prefix of the folder this file lives in
+// Prefers realpath(__DIR__) minus DOCUMENT_ROOT, falls back to SCRIPT_NAME
 function its_url_prefix(): string
 {
     $docRoot = !empty($_SERVER['DOCUMENT_ROOT']) ? realpath($_SERVER['DOCUMENT_ROOT']) : false;
@@ -55,12 +28,13 @@ function its_url_prefix(): string
         $docRoot = rtrim(str_replace('\\', '/', $docRoot), '/');
         $selfDir = str_replace('\\', '/', $selfDir);
 
+        // Windows paths are case-insensitive, *nix paths are not
         $isUnderDocRoot = DIRECTORY_SEPARATOR === '\\'
-            ? stripos($selfDir . '/', $docRoot . '/') === 0   // Windows: case-insensitive
-            : strpos($selfDir . '/', $docRoot . '/') === 0;   // *nix: case-sensitive
+            ? stripos($selfDir . '/', $docRoot . '/') === 0
+            : strpos($selfDir . '/', $docRoot . '/') === 0;
 
         if ($isUnderDocRoot) {
-            return substr($selfDir, strlen($docRoot));        // '' or '/capstone/api'
+            return substr($selfDir, strlen($docRoot));
         }
     }
 
@@ -72,12 +46,12 @@ function its_url_prefix(): string
     return '.';
 }
 
-/** Parse a CSS color into [r,g,b] (0-255), or null when not understood. */
+// Parse a CSS color into an [r, g, b] array, or null if not understood
 function its_color_to_rgb(string $color): ?array
 {
     $color = strtolower(trim($color));
 
-    // Named colors (covers everything a human is likely to type).
+    // Named colors so that "red" or "blue" still works
     static $named = [
         'black' => '000000',
         'silver' => 'c0c0c0',
@@ -125,7 +99,7 @@ function its_color_to_rgb(string $color): ?array
         $color = '#' . $named[$color];
     }
 
-    // #rgb / #rgba / #rrggbb / #rrggbbaa
+    // Hex forms: #rgb, #rgba, #rrggbb, #rrggbbaa
     if (preg_match('/^#([0-9a-f]{3,8})$/i', $color, $m)) {
         $h = $m[1];
         $n = strlen($h);
@@ -146,7 +120,7 @@ function its_color_to_rgb(string $color): ?array
         return null;
     }
 
-    // rgb() / rgba()
+    // rgb() and rgba()
     if (preg_match('/^rgba?\(\s*([0-9.]+%?)\s*[,\s]\s*([0-9.]+%?)\s*[,\s]\s*([0-9.]+%?)\s*(?:[,;\/]\s*[0-9.]+%?\s*)?\)$/i', $color, $m)) {
         $chan = static function (string $v): int {
             $v = trim($v);
@@ -159,7 +133,7 @@ function its_color_to_rgb(string $color): ?array
         return [$chan($m[1]), $chan($m[2]), $chan($m[3])];
     }
 
-    // hsl() / hsla()
+    // hsl() and hsla()
     if (preg_match('/^hsla?\(\s*([0-9.]+)(?:deg)?\s*[,\s]\s*([0-9.]+)%\s*[,\s]\s*([0-9.]+)%\s*(?:[,;\/]\s*[0-9.]+%?\s*)?\)$/i', $color, $m)) {
         return its_hsl_to_rgb((float) $m[1], (float) $m[2], (float) $m[3]);
     }
@@ -167,7 +141,7 @@ function its_color_to_rgb(string $color): ?array
     return null;
 }
 
-/** HSL -> RGB, all inputs in their normal CSS ranges. */
+// Convert HSL to RGB, all inputs in their normal CSS ranges
 function its_hsl_to_rgb(float $h, float $s, float $l): array
 {
     $h = fmod(fmod($h, 360) + 360, 360) / 360;
@@ -208,7 +182,7 @@ function its_hsl_to_rgb(float $h, float $s, float $l): array
     ];
 }
 
-/** WCAG relative luminance of an RGB triplet. */
+// Return the WCAG relative luminance of an RGB triplet
 function its_luminance(array $rgb): float
 {
     $lin = static function (float $c): float {
@@ -218,7 +192,7 @@ function its_luminance(array $rgb): float
     return 0.2126 * $lin($rgb[0]) + 0.7152 * $lin($rgb[1]) + 0.0722 * $lin($rgb[2]);
 }
 
-/** WCAG contrast ratio between two RGB triplets. */
+// Return the WCAG contrast ratio between two RGB triplets
 function its_contrast(array $a, array $b): float
 {
     $la = its_luminance($a);
@@ -226,7 +200,7 @@ function its_contrast(array $a, array $b): float
     return (max($la, $lb) + 0.05) / (min($la, $lb) + 0.05);
 }
 
-/** Mix an RGB triplet with white — static replacement for color-mix(). */
+// Mix an RGB triplet with white and return a hex string
 function its_lighten(array $rgb, float $amount): string
 {
     $out = [];
@@ -236,22 +210,19 @@ function its_lighten(array $rgb, float $amount): string
     return sprintf('#%02x%02x%02x', $out[0], $out[1], $out[2]);
 }
 
-/** rgba() string helper. */
+// Build an rgba() string from an RGB triplet and alpha
 function its_rgba(array $rgb, float $alpha): string
 {
     $a = rtrim(rtrim(number_format($alpha, 3, '.', ''), '0'), '.');
     return sprintf('rgba(%d, %d, %d, %s)', $rgb[0], $rgb[1], $rgb[2], $a === '' ? '0' : $a);
 }
 
-
-/* ============================================================
- *  1) DATABASE — never let a DB problem break the stylesheet
- * ========================================================== */
+// Read main_color from settings, swallow any DB error so the CSS still loads
 $mainColor = '';
 
 $dbFile = __DIR__ . '/database.php';
 if (is_file($dbFile)) {
-    require_once $dbFile;                 // __DIR__ => works from any CWD
+    require_once $dbFile;
 }
 
 if (isset($pdo)) {
@@ -271,10 +242,7 @@ if (isset($pdo)) {
     }
 }
 
-
-/* ============================================================
- *  2) MAIN COLOR — validate, then derive everything else in PHP
- * ========================================================== */
+// Validate the color, then derive the readable sidebar text color in PHP
 $isValidColor = $mainColor !== '' && (bool) preg_match(
     '/^(?:[a-z]+|#[0-9a-f]{3,8}|rgba?\s*\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*(?:,\s*[\d.]+\s*)?\)|hsla?\s*\(\s*[\d.]+\s*,\s*[\d.]+%?\s*,\s*[\d.]+%?\s*(?:,\s*[\d.]+\s*)?\))$/i',
     $mainColor
@@ -286,7 +254,7 @@ if (!$isValidColor) {
 $hasColor = $isValidColor;
 $mainRgb  = $hasColor ? its_color_to_rgb($mainColor) : null;
 
-// Readable text on top of $mainColor (black or white, whichever contrasts more).
+// Pick black or white for sidebar text, whichever contrasts more with the main color
 $sidebarText    = '#ffffff';
 $sidebarTextRgb = [255, 255, 255];
 
@@ -297,44 +265,28 @@ if ($mainRgb !== null) {
     }
 }
 
+// Background image path, relative to this PHP file
+$bgRelativePath = 'images/cemetery_background.png';
 
-/* ============================================================
- *  3) BACKGROUND IMAGE — filesystem check + portable URL
- * ========================================================== */
-$bgRelativePath = 'images/cemetery_background.png';   // relative to THIS php file
-
-// Filesystem check: always relative to __DIR__, never the current working dir.
+// Resolve against __DIR__, not the current working directory
 $bgFsPath = __DIR__ . DIRECTORY_SEPARATOR
     . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $bgRelativePath);
 
 $hasImage = is_file($bgFsPath);
 
-// Root-relative URL -> identical behaviour on Laragon, XAMPP and live.
+// Root-relative URL keeps behaviour identical on Laragon, XAMPP, and live
 $bgUrl = $hasImage
     ? its_url_prefix() . '/' . ltrim(str_replace('\\', '/', $bgRelativePath), '/')
     : null;
 
-/*
- * If you ever REALLY need a full absolute URL (e.g. for an e-mail template),
- * build it like this instead — but for a <link>ed stylesheet root-relative
- * is safer (no mixed-content warnings, no Host-header spoofing, proxy-safe):
- *
- * $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
- * $bgUrl  = $scheme . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost')
- *         . its_url_prefix() . '/' . ltrim($bgRelativePath, '/');
- */
-
-
-/* ============================================================
- *  4) RESPONSE HEADERS + cheap revalidation
- * ========================================================== */
+// Serve CSS with an ETag so repeat visits get a 304 and skip the body
 header('Content-Type: text/css; charset=UTF-8');
 header('X-Content-Type-Options: nosniff');
 header('Vary: Accept-Encoding');
 
 $etag = '"' . substr(hash('sha256', $mainColor . '|' . ($bgUrl ?? '') . '|' . ($hasColor ? 1 : 0)), 0, 32) . '"';
 header('ETag: ' . $etag);
-header('Cache-Control: no-cache');          // revalidate, but 304 = no body cost
+header('Cache-Control: no-cache');
 
 if (trim($_SERVER['HTTP_IF_NONE_MATCH'] ?? '') === $etag) {
     http_response_code(304);
@@ -350,11 +302,11 @@ if (trim($_SERVER['HTTP_IF_NONE_MATCH'] ?? '') === $etag) {
 <?php if ($hasColor): ?>
     --mainColor: <?= $mainColor ?>;
 
-    /* Computed in PHP (WCAG contrast) instead of the unsupported contrast-color() */
+    /* Precomputed in PHP since contrast-color() isn't supported everywhere yet */
     --sidebarText: <?= $sidebarText ?>;
 
     <?php if ($mainRgb !== null): ?>
-        /* Static fallbacks — browsers without color-mix() still get correct colours */
+        /* Static fallbacks for browsers without color-mix() */
         --sidebar-hover: <?= its_lighten($mainRgb, 0.12) ?>;
         --sidebar-border: <?= its_lighten($mainRgb, 0.18) ?>;
         --sidebar-accent: <?= its_lighten($mainRgb, 0.40) ?>;
@@ -365,8 +317,7 @@ if (trim($_SERVER['HTTP_IF_NONE_MATCH'] ?? '') === $etag) {
 }
 
 <?php if ($hasColor): ?>
-    /* Modern browsers: keep the live color-mix() versions.
-    (Fallbacks above are ignored only if the browser supports this block.) */
+    /* Modern browsers: live color-mix() overrides the fallbacks above */
     @supports (color: color-mix(in srgb, red, white)) {
     :root {
     --sidebar-hover: color-mix(in srgb, var(--mainColor), white 12%);
@@ -377,11 +328,9 @@ if (trim($_SERVER['HTTP_IF_NONE_MATCH'] ?? '') === $etag) {
     }
 <?php endif; ?>
 
-/* =========================================================
-Disabled state — cursor + pointer-events
-========================================================= */
+/* Disabled state */
 
-/* 1. Native disabled form controls. */
+/* Native disabled controls */
 button:disabled,
 input:disabled,
 select:disabled,
@@ -393,14 +342,14 @@ cursor: not-allowed !important;
 pointer-events: auto !important;
 }
 
-/* 2. ARIA-based disabled (works on <a>, <div>, wrappers…) */
+/* ARIA-disabled, works on <a>, <div>, wrappers, etc. */
         [aria-disabled="true"],
         [aria-disabled="true"] * {
         cursor: not-allowed !important;
         pointer-events: auto !important;
         }
 
-        /* 3. Class-based disabled (common in component libraries). */
+        /* Class-based disabled, common in component libraries */
         .is-disabled,
         .is-disabled *,
         .disabled,

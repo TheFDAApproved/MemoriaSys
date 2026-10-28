@@ -2,6 +2,7 @@
 
 require_once 'notallowed.php';
 
+// Image upload, resize, rename, and delete with per-file flock() locking
 class ImageManager
 {
     private $uploadDir;
@@ -9,16 +10,14 @@ class ImageManager
     private $maxFileSize;
     private $lockDir;
 
-    /**
-     * Maximum time (ms) to wait for a file lock before giving up.
-     * A timeout returns a 503 to the caller instead of hanging the worker.
-     */
+    // Max ms to wait for a file lock before giving up
+    // A timeout returns 503 to don't hang the worker
     private $lockTimeoutMs = 3000;
 
-    // Allowed strict MIME types
+    // Strict MIME types to accept
     private $allowedMimeTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
 
-    // Max filename length (leave room for added suffixes and extension)
+    // 150 leaves room for added suffixes and the extension
     private $maxFilenameLength = 150;
 
     public function __construct($uploadDirPath = null, $baseUrlPath = null, $maxFileSize = 10485760, $lockTimeoutMs = 3000)
@@ -27,15 +26,14 @@ class ImageManager
         $this->maxFileSize = $maxFileSize;
         $this->lockTimeoutMs = max(100, (int)$lockTimeoutMs);
 
-        // Lock files live in a dedicated subdirectory. Keeps the images/
-        // listing clean, and makes stale-lock cleanup straightforward.
+        // Locks live in locks/ so images/ stays clean and cleanup can target one folder
         $baseForLocks = rtrim($this->uploadDir, '/\\') . DIRECTORY_SEPARATOR;
         $this->lockDir = $baseForLocks . 'locks' . DIRECTORY_SEPARATOR;
         if (!is_dir($this->lockDir)) {
             @mkdir($this->lockDir, 0755, true);
         }
 
-        // 1. Determine the correct protocol (http vs https)
+        // Behind a proxy the real scheme is in X-Forwarded-Proto, not HTTPS
         $protocol = 'http';
         if (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https') {
             $protocol = 'https';
@@ -43,7 +41,7 @@ class ImageManager
             $protocol = 'https';
         }
 
-        // 2. Determine the correct host (Ngrok URL vs Local URL)
+        // Same for host, but it may be a list so take the first
         $host = $_SERVER['HTTP_HOST'];
         if (isset($_SERVER['HTTP_X_FORWARDED_HOST'])) {
             $host = $_SERVER['HTTP_X_FORWARDED_HOST'];
@@ -52,14 +50,12 @@ class ImageManager
             }
         }
 
-        // 3. Build the final URL
         $scriptDir = rtrim(dirname($_SERVER['SCRIPT_NAME']), '/\\');
         $this->baseUrl = $baseUrlPath ?? $protocol . '://' . $host . $scriptDir . '/images/';
 
         if (!is_dir($this->uploadDir)) {
-            // 0755 is usually fine; adjust if your environment requires it
             if (!mkdir($this->uploadDir, 0755, true)) {
-                // Log this internally if you have a logger
+                // Silent on failure, log here if you add a logger
             }
         }
     }
@@ -77,12 +73,12 @@ class ImageManager
 
     private function getSafeFilename($filename)
     {
-        // Prevent null deprecation errors
+        // Empty input would trip null warnings in preg_replace
         if (empty($filename)) {
             return false;
         }
 
-        // Cast to string just to be absolutely safe
+        // Cast so the regex always gets a string
         $safe = preg_replace('/[^a-zA-Z0-9_\.-]/', '', basename((string)$filename));
         if ($safe === '' || $safe === '.' || $safe === '..') {
             return false;
@@ -106,7 +102,7 @@ class ImageManager
             return 'Server configuration error: cannot verify file type.';
         }
         $mime = finfo_file($finfo, $filePath);
-        finfo_close($finfo);
+        // finfo_close() is deprecated in PHP 8.5+
 
         if ($mime === false || !in_array($mime, $this->allowedMimeTypes, true)) {
             return 'Invalid file content. Only standard images are allowed.';
@@ -119,17 +115,8 @@ class ImageManager
         return ['success' => true, 'mime' => $mime];
     }
 
-    /**
-     * Resize an image file in place to an exact target size.
-     * Stretch-to-fit — the source is mapped onto the full target rect.
-     * Preserves transparency for PNG / GIF / WebP.
-     *
-     * @param string $sourcePath    Path to the image file (modified in place)
-     * @param int    $targetWidth
-     * @param int    $targetHeight
-     * @param string $mimeType      Validated MIME type from validateImage()
-     * @return array ['success' => true] or ['success' => false, 'error' => '...']
-     */
+    // Resize an image in place to exact target dimensions, stretching to fit
+    // Keeps transparency for formats that support it
     private function resizeImage($sourcePath, $targetWidth, $targetHeight, $mimeType)
     {
         if (!extension_loaded('gd')) {
@@ -144,12 +131,11 @@ class ImageManager
         $srcW = (int)$info[0];
         $srcH = (int)$info[1];
 
-        // Guard against memory blow-ups
+        // Refuse huge sources so imagecreatetruecolor can't blow up memory
         if ($srcW * $srcH > 25_000_000) {
             return ['success' => false, 'error' => 'Source image is too large to resize safely.'];
         }
 
-        // Load the source
         switch ($mimeType) {
             case 'image/png':
                 $src = @imagecreatefrompng($sourcePath);
@@ -171,10 +157,9 @@ class ImageManager
             return ['success' => false, 'error' => 'Failed to load image for resizing.'];
         }
 
-        // Prepare the target canvas
         $dst = imagecreatetruecolor($targetWidth, $targetHeight);
 
-        // Preserve transparency where the source format supports it
+        // Keep transparency for formats that support it
         if (in_array($mimeType, ['image/png', 'image/gif', 'image/webp'], true)) {
             imagealphablending($dst, false);
             imagesavealpha($dst, true);
@@ -182,7 +167,7 @@ class ImageManager
             imagefilledrectangle($dst, 0, 0, $targetWidth, $targetHeight, $transparent);
         }
 
-        // Stretch-to-fit (distorts if aspect ratios differ)
+        // Stretch to fit, ignoring aspect ratio
         imagecopyresampled(
             $dst,
             $src,
@@ -196,7 +181,6 @@ class ImageManager
             $srcH
         );
 
-        // Write back to the same path
         $saved = false;
         switch ($mimeType) {
             case 'image/png':
@@ -223,34 +207,15 @@ class ImageManager
         return ['success' => true];
     }
 
-    /**
-     * Get an exclusive lock on the shared lock file for a given target path.
-     *
-     * The lock file lives in $this->lockDir with a hashed name, so the
-     * images directory stays clean and exotic caller filenames can never
-     * break the filesystem namespace.
-     *
-     * Uses a non-blocking acquire in a bounded retry loop. If the lock is
-     * held by another process for longer than $lockTimeoutMs, this returns
-     * false rather than hanging the worker forever.
-     *
-     * Returns an array with handle and path on success, false on failure.
-     *
-     * Note on lock-file lifetime:
-     *   The .lock file is intentionally NOT unlinked on release. Unlinking
-     *   an open flock()'d file is racy — a third process that fopen()s the
-     *   name afterwards gets a fresh inode, so two processes can each hold
-     *   an "exclusive" lock on different inodes with the same name. This
-     *   is why locks must persist. Use cleanupStaleLocks() (below) for
-     *   periodic housekeeping instead.
-     */
+    // Wait up to lockTimeoutMs for an exclusive flock, return false on timeout
+    // Never unlink the .lock file on release, doing so would break flock() for anyone still waiting
     private function acquireLock($targetPath, $timeoutMs = null)
     {
         if ($timeoutMs === null) {
             $timeoutMs = $this->lockTimeoutMs;
         }
 
-        // Safety net: ensure locks dir exists even if constructed strangely.
+        // In case the constructor was bypassed somehow
         if (!is_dir($this->lockDir)) {
             @mkdir($this->lockDir, 0755, true);
         }
@@ -267,10 +232,9 @@ class ImageManager
                 fclose($fp);
                 return false;
             }
-            usleep(50000); // 50ms between attempts
+            usleep(50000); // Sleep 50ms between attempts so it don't spin
         }
 
-        // Return both the file pointer and the lock file path as an array
         return [
             'handle'    => $fp,
             'lock_file' => $lockFile
@@ -279,7 +243,6 @@ class ImageManager
 
     private function releaseLock($lock)
     {
-        // Ensure we received the correct lock array structure
         if (!is_array($lock) || !isset($lock['handle'])) {
             return;
         }
@@ -289,8 +252,7 @@ class ImageManager
         flock($lockHandle, LOCK_UN);
         fclose($lockHandle);
 
-        // Do NOT unlink the lock file here — deleting it while another
-        // process is waiting on it breaks flock() exclusivity.
+        // Never unlink the lock file, a waiting process would end up locking a different inode
     }
 
     public function getAllImages($page = 1, $limit = 20, $search = '')
@@ -313,11 +275,11 @@ class ImageManager
                 if ($file === '.' || $file === '..') {
                     continue;
                 }
-                // Skip the locks subdirectory created by the constructor
+                // Skip the locks/ folder, it's not an image
                 if ($file === 'locks') {
                     continue;
                 }
-                // Skip legacy .lock files left over from older versions
+                // Skip leftover .lock files from older versions
                 if (substr($file, -5) === '.lock') {
                     continue;
                 }
@@ -359,11 +321,11 @@ class ImageManager
                 if ($file === '.' || $file === '..') {
                     continue;
                 }
-                // Skip the locks subdirectory created by the constructor
+                // Skip the locks/ folder, it's not an image
                 if ($file === 'locks') {
                     continue;
                 }
-                // Skip legacy .lock files left over from older versions
+                // Skip leftover .lock files from older versions
                 if (substr($file, -5) === '.lock') {
                     continue;
                 }
@@ -407,14 +369,8 @@ class ImageManager
         }
     }
 
-    /**
-     * Upload image with optional "replace if exists" behavior and file locking.
-     *
-     * @param string $tmpFilePath     Path to uploaded temp file
-     * @param string $originalName    Original filename from form
-     * @param string $requestedName   Optional custom base name
-     * @param bool   $replaceIfExists If true and file exists, replace it; otherwise add uniqid.
-     */
+    // Save an uploaded image, optionally resizing, with uniqid suffix if the target exists
+    // Returns the final filename and public URL
     public function uploadImage($tmpFilePath, $originalName, $requestedName = '', $replaceIfExists = false, $dimensions = null)
     {
         if (!file_exists($tmpFilePath)) {
@@ -431,7 +387,7 @@ class ImageManager
             return ['success' => false, 'error' => 'Unsupported image type.'];
         }
 
-        /* ---------- NEW: optional resize ---------- */
+        // Resize first if the caller asked for specific dimensions
         if (
             is_array($dimensions)
             && !empty($dimensions['width'])
@@ -459,7 +415,6 @@ class ImageManager
             $cleanName = 'img_' . bin2hex(random_bytes(5));
         }
 
-        // Limit filename length
         if (strlen($cleanName) > $this->maxFilenameLength - strlen($trueExt) - 1) {
             $cleanName = substr($cleanName, 0, $this->maxFilenameLength - strlen($trueExt) - 1);
         }
@@ -467,7 +422,6 @@ class ImageManager
         $newName = $cleanName . '.' . $trueExt;
         $destination = $this->uploadDir . $newName;
 
-        // Acquire lock on the target file
         $lock = $this->acquireLock($destination);
         if (!$lock) {
             return [
@@ -478,16 +432,15 @@ class ImageManager
         }
 
         try {
-            // Handle existing file
             if (file_exists($destination)) {
                 if ($replaceIfExists) {
-                    // We will overwrite this file; nothing to change in name
+                    // Overwrite in place, nothing else to do
                 } else {
-                    // Default behavior: make unique name
+                    // Append uniqid so it don't clobber the existing file
                     $suffix = '_' . uniqid('', true);
                     $newName = $cleanName . $suffix . '.' . $trueExt;
 
-                    // Ensure we don't exceed max length again
+                    // Re-check length after the suffix was added
                     if (strlen($newName) > $this->maxFilenameLength) {
                         $baseLen = $this->maxFilenameLength - strlen($trueExt) - 1;
                         $newName = substr($cleanName, 0, $baseLen) . $suffix . '.' . $trueExt;
@@ -591,7 +544,7 @@ class ImageManager
             $newFilename = $cleanName . '.' . $trueExt;
             $newDestination = $this->uploadDir . $newFilename;
 
-            // Lock the new destination (or old if same)
+            // Lock the new path, or the old one if the name didn't change
             $lockTarget = ($newDestination !== $oldDestination) ? $newDestination : $oldDestination;
             $lock = $this->acquireLock($lockTarget);
             if (!$lock) {
@@ -604,7 +557,7 @@ class ImageManager
             }
 
             try {
-                // Collision prevention: if new name differs from old and exists, make unique
+                // Collision prevention: if the new name differs and already exists, make it unique
                 if ($newFilename !== $safeOldFile && file_exists($newDestination)) {
                     $suffix = '_' . uniqid('', true);
                     $baseLen = $this->maxFilenameLength - strlen($trueExt) - 1 - strlen($suffix);
@@ -628,7 +581,7 @@ class ImageManager
                     return ['success' => false, 'error' => $msg, 'status_code' => $code];
                 }
 
-                // Cleanup: if the filename changed, delete the old file
+                // If the filename changed, remove the old file
                 if ($newFilename !== $safeOldFile && file_exists($oldDestination)) {
                     @unlink($oldDestination);
                 }
@@ -695,13 +648,8 @@ class ImageManager
         }
     }
 
-    /**
-     * Rename image with optional "replace if exists" behavior and file locking.
-     *
-     * @param string $oldFilename     Current filename
-     * @param string $newRequestedName New base name (without extension)
-     * @param bool   $replaceIfExists If true and target exists, replace it; otherwise add uniqid.
-     */
+    // Rename an image, uniquifying if the target exists unless replaceIfExists is true
+    // Keeps the original extension
     public function renameImage($oldFilename, $newRequestedName, $replaceIfExists = false)
     {
         $safeOldFile = $this->getSafeFilename($oldFilename);
@@ -741,9 +689,7 @@ class ImageManager
             ];
         }
 
-        // Lock both old and new in a deterministic order to prevent ABBA deadlocks.
-        // Two concurrent renames in opposite directions (A->B and B->A) would
-        // otherwise each hold one lock and wait forever on the other's.
+        // Lock both paths in sorted order so two opposite renames can't deadlock on each other
         $lockPaths = [$oldDestination, $newDestination];
         sort($lockPaths, SORT_STRING);
 
@@ -769,7 +715,7 @@ class ImageManager
         try {
             if (file_exists($newDestination)) {
                 if ($replaceIfExists) {
-                    // Remove existing target so rename can succeed
+                    // Delete the existing target so rename() can succeed
                     if (!unlink($newDestination)) {
                         $error = error_get_last();
                         $msg = 'Failed to remove existing file with new name.';
@@ -779,7 +725,7 @@ class ImageManager
                         return ['success' => false, 'error' => $msg, 'status_code' => 500];
                     }
                 } else {
-                    // Default: make unique name
+                    // Append uniqid so it don't clobber the existing target
                     $suffix = '_' . uniqid('', true);
                     $baseLen = $this->maxFilenameLength - strlen($ext) - 1 - strlen($suffix);
                     $newFilename = substr($cleanName, 0, $baseLen) . $suffix . '.' . $ext;
@@ -816,44 +762,17 @@ class ImageManager
         }
     }
 
-    /**
-     * Remove lock files that have been idle for a long time.
-     *
-     * Meant to be called from a cron job (e.g. once a day):
-     *
-     *     $im = new ImageManager();
-     *     $stats = $im->cleanupStaleLocks(86400); // 24h
-     *     error_log('lock cleanup: ' . json_encode($stats));
-     *
-     * Safety model:
-     *   - Only touch locks whose mtime is older than $maxAgeSeconds.
-     *   - For each, try a non-blocking flock() — if it fails, someone is
-     *     actively using it, so skip.
-     *   - Only then unlink.
-     *
-     * There is a theoretical race in the unlink-while-held pattern: if a
-     * waiter acquires the lock between our unlink and our release, it and
-     * the next opener of the (re-created) file can each believe they hold
-     * the "same" lock via different inodes. With the defaults above this
-     * is unreachable in practice — an active waiter would have timed out
-     * after 3s (lockTimeoutMs), not waited 24h — but it does exist. If
-     * you'd rather not accept even that theoretical risk, just don't call
-     * this method; the files are 0 bytes each and cause no harm.
-     *
-     * Scans both the current `locks/` directory and the images/ root, so
-     * any legacy `.jpg.lock` files from older versions are also cleaned.
-     *
-     * @param int $maxAgeSeconds   Minimum idle time before a lock is eligible (default 24h)
-     * @return array               ['deleted'=>int, 'skipped_active'=>int, 'skipped_recent'=>int, 'errors'=>int]
-     */
+    // Delete .lock files older than maxAgeSeconds that no one currently holds
+    // Meant for cron, but if you don't want the theoretical unlink race, just don't call it
+    // Skips any lock that flock() still reports as held
     public function cleanupStaleLocks($maxAgeSeconds = 86400)
     {
         $stats = ['deleted' => 0, 'skipped_active' => 0, 'skipped_recent' => 0, 'errors' => 0];
 
-        // Current location: images/locks/*.lock
+        // Where new-style locks live
         $this->cleanupLocksInDir($this->lockDir, $maxAgeSeconds, $stats);
 
-        // Legacy location: images/*.jpg.lock (from older versions)
+        // Where old .jpg.lock files might still be hiding
         $this->cleanupLocksInDir($this->uploadDir, $maxAgeSeconds, $stats);
 
         return $stats;
@@ -901,7 +820,7 @@ class ImageManager
             }
 
             if (!flock($fp, LOCK_EX | LOCK_NB)) {
-                // Still held by a live process — leave it alone.
+                // Lock is held by a live process, leave it alone
                 fclose($fp);
                 $stats['skipped_active']++;
                 continue;

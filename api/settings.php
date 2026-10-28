@@ -6,12 +6,11 @@ require_once 'imagemanager.php';
 require_once 'checkuser.php';
 require_once 'textbee.php';
 
-// ============================================================================
-// Office permission allowlist.
-// Office users can CREATE / UPDATE / DELETE ONLY these setting keys.
-// Everything else (main_color, people_*, textbee_*, header, footer, ...)
-// remains admin-only.
-// ============================================================================
+// Settings endpoint for admin and office (public and grounds can only read)
+// Office writes are restricted to OFFICE_WRITABLE_SETTING_KEYS
+// Image keys must be .png, JSON list keys must be valid JSON
+
+// Keys office can create, update, or delete, everything else stays admin-only
 const OFFICE_WRITABLE_SETTING_KEYS = [
     'logo_1',
     'logo_2',
@@ -30,18 +29,8 @@ const OFFICE_WRITABLE_SETTING_KEYS = [
     'payment_purposes_list',
 ];
 
-// ============================================================================
-// Setting key types.
-//
-//   IMAGE_SETTING_KEYS     → value must be a .png filename.
-//                            Uploads are only accepted for these keys.
-//   JSON_LIST_SETTING_KEYS → value must be valid JSON (arrays of strings).
-//   Everything else        → free-text string, no special validation.
-//
-// These apply to every writer (admin + office). A key appearing in both
-// OFFICE_WRITABLE_SETTING_KEYS and IMAGE_SETTING_KEYS is writable by office
-// AND still gets the .png validation.
-// ============================================================================
+// Image keys: value must be a .png filename, uploads only accepted for these
+// header and footer are admin-only but still validated here
 const IMAGE_SETTING_KEYS = [
     'logo_1',
     'logo_2',
@@ -49,10 +38,11 @@ const IMAGE_SETTING_KEYS = [
     'cemetery_mark',
     'cemetery_background',
     'qr_code',
-    'header',   // admin-only write, but still an image
-    'footer',   // admin-only write, but still an image
+    'header',
+    'footer',
 ];
 
+// JSON list keys: value must be valid JSON
 const JSON_LIST_SETTING_KEYS = [
     'payment_channels_list',
     'payment_purposes_list',
@@ -61,29 +51,25 @@ const JSON_LIST_SETTING_KEYS = [
 $userData = checkuser(false);
 $method = $_SERVER['REQUEST_METHOD'] ?? null;
 
-// --- REST-ish ROUTING: PARSE THE URI ---
 $pathInfo = $_GET['path_info'] ?? $_SERVER['PATH_INFO'] ?? '';
 $pathParts = array_filter(explode('/', trim($pathInfo, '/')));
 $resourceId = array_shift($pathParts);
 
-// ============================================================================
-// ROLE FLAGS
-// ============================================================================
 $isPublic  = !$userData;
 $isGrounds = !$isPublic && ($userData['role'] ?? null) === ROLE_GROUNDS;
 $isOffice  = !$isPublic && ($userData['role'] ?? null) === ROLE_OFFICE;
 $isAdmin   = !$isPublic && ($userData['role'] ?? null) === ROLE_ADMIN;
 
-// Unknown role → deny outright.
+// Unknown role, deny outright
 if (!$isPublic && !$isGrounds && !$isOffice && !$isAdmin) {
     Response::error("Forbidden to access this resource", 403);
 }
 
-// Allowed HTTP methods per role.
+// Public and grounds can only read; office and admin can write
 if ($isPublic || $isGrounds) {
     $allowedMethods = ['GET'];
 } elseif ($isOffice) {
-    // Office may attempt writes — per-key allowlist is enforced further down.
+    // Office can attempt writes; the per-key allowlist is enforced below
     $allowedMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
 } else { // admin
     $allowedMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'];
@@ -98,10 +84,8 @@ if (!in_array($method, $allowedMethods, true)) {
     );
 }
 
-// ============================================================================
-// PUBLIC-TIER GET (public, grounds, office): non-sensitive only.
-// Admin skips this block and uses the full view in the switch below.
-// ============================================================================
+// Public tier: GET only, non-sensitive settings
+// Admin skips this block and uses the full view below
 if ($method === 'GET' && !$isAdmin) {
     try {
         if ($resourceId) {
@@ -132,12 +116,8 @@ if ($method === 'GET' && !$isAdmin) {
     Response::error("Unauthorized access", 401);
 }
 
-// ============================================================================
-// ADMIN (full) or OFFICE (scoped to OFFICE_WRITABLE_SETTING_KEYS) reach the switch.
-// ============================================================================
 $manager = new ImageManager();
 
-// Parse Input Data
 $rawData = array_merge(
     json_decode(file_get_contents("php://input"), true) ?: [],
     $_POST ?? []
@@ -148,7 +128,7 @@ try {
     switch ($method) {
 
         case 'GET':
-            // Admin-only full view (public/grounds/office already served above).
+            // Full view for admin; public, grounds, and office were served above
             if ($resourceId) {
                 $stmt = $pdo->prepare("
                     SELECT * FROM settings 
@@ -161,7 +141,7 @@ try {
                     Response::error("Setting not found", 404);
                 }
 
-                // Admin: always decrypt sensitive values.
+                // Admin always decrypts sensitive values
                 if (stripos((string)($setting['description'] ?? ''), 'sensitive') !== false) {
                     $setting['setting_value'] = decryptCredential($setting['setting_value']);
                 }
@@ -171,7 +151,7 @@ try {
                 $stmt->execute();
                 $settings = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-                // Admin: always decrypt sensitive values.
+                // Admin always decrypts sensitive values
                 foreach ($settings as &$setting) {
                     if (stripos((string)($setting['description'] ?? ''), 'sensitive') !== false) {
                         $setting['setting_value'] = decryptCredential($setting['setting_value']);
@@ -195,6 +175,7 @@ try {
                 if (empty(trim($setkey)) || empty(trim($setdesc)) || empty(trim($setval))) {
                     Response::error("setting_key, setting_value, description are required.", 400);
                 }
+                // Wrap a single setting into a one-element bulk array so both payload shapes share the same checks below
                 $rawData['bulk_settings'] = [[
                     'setting_key' => $setkey,
                     'description' => $setdesc,
@@ -202,15 +183,8 @@ try {
                 ]];
             }
 
-            // ----------------------------------------------------------------
-            // OFFICE RESTRICTION: only keys in OFFICE_WRITABLE_SETTING_KEYS.
-            // Applied AFTER the single→bulk normalization above, so both
-            // payload shapes are covered by the same guard.
-            //
-            // If any submitted key is out of scope, the WHOLE request is
-            // rejected — no partial writes sneak through when an office user
-            // tries to mix allowed + forbidden keys in one bulk call.
-            // ----------------------------------------------------------------
+            // Office writes are restricted to allowlisted keys
+            // A single out-of-scope key rejects the whole batch, so a mixed payload can't sneak through
             if ($isOffice && isset($rawData['bulk_settings']) && is_array($rawData['bulk_settings'])) {
                 foreach ($rawData['bulk_settings'] as $setting) {
                     $key = trim($setting['setting_key'] ?? '');
@@ -227,8 +201,7 @@ try {
             $pdo->beginTransaction();
             $uploadedFiles = [];
 
-            // Collected during the bulk loop, saved as a pair AFTER commit
-            // via saveTextBeeCredentials(). Null means "not submitted".
+            // TextBee pair is captured here and saved after commit; null means not submitted
             $textbeeApiKey   = null;
             $textbeeDeviceId = null;
             $bulkSucceeded   = false;
@@ -237,8 +210,7 @@ try {
             if (isset($rawData['bulk_settings']) && is_array($rawData['bulk_settings'])) {
 
                 try {
-                    // Per-key target dimensions for uploaded images.
-                    // Anything not listed here is saved at its original size.
+                    // Optional resize per image key; unlisted keys save at original size
                     $imageDimensions = [
                         'header' => ['width' => 1276, 'height' => 152],
                         'footer' => ['width' => 1276, 'height' => 152],
@@ -256,11 +228,7 @@ try {
                         $isImageKey    = in_array($sKey, IMAGE_SETTING_KEYS, true);
                         $isJsonListKey = in_array($sKey, JSON_LIST_SETTING_KEYS, true);
 
-                        // ----------------------------------------------------
-                        // Reject image uploads for non-image keys.
-                        // Runs BEFORE the upload so we don't waste disk I/O
-                        // on a request that's going to fail anyway.
-                        // ----------------------------------------------------
+                        // Reject before the upload so no disk I/O is wasted on a doomed request
                         if ($hasImage && !$isImageKey) {
                             throw new Exception(
                                 "'{$sKey}' does not accept an image upload. "
@@ -268,25 +236,8 @@ try {
                             );
                         }
 
-                        // ----------------------------------------------------------
-                        // TextBee credentials are saved as a PAIR, after this
-                        // transaction commits, via saveTextBeeCredentials().
-                        //
-                        // Why: the pair (api_key + device_id) must land together
-                        // or not at all. saveTextBeeCredentials() wraps both
-                        // upserts in its own transaction. Doing that inside our
-                        // own open transaction would nest, which PDO doesn't
-                        // support. So we capture the plain values here, skip
-                        // the normal upsert for these keys, and call the
-                        // helper after we commit.
-                        //
-                        // The helper also hardcodes the description, so we
-                        // don't need the submitted description for these keys.
-                        //
-                        // NOTE: These keys are admin-only. The office allowlist
-                        // above already rejects them before we get here — this
-                        // branch is only reached by admins.
-                        // ----------------------------------------------------------
+                        // TextBee pair is captured here and saved after commit (PDO has no nested transactions)
+                        // Admin-only; the office allowlist above already rejects them
                         if ($sKey === 'textbee_api_key') {
                             $textbeeApiKey = $sValue;
                             continue;
@@ -299,19 +250,19 @@ try {
                         if ($hasImage) {
                             $tmpName = $_FILES['bulk_images']['tmp_name'][$index];
 
-                            // STRICT PNG VALIDATION
+                            // Only PNG is allowed
                             $finfo = finfo_open(FILEINFO_MIME_TYPE);
                             $mime  = finfo_file($finfo, $tmpName);
-                            finfo_close($finfo);
+                            // finfo_close() is deprecated in PHP 8.5+, skipped
 
                             if ($mime !== 'image/png') {
                                 throw new Exception("Upload failed: Only PNG images are allowed for '{$sKey}'.");
                             }
 
-                            // Force the filename to be the setting_key.
+                            // Filename is always the setting_key
                             $requestedName = $sKey;
 
-                            // Look up the target size for this key (null = no resize)
+                            // null means save at original size
                             $dims = $imageDimensions[$sKey] ?? null;
 
                             $result = $manager->uploadImage(
@@ -326,7 +277,7 @@ try {
                                 throw new Exception("Image upload failed for {$sKey}: " . $result['error']);
                             }
 
-                            // Defense in depth: settings only supports PNG.
+                            // Redundant check: settings only supports PNG
                             if (strtolower(pathinfo($result['filename'], PATHINFO_EXTENSION)) !== 'png') {
                                 $uploadedFiles[] = $result['filename']; // let cleanup remove it
                                 throw new Exception("Upload failed: Only PNG images are allowed for '{$sKey}'.");
@@ -336,12 +287,7 @@ try {
                             $uploadedFiles[] = $sValue;
                         }
 
-                        // ----------------------------------------------------
-                        // Image key WITHOUT a new upload: the value must be a
-                        // .png filename. Covers the "edit description but
-                        // keep the same image" case — the form re-submits
-                        // the existing filename, which passes this check.
-                        // ----------------------------------------------------
+                        // Image key with no new upload still needs a .png value (the edit-description case)
                         if ($isImageKey && !$hasImage) {
                             if ($sValue === '' || strtolower(pathinfo($sValue, PATHINFO_EXTENSION)) !== 'png') {
                                 throw new Exception(
@@ -350,12 +296,7 @@ try {
                             }
                         }
 
-                        // ----------------------------------------------------
-                        // JSON list key: value must be valid JSON.
-                        // Only checked when no image was uploaded (these keys
-                        // aren't images, and the reject above already caught
-                        // the "upload to non-image key" case anyway).
-                        // ----------------------------------------------------
+                        // JSON list key: value must be valid JSON
                         if ($isJsonListKey && !$hasImage && $sValue !== '') {
                             json_decode($sValue);
                             if (json_last_error() !== JSON_ERROR_NONE) {
@@ -363,27 +304,13 @@ try {
                             }
                         }
 
-                        // Encrypt before saving if description flags it as sensitive
+                        // Encrypt if description says sensitive
                         if (stripos($sDesc, 'sensitive') !== false) {
                             $sValue = encryptCredential($sValue);
                         }
 
-                        // ----------------------------------------------------
-                        // Upsert settings by key.
-                        //
-                        //   ACTIVE row exists  → UNIQUE on active_setting_key
-                        //                        fires → update in place.
-                        //   NO active row      → a NEW row is inserted. Any
-                        //                        soft-deleted row with the
-                        //                        same key stays untouched (its
-                        //                        active_setting_key is NULL,
-                        //                        so it can't block the insert).
-                        //
-                        // Soft-deleted keys are intentionally NOT revived.
-                        // Re-saving a deleted key produces a new row with a
-                        // new setting_id; the old soft-deleted row is
-                        // preserved as history.
-                        // ----------------------------------------------------
+                        // Upsert by key: an active row updates in place, a missing key inserts a new row
+                        // Soft-deleted rows stay as history, they aren't revived on re-save
                         $sql = "
                             INSERT INTO settings 
                                 (setting_key, setting_value, description, created_at, updated_at, created_by, updated_by)
@@ -411,10 +338,7 @@ try {
                     $pdo->commit();
                     $bulkSucceeded = true;
 
-                    // Fires as soon as the settings save succeeds, regardless
-                    // of what happens with TextBee below. Keeps the settings
-                    // audit trail deterministic: one entry per successful save,
-                    // every time — no dependency on the TextBee outcome.
+                    // Log right after commit so the audit trail gets one entry per save, regardless of TextBee below
                     systemLog(
                         "{$userData['name']} ({$userData['username']}) saved settings. " . $changes,
                         $userData['user_id']
@@ -422,23 +346,9 @@ try {
                 } catch (Exception $e) {
                     if ($pdo->inTransaction()) $pdo->rollBack();
 
-                    // Safe cleanup: only delete uploaded files that are NOT
-                    // referenced by any active setting row. Prevents:
-                    //
-                    //   1. Deleting the pre-existing image for a key whose DB
-                    //      write was just rolled back (DB still points to the
-                    //      old filename; deleting the file leaves a dangling
-                    //      reference).
-                    //
-                    //   2. Deleting a file that a concurrent request just
-                    //      uploaded and committed under the same key
-                    //      (replaceIfExists=true means both target <key>.png).
-                    //      Their committed DB row would point to a missing file.
-                    //
-                    // If the DB check fails (e.g. connection dropped), we err
-                    // on the side of NOT deleting — an orphan file is
-                    // harmless, a dangling reference is not. A periodic
-                    // cleanup job can sweep unreferenced images later.
+                    // Only delete files no active setting row references
+                    // Protects the old file after a rollback, and another request's committed upload (both target <key>.png)
+                    // If the ref check fails, skip the delete; an orphan is harmless, a dangling reference is not
                     foreach ($uploadedFiles as $file) {
                         try {
                             $refCheck = $pdo->prepare("
@@ -473,26 +383,11 @@ try {
                     Response::error($e->getMessage(), 400);
                 }
 
-                // ------------------------------------------------------------------
-                // TextBee pair (if submitted) — runs AFTER the bulk commit.
-                //
-                // Placed outside the try/catch above so that:
-                //   * A TextBee failure does NOT roll back the already-committed
-                //     bulk settings (they're a different logical change).
-                //   * A TextBee failure does NOT trigger the uploaded-image
-                //     cleanup (those files are already referenced by the
-                //     committed settings and must not be deleted).
-                //
-                // Success and failure are both audit-logged here. Values are
-                // never logged in plaintext — only fingerprints (short sha256
-                // prefix) so future logs can tell "same key" from "changed key"
-                // without exposing the secret.
-                // ------------------------------------------------------------------
+                // TextBee pair runs after commit so a failure here doesn't roll back settings or trigger image cleanup
+                // Success and failure are both logged; values are logged as fingerprints (short sha256), never plaintext
                 if ($bulkSucceeded && ($textbeeApiKey !== null || $textbeeDeviceId !== null)) {
 
-                    // saveTextBeeCredentials needs BOTH values. If only one
-                    // was submitted, pull the current value of the other
-                    // from the DB so the pair stays consistent.
+                    // The helper needs both values; pull the missing half from the DB
                     if ($textbeeApiKey === null || $textbeeDeviceId === null) {
                         $fetch = $pdo->prepare("
                             SELECT setting_key, setting_value
@@ -534,7 +429,7 @@ try {
                         );
                     }
 
-                    // Success — log the fact with key fingerprints (never plaintext).
+                    // Log with fingerprints, never the plaintext values
                     $keyFingerprint    = substr(hash('sha256', $textbeeApiKey), 0, 8);
                     $deviceFingerprint = substr(hash('sha256', $textbeeDeviceId), 0, 8);
                     systemLog(
@@ -558,7 +453,7 @@ try {
                 Response::error("Setting ID is required for deletion.", 400);
             }
 
-            // Office can delete only allowlisted keys — scoped by setting_key, not ID.
+            // Office deletes are restricted to allowlisted keys (checked by setting_key, not ID)
             if ($isOffice) {
                 $check = $pdo->prepare("
                     SELECT setting_key FROM settings 
@@ -578,7 +473,7 @@ try {
                 }
             }
 
-            // Soft delete: set deleted_at and updated_by
+            // Soft delete
             $sql = "
                 UPDATE settings 
                 SET deleted_at = NOW(), updated_by = :updated_by 

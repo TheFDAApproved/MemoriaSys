@@ -4,6 +4,7 @@ define('ITS_ME_JUSTTOVERIFY', true);
 require_once 'logger.php';
 require_once 'checkuser.php';
 
+// CSV export and import for interments
 $userData = checkuser();
 if ($userData['role'] !== ROLE_ADMIN) {
     Response::error("Forbidden: Only administrators can access this resource", 403);
@@ -11,11 +12,7 @@ if ($userData['role'] !== ROLE_ADMIN) {
 
 $method = $_SERVER['REQUEST_METHOD'] ?? '';
 
-// ------------------------------------------------------------------
-// Helpers
-// ------------------------------------------------------------------
-
-/** Convert an empty string (or whitespace) to null. */
+// Return null for empty or whitespace-only strings
 function nonEmpty($value)
 {
     if ($value === null) return null;
@@ -23,7 +20,7 @@ function nonEmpty($value)
     return $value === '' ? null : $value;
 }
 
-/** Validate date format (Y-m-d), accepting many common inputs. */
+// Return a Y-m-d string from many accepted date formats, or null for empty input
 function parseDate($value)
 {
     $value = trim($value);
@@ -63,7 +60,7 @@ function parseDate($value)
     throw new Exception("Invalid date format: '$value' (expected Y-m-d or similar).");
 }
 
-/** Find a grave_id from block_name + grave_code. */
+// Return the grave_id matching a block_name + grave_code pair, or null
 function getGraveId($pdo, $blockName, $graveCode)
 {
     $sql = "SELECT g.grave_id
@@ -78,15 +75,6 @@ function getGraveId($pdo, $blockName, $graveCode)
     $id = $stmt->fetchColumn();
     return $id ? (int)$id : null;
 }
-
-/**
- * Keep graves.status in sync based on whether any Active interment
- * currently uses that grave. Active usage => 'Occupied', otherwise 'Vacant'.
- *
- * Single-statement version: the read and the write happen atomically.
- * The previous two-statement version (SELECT COUNT then UPDATE) could be
- * interleaved by a concurrent import and leave graves.status stale.
- */
 function syncGraveStatus($pdo, $graveId)
 {
     if (empty($graveId)) return;
@@ -108,9 +96,7 @@ function syncGraveStatus($pdo, $graveId)
     ")->execute(['gid' => $graveId]);
 }
 
-// ------------------------------------------------------------------
-// EXPORT
-// ------------------------------------------------------------------
+// Stream all interments as a CSV download
 function exportInterments($pdo, $filename = 'interments_export.csv')
 {
     $stmt = $pdo->query("
@@ -153,8 +139,6 @@ function exportInterments($pdo, $filename = 'interments_export.csv')
     ");
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // rowCount() on a SELECT is not portable across drivers/modes;
-    // count() of the fetched array is the reliable check.
     if (count($rows) === 0) {
         Response::success("Looks like the database is empty.");
         exit;
@@ -174,23 +158,21 @@ function exportInterments($pdo, $filename = 'interments_export.csv')
     fclose($output);
 }
 
-// ------------------------------------------------------------------
-// IMPORT
-// ------------------------------------------------------------------
+// Import interments from a CSV file, using savepoints so one bad row doesn't kill the batch
 function importInterments($pdo, $filePath, $userId)
 {
     $validStatuses   = ['Pending', 'Active', 'Inactive'];
     $validAssistance = ['Burial', 'Transfer the remains of the late', 'Other'];
     $validSex        = ['Male', 'Female', 'Unknown'];
 
-    $errors   = [];   // fatal — row not saved
-    $warnings = [];   // non-fatal — row saved with a caveat
+    $errors   = [];   // fatal, row is skipped
+    $warnings = [];   // non-fatal, row is saved with a caveat
     $inserted = 0;
     $updated  = 0;
     $skipped  = 0;
     $rowCount = 0;
 
-    // Detect duplicate control_numbers inside the same file
+    // Track duplicate control_numbers inside this file
     $seenControls = [];
 
     $handle = fopen($filePath, 'r');
@@ -198,13 +180,12 @@ function importInterments($pdo, $filePath, $userId)
         throw new Exception("Could not open the uploaded file.");
     }
 
-    // Remove UTF-8 BOM if present
+    // Skip the UTF-8 BOM if the file starts with one
     $bom = fread($handle, 3);
     if ($bom !== "\xEF\xBB\xBF") {
         rewind($handle);
     }
 
-    // Header
     $header = fgetcsv($handle, 0, ',', '"', '\\');
     if ($header === false) {
         fclose($handle);
@@ -212,10 +193,6 @@ function importInterments($pdo, $filePath, $userId)
     }
     $header = array_map('trim', $header);
 
-    // NOTE: row_num and col_num are accepted for informational purposes but
-    // are ignored on import — they are grave fields, not interment fields.
-    // They appear in the export so an admin can see where each grave sits;
-    // changing them here does nothing to the grave's row/col in the DB.
     $expected = [
         'control_number',
         'deceased_name',
@@ -263,9 +240,6 @@ function importInterments($pdo, $filePath, $userId)
     try {
         $pdo->beginTransaction();
 
-        // Snapshot which interments are referenced by an Active reservation.
-        // One query for the whole import. Used to warn (not block) when a
-        // CSV row would overwrite an interment a live reservation depends on.
         $reservedInterments = [];
         $resStmt = $pdo->query("
             SELECT reservation_id, pending_interment_id, old_interment_id
@@ -296,7 +270,7 @@ function importInterments($pdo, $filePath, $userId)
             $rowCount++;
             $lineNum = $rowCount;
 
-            // Normalize row length and trim values
+            // Pad or trim the row so it lines up with the header
             $row = array_map(fn($v) => is_string($v) ? trim($v) : $v, $row);
             if (count($row) < $headerCount) {
                 $row = array_pad($row, $headerCount, '');
@@ -308,7 +282,6 @@ function importInterments($pdo, $filePath, $userId)
             $pdo->exec("SAVEPOINT import_row");
 
             try {
-                // ---- Required fields --------------------------------------
                 $controlNumber = trim((string)($data['control_number'] ?? ''));
                 $deceasedName  = trim((string)($data['deceased_name'] ?? ''));
 
@@ -321,7 +294,6 @@ function importInterments($pdo, $filePath, $userId)
                     );
                 }
 
-                // ---- Duplicate control_number inside the same file --------
                 if (isset($seenControls[$controlNumber])) {
                     throw new Exception(
                         "Duplicate control_number '$controlNumber' in this file " .
@@ -329,10 +301,7 @@ function importInterments($pdo, $filePath, $userId)
                     );
                 }
 
-                // ---- Grave lookup -----------------------------------------
-                // $graveProvided        = both block_name and grave_code given
-                // $graveProvidedPartial = only one of them given
-                // $graveResolved        = we found a matching grave row
+                // Grave is only linked when both block_name and grave_code are given
                 $graveId              = null;
                 $blockName            = trim((string)($data['block_name'] ?? ''));
                 $graveCode            = trim((string)($data['grave_code'] ?? ''));
@@ -353,7 +322,7 @@ function importInterments($pdo, $filePath, $userId)
 
                 $graveResolved = ($graveId !== null);
 
-                // ---- Dates (each error names the offending column) --------
+                // Wrap parseDate so the error names the offending column
                 $parseCol = function ($value, $column) {
                     try {
                         return parseDate($value ?? '');
@@ -372,12 +341,7 @@ function importInterments($pdo, $filePath, $userId)
                 $burialClearance      = $parseCol($data['burial_clearance_date'] ?? '', 'burial_clearance_date');
                 $leaseExpiration      = $parseCol($data['lease_expiration_date'] ?? '', 'lease_expiration_date');
 
-                // ---- Enums -------------------------------------------------
-                // Keep the raw cells so the UPDATE merge can tell "user left
-                // it blank" (skip the column) from "user typed a value"
-                // (apply it). Validation runs against the resolved values
-                // ($status / $sex / $assistanceType), which default to the
-                // enum default when the cell is empty.
+                // Keep raw cells so merge-update can tell "not set" from "set to default"
                 $statusCell     = trim((string)($data['status'] ?? ''));
                 $sexCell        = trim((string)($data['deceased_sex'] ?? ''));
                 $assistanceCell = trim((string)($data['assistance_type'] ?? ''));
@@ -405,10 +369,7 @@ function importInterments($pdo, $filePath, $userId)
                     );
                 }
 
-                // ---- Pending is not allowed through CSV -------------------
-                // Pending rows are created exclusively by Reserve (they
-                // require a matching reservation_details row). Importing
-                // one here would produce a row invisible to every screen.
+                // Pending rows come from the reservation flow, never from CSV
                 if ($status === 'Pending') {
                     throw new Exception(
                         "status 'Pending' cannot be imported via CSV. " .
@@ -416,11 +377,7 @@ function importInterments($pdo, $filePath, $userId)
                     );
                 }
 
-                // ---- Grave can only be attached to Active rows -----------
-                // The DB CHECK chk_status_grave requires Pending/Inactive
-                // rows to have current_grave_id IS NULL. Silently drop the
-                // grave and tell the operator instead of letting the INSERT
-                // fail with a raw CHECK violation.
+                // Non-Active rows can't have a grave (CHECK constraint), so drop it and warn
                 if ($status !== 'Active' && $graveId !== null) {
                     $warnings[] = "Line $lineNum: status '$status' cannot have a grave; " .
                         "ignored block '$blockName' / code '$graveCode'.";
@@ -428,7 +385,7 @@ function importInterments($pdo, $filePath, $userId)
                     $graveResolved = false;
                 }
 
-                // ---- Grave conflict warning -------------------------------
+                // Warn when another Active interment already uses this grave
                 if ($graveId && $status === 'Active') {
                     $conflictStmt = $pdo->prepare("
                         SELECT control_number, deceased_name
@@ -449,10 +406,7 @@ function importInterments($pdo, $filePath, $userId)
                     }
                 }
 
-                // ---- Params for INSERT ------------------------------------
-                // Also used as the source of values for the merge-update
-                // below. Null entries mean "CSV cell was empty" — the merge
-                // skips those columns so the existing DB value is kept.
+                // null means the CSV cell was empty, so merge keeps the DB value
                 $insertParams = [
                     'control_number'                  => $controlNumber,
                     'deceased_name'                   => $deceasedName,
@@ -483,12 +437,7 @@ function importInterments($pdo, $filePath, $userId)
                     'remarks'                         => nonEmpty($data['remarks'] ?? null),
                 ];
 
-                // ---- Existing? --------------------------------------------
-                // ORDER BY (deleted_at IS NULL) DESC ensures the active row
-                // wins when both an active and a soft-deleted row share the
-                // same control_number. Without this, LIMIT 1 could pick the
-                // soft-deleted row and the UPDATE would try to un-delete it,
-                // colliding with the unique constraint on the active row.
+                // Prefer the live row over a soft-deleted one so LIMIT 1 never picks the dead copy
                 $checkStmt = $pdo->prepare("
                     SELECT interment_id, current_grave_id, status, deleted_at
                     FROM interments
@@ -500,25 +449,14 @@ function importInterments($pdo, $filePath, $userId)
                 $existing = $checkStmt->fetch(PDO::FETCH_ASSOC);
 
                 if ($existing) {
-                    // ----------------------------------------------------------
-                    // MERGE UPDATE
-                    // ----------------------------------------------------------
-                    // Empty CSV cells keep the existing DB value. Non-empty
-                    // cells overwrite. Required fields (deceased_name, status)
-                    // are always applied. Grave handled specially below.
-                    //
-                    // Soft-deleted rows are restored (deleted_at = NULL) and
-                    // then merged with the CSV using the same rules — fields
-                    // the CSV leaves blank retain whatever value the row had
-                    // when it was soft-deleted.
+                    // Empty CSV cells keep the DB value, non-empty ones overwrite it
+                    // Soft-deleted rows are restored first, then merged with the same rule
                     if (!empty($existing['deleted_at'])) {
                         $warnings[] = "Line $lineNum: control_number '$controlNumber' " .
                             "was soft-deleted and has been restored.";
                     }
 
-                    // Warn (not block) if this interment is tied to an Active
-                    // reservation. A silent full-replace can invalidate the
-                    // reservation's assumptions when Confirm runs.
+                    // Active reservations may not expect a full replace, so just warn
                     $existingId = (int)$existing['interment_id'];
                     if (isset($reservedInterments[$existingId])) {
                         $r = $reservedInterments[$existingId];
@@ -527,7 +465,6 @@ function importInterments($pdo, $filePath, $userId)
                             "Updating it may conflict with the reservation when confirmed.";
                     }
 
-                    // Always-applied columns
                     $setClauses = [
                         'deceased_name = :deceased_name',
                         'status = :status',
@@ -542,8 +479,7 @@ function importInterments($pdo, $filePath, $userId)
                         'updated_by'     => $userId,
                     ];
 
-                    // Plain-text fields: null (from nonEmpty) means "CSV cell
-                    // was empty" -> skip. Non-null means apply.
+                    // Text fields: null means "CSV cell was empty", so skip it
                     $textMergeFields = [
                         'last_known_address',
                         'death_certificate',
@@ -566,8 +502,7 @@ function importInterments($pdo, $filePath, $userId)
                         }
                     }
 
-                    // Date fields: null (from parseDate) means "CSV cell was
-                    // empty or literally 'null'" -> skip.
+                    // Date fields: null means "CSV cell was empty", so skip it
                     $dateMergeFields = [
                         'deceased_date_of_birth',
                         'deceased_date_of_death',
@@ -587,7 +522,7 @@ function importInterments($pdo, $filePath, $userId)
                         }
                     }
 
-                    // Enum fields: use raw cells. Empty -> keep existing.
+                    // Enum fields: empty raw cell means keep the existing value
                     if ($sexCell !== '') {
                         $setClauses[] = "deceased_sex = :deceased_sex";
                         $mergeParams['deceased_sex'] = $sexCell;
@@ -597,11 +532,7 @@ function importInterments($pdo, $filePath, $userId)
                         $mergeParams['assistance_type'] = $assistanceCell;
                     }
 
-                    // Grave: handled specially because of the CHECK constraint.
-                    //   - Non-Active status: force NULL. Required by chk_status_grave.
-                    //   - Active with a resolved grave: apply the new grave.
-                    //   - Active with no grave provided (or provided but not
-                    //     found): leave current_grave_id untouched.
+                    // chk_status_grave: non-Active forces NULL, so only set the grave when resolved
                     if ($status !== 'Active') {
                         $setClauses[] = "current_grave_id = :current_grave_id";
                         $mergeParams['current_grave_id'] = null;
@@ -621,9 +552,6 @@ function importInterments($pdo, $filePath, $userId)
 
                     $updated++;
                 } else {
-                    // ----------------------------------------------------------
-                    // INSERT
-                    // ----------------------------------------------------------
                     $insertParams['created_by'] = $userId;
                     $insertParams['updated_by'] = $userId;
 
@@ -659,7 +587,7 @@ function importInterments($pdo, $filePath, $userId)
                     $inserted++;
                 }
 
-                // Claim this control_number only after the row succeeded
+                // Mark this control_number as used only after the row saved
                 $seenControls[$controlNumber] = $lineNum;
 
                 $pdo->exec("RELEASE SAVEPOINT import_row");
@@ -689,9 +617,6 @@ function importInterments($pdo, $filePath, $userId)
     }
 }
 
-// ------------------------------------------------------------------
-// Route: GET -> export
-// ------------------------------------------------------------------
 if ($method === 'GET') {
     $now = new DateTime('now', new DateTimeZone(DB_TIMEZONE));
 
@@ -708,9 +633,6 @@ if ($method === 'GET') {
     exit;
 }
 
-// ------------------------------------------------------------------
-// Route: POST -> import
-// ------------------------------------------------------------------
 if ($method === 'POST') {
     if (!isset($_FILES['csv_file']) || $_FILES['csv_file']['error'] !== UPLOAD_ERR_OK) {
         Response::error("No valid CSV file uploaded.", 400);
@@ -721,21 +643,18 @@ if ($method === 'POST') {
     $tmpPath = $file['tmp_name'];
     $originalName = $file['name'];
 
-    // 1. File size
     $maxSize = 100 * 1024 * 1024; // 100MB
     if ($file['size'] > $maxSize || $file['size'] === 0) {
         Response::error("Invalid file size.", 400);
         exit;
     }
 
-    // 2. Extension
     $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
     if ($extension !== 'csv') {
         Response::error("Only CSV files are allowed.", 400);
         exit;
     }
 
-    // 3. MIME type
     $finfo = new finfo(FILEINFO_MIME_TYPE);
     $detectedMime = $finfo->file($tmpPath);
     $allowedMimes = ['text/plain', 'text/csv', 'application/vnd.ms-excel'];
@@ -744,7 +663,7 @@ if ($method === 'POST') {
         exit;
     }
 
-    // 4. Basic structure sanity check
+    // Peek at the first few rows to make sure the file is really CSV-shaped
     $handle = fopen($tmpPath, 'r');
     if ($handle === false) {
         Response::error("Cannot read file.", 500);
@@ -764,11 +683,8 @@ if ($method === 'POST') {
         exit;
     }
 
-    // 5. Only one import at a time. GET_LOCK is server-wide (not per PHP
-    // worker), so it works even if the app is later deployed behind multiple
-    // servers. Auto-released on connection close, so a crashed PHP cannot
-    // leave it stuck. Timeout 30s: a second request waits briefly, then
-    // gets a clean 409 instead of hanging forever.
+    // GET_LOCK is server-wide and auto-released on disconnect, so a crashed worker can't stick it
+    // 30s timeout means a second import waits briefly, then gets a clean 409
     $lockAcquired = (int) $pdo->query("SELECT GET_LOCK('csv_import', 30)")->fetchColumn();
     if ($lockAcquired !== 1) {
         Response::error(
@@ -778,7 +694,6 @@ if ($method === 'POST') {
         exit;
     }
 
-    // 6. Run the import
     try {
         $result = importInterments($pdo, $tmpPath, $userData['user_id']);
 
@@ -790,7 +705,7 @@ if ($method === 'POST') {
             $userData['user_id']
         );
 
-        // Build a friendly one-line summary for the toast/banner
+        // Short toast summary the frontend can show as-is
         $summary = "Import finished. " .
             "Inserted: {$result['inserted']}, " .
             "Updated: {$result['updated']}, " .
@@ -803,7 +718,7 @@ if ($method === 'POST') {
             $summary .= " " . count($result['errors']) . " error(s).";
         }
 
-        // Include a "has_errors" flag so the frontend can style it red/amber
+        // Flags so the frontend can colour the result red or amber
         $result['has_errors']   = !empty($result['errors']);
         $result['has_warnings'] = !empty($result['warnings']);
 
@@ -812,8 +727,7 @@ if ($method === 'POST') {
         systemLog("CSV import error: " . $e->getMessage(), $userData['user_id']);
         Response::error("Import error: " . $e->getMessage(), 500);
     } finally {
-        // Always release the import lock. Runs on success, on caught
-        // exceptions, and on any Throwable that bypasses the catch.
+        // Release in finally so a crash can't leave the import lock behind
         $pdo->query("SELECT RELEASE_LOCK('csv_import')");
     }
     exit;

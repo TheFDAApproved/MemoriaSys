@@ -1,7 +1,5 @@
 <?php
 
-declare(strict_types=1);
-
 // Database Backup Endpoint
 // GET  List all available backup files
 // GET  /backup/{filename}  Download a specific backup file

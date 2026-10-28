@@ -120,8 +120,8 @@ function applyDefaultRateLimit()
     $method = $_SERVER['REQUEST_METHOD'] ?? 'UNKNOWN';
     $path   = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?? '';
 
-    // Order matters: forgot-password must be checked before the generic "users" rule,
-    // since "/users/forgot-password" also matches the users regex.
+    // Order matters: forgot-password must be checked before the generic "users" rule
+    // "/users/forgot-password" also matches the users regex
     $isForgotPassword = (bool) preg_match('#(^|/)(api/)?users(\.php)?/forgot-password(/|$)#i', $path);
     $isAuth           = (bool) preg_match('#(^|/)(api/)?auth(\.php)?(/|$)#i', $path);
     $isUsers          = (bool) preg_match('#(^|/)(api/)?users(\.php)?(/|$)#i', $path);
