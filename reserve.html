@@ -37,12 +37,13 @@
 </head>
 <body>
     <div class="reserveContent">
+        <!-- Search, status filter, and filter button -->
         <div class="tableControls">
             <div class="searchBox">
                 <i class="fas fa-search"></i>
                 <input type="text" id="user_search" placeholder="Search...">
             </div>
-            
+
             <div class="controlItem">
                 <select id="role_filter" class="mainSelect">
                     <option value="all">All Status</option>
@@ -58,6 +59,7 @@
             </button>
         </div>
 
+        <!-- Table title and current page counter -->
         <div class="table">
             <div class="tableHeader">
                 <h3>Reserve</h3>
@@ -65,6 +67,7 @@
             </div>
         </div>
 
+        <!-- Scrollable table area and the "no data" message -->
         <div class="tableWrapper">
             <table>
                 <thead>
@@ -80,16 +83,17 @@
                 </thead>
                 <tbody id="reservation"></tbody>
             </table>
-           
+
             <p class="noData" id="reservation_no_data">
                 <i class="fas fa-inbox"></i>
                 No data found
             </p>
         </div>
 
+        <!-- Pagination controls -->
         <div class="paginationContainer">
             <div class="paginationControls">
-                <button class="pageNavBtn" id="prev_page_btn" title="Previous Page">   
+                <button class="pageNavBtn" id="prev_page_btn" title="Previous Page">
                     <i class="fas fa-chevron-left"></i>
                 </button>
 

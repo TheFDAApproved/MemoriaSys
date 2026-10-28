@@ -1,12 +1,14 @@
 (() => {
     'use strict';
 
+    // Constants and configuration
     const API_URL = 'api/reserve.php';
     const DEFAULT_LIMIT = 100;
     const MIN_SEARCH_LENGTH = 3;
     const SEARCH_DEBOUNCE_MS = 350;
     const PAGINATION_WINDOW = 5;
 
+    // Page state
     const state = {
         page: 1,
         limit: DEFAULT_LIMIT,
@@ -20,6 +22,7 @@
         requestId: 0,
     };
 
+    // Cached DOM elements
     const els = {
         tbody: document.getElementById('reservation'),
         noData: document.getElementById('reservation_no_data'),
@@ -39,12 +42,10 @@
         return;
     }
 
-    // NEW: global lock so only one row-action can run at a time.
-    // Prevents double-click / cross-button re-entrancy.
     let actionInProgress = false;
 
-    // ---------- NEW: button loading state ----------
-
+    // Loading-button helpers
+    // Injects the styles used by runAction() to show a spinner inside a button
     function injectLoadingStyles() {
         if (document.getElementById('recordsBtnLoadingStyles')) return;
         const style = document.createElement('style');
@@ -79,9 +80,7 @@
         document.head.appendChild(style);
     }
 
-    // Runs `fn` while showing a spinner on `btn`. Guarantees cleanup on
-    // success OR failure. Only sets position:relative when the button is
-    // statically positioned, so fixed/absolute/relative buttons don't jump.
+    // Disables the button, shows a spinner, and runs fn(). Prevents double clicks.
     async function runAction(btn, fn) {
         if (actionInProgress) return;
         if (!btn || btn.dataset.loading === 'true') return;
@@ -110,24 +109,18 @@
         }
     }
 
-    // ------------------------------------------------------------------
-    // Flatten the nested API item  {type, grave:{...}, interment:{...}|null}
-    // into the flat shape the rest of this file (and the modal) expects.
-    // ------------------------------------------------------------------
+    // Data normalization
+    // Converts either a flat or a nested API item into one flat object so the rest of the code can read all fields from a single place
     function flattenItem(raw) {
         if (!raw || typeof raw !== 'object') return null;
 
-        // Detect if the API is already sending flat data
-        // (e.g., grave_id is at the root, and there is no nested 'grave' object)
         const isFlat = raw.grave === undefined && raw.grave_id !== undefined;
 
-        // If flat, source data directly from 'raw'. Otherwise, use the nested objects.
         const g = isFlat ? raw : (raw.grave || {});
         const i = isFlat ? raw : (raw.interment || null);
-        
-        // Check if an interment actually exists
-        const hasI = isFlat 
-            ? (raw.interment_id != null) 
+
+        const hasI = isFlat
+            ? (raw.interment_id != null)
             : !!(i && i.interment_id != null);
 
         const pickVal = (obj, key) => (obj && obj[key] != null) ? obj[key] : null;
@@ -135,68 +128,68 @@
         return {
             type: raw.type || null,
 
-            grave_id:      pickVal(g, 'grave_id'),
-            grave_code:    pickVal(g, 'grave_code'),
-            row_num:       pickVal(g, 'row_num'),
-            col_num:       pickVal(g, 'col_num'),
-            grave_status:  pickVal(g, 'grave_status'),
+            grave_id: pickVal(g, 'grave_id'),
+            grave_code: pickVal(g, 'grave_code'),
+            row_num: pickVal(g, 'row_num'),
+            col_num: pickVal(g, 'col_num'),
+            grave_status: pickVal(g, 'grave_status'),
             grave_remarks: pickVal(g, 'grave_remarks'),
-            block_id:      pickVal(g, 'block_id'),
-            block_name:    pickVal(g, 'block_name'),
-            block_type:    pickVal(g, 'block_type'),
+            block_id: pickVal(g, 'block_id'),
+            block_name: pickVal(g, 'block_name'),
+            block_type: pickVal(g, 'block_type'),
 
-            interment_id:                    hasI ? i.interment_id : null,
-            control_number:                  hasI ? i.control_number : null,
-            deceased_name:                   hasI ? i.deceased_name : null,
-            deceased_sex:                    hasI ? i.deceased_sex : null,
-            last_known_address:              hasI ? i.last_known_address : null,
-            death_certificate:               hasI ? i.death_certificate : null,
-            deceased_date_of_birth:          hasI ? i.deceased_date_of_birth : null,
-            deceased_date_of_death:          hasI ? i.deceased_date_of_death : null,
-            current_grave_id:                hasI ? i.current_grave_id : null,
-            contact_person_name:             hasI ? i.contact_person_name : null,
-            contact_person_phone_number:     hasI ? i.contact_person_phone_number : null,
-            contact_person_email:            hasI ? i.contact_person_email : null,
-            contact_person_address:          hasI ? i.contact_person_address : null,
+            interment_id: hasI ? i.interment_id : null,
+            control_number: hasI ? i.control_number : null,
+            deceased_name: hasI ? i.deceased_name : null,
+            deceased_sex: hasI ? i.deceased_sex : null,
+            last_known_address: hasI ? i.last_known_address : null,
+            death_certificate: hasI ? i.death_certificate : null,
+            deceased_date_of_birth: hasI ? i.deceased_date_of_birth : null,
+            deceased_date_of_death: hasI ? i.deceased_date_of_death : null,
+            current_grave_id: hasI ? i.current_grave_id : null,
+            contact_person_name: hasI ? i.contact_person_name : null,
+            contact_person_phone_number: hasI ? i.contact_person_phone_number : null,
+            contact_person_email: hasI ? i.contact_person_email : null,
+            contact_person_address: hasI ? i.contact_person_address : null,
             contact_person_address_barangay: hasI ? i.contact_person_address_barangay : null,
-            assistance_type:                 hasI ? i.assistance_type : null,
-            burial_permit_number:            hasI ? i.burial_permit_number : null,
-            burial_permit_date:              hasI ? i.burial_permit_date : null,
-            transfer_permit_number:          hasI ? i.transfer_permit_number : null,
-            transfer_permit_issued_by:       hasI ? i.transfer_permit_issued_by : null,
-            transfer_permit_date:            hasI ? i.transfer_permit_date : null,
-            exhumation_permit_number:        hasI ? i.exhumation_permit_number : null,
-            exhumation_permit_date:          hasI ? i.exhumation_permit_date : null,
-            date_buried:                     hasI ? i.date_buried : null,
-            date_exhumed:                    hasI ? i.date_exhumed : null,
-            burial_clearance_date:           hasI ? i.burial_clearance_date : null,
-            lease_expiration_date:           hasI ? i.lease_expiration_date : null,
-            interment_status:                hasI ? (i.interment_status || i.status) : null,
-            interment_remarks:               hasI ? (i.interment_remarks || i.remarks) : null,
+            assistance_type: hasI ? i.assistance_type : null,
+            burial_permit_number: hasI ? i.burial_permit_number : null,
+            burial_permit_date: hasI ? i.burial_permit_date : null,
+            transfer_permit_number: hasI ? i.transfer_permit_number : null,
+            transfer_permit_issued_by: hasI ? i.transfer_permit_issued_by : null,
+            transfer_permit_date: hasI ? i.transfer_permit_date : null,
+            exhumation_permit_number: hasI ? i.exhumation_permit_number : null,
+            exhumation_permit_date: hasI ? i.exhumation_permit_date : null,
+            date_buried: hasI ? i.date_buried : null,
+            date_exhumed: hasI ? i.date_exhumed : null,
+            burial_clearance_date: hasI ? i.burial_clearance_date : null,
+            lease_expiration_date: hasI ? i.lease_expiration_date : null,
+            interment_status: hasI ? (i.interment_status || i.status) : null,
+            interment_remarks: hasI ? (i.interment_remarks || i.remarks) : null,
         };
     }
 
-    // ---- raw-error sanitization ----
-    // Prevent ngrok/proxy HTML pages, bare HTTP status codes, JSON parse
-    // failures, and network failures from reaching showAlertTOP / showError.
+    // User notifications
     const GENERIC_ERROR = 'Something went wrong. Please try again.';
 
+    // Returns true when a message looks like an internal or raw error string that should be replaced with a friendlier message for the user
     const looksRawMessage = (text) => {
         if (!text) return true;
         const t = String(text).trim();
         if (!t) return true;
-        if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true;                       // HTML body
-        if (/ERR_NGROK_|ngrok/i.test(t)) return true;                         // ngrok
-        if (/^HTTP\s+\d{3}/i.test(t)) return true;                            // bare "HTTP 502"
-        if (/^Request failed \(\d{3}\)$/i.test(t)) return true;               // our own fallback
-        if (/^Save failed \(\d{3}\)$/i.test(t)) return true;                  // our own fallback
+        if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true;
+        if (/ERR_NGROK_|ngrok/i.test(t)) return true;
+        if (/^HTTP\s+\d{3}/i.test(t)) return true;
+        if (/^Request failed \(\d{3}\)$/i.test(t)) return true;
+        if (/^Save failed \(\d{3}\)$/i.test(t)) return true;
         if (/non-JSON|Unexpected token|is not valid JSON|Unexpected end of JSON/i.test(t)) return true;
         if (/Failed to fetch|NetworkError|Load failed/i.test(t)) return true;
         if (/^(TypeError|SyntaxError|ReferenceError|RangeError|DOMException)\b/i.test(t)) return true;
-        if (t.length > 200) return true;                                      // giant dumps
+        if (t.length > 200) return true;
         return false;
     };
 
+    // Shows a notification using the shared showAlertTOP helper when available
     function notify(kind, message) {
         if (!message) return;
         const rawText = String(message);
@@ -218,8 +211,6 @@
         else console.log('[reserve.js]', rawText);
     }
 
-    // NEW: single source of truth for the "search term is too short" warning.
-    // Routed through notify() so it shows up via showAlertTOP(text, 'warning').
     function warnSearchTooShort(value) {
         const min = MIN_SEARCH_LENGTH;
         const len = String(value || '').trim().length;
@@ -230,6 +221,7 @@
         );
     }
 
+    // Search clear button [created and appended at runtime]
     let searchClearBtn = null;
 
     (function mountSearchClearBtn() {
@@ -266,6 +258,7 @@
         searchClearBtn.classList.toggle('is-visible', String(value || '').length > 0);
     }
 
+    // Formatting helpers
     const escapeHtml = (value) => {
         if (value === null || value === undefined) return '';
         return String(value)
@@ -287,6 +280,7 @@
         });
     };
 
+    // Prefers interment remarks, falls back to grave remarks
     const getRemarks = (item) => {
         if (item.interment_remarks && String(item.interment_remarks).trim() !== '') {
             return item.interment_remarks;
@@ -297,6 +291,7 @@
         return '';
     };
 
+    // SMS helpers
     function formatSmsDate(value) {
         if (!value) return '';
         const d = new Date(value);
@@ -329,6 +324,7 @@
         return msg;
     }
 
+    // Renders the contact number as a clickable link that opens the SMS modal
     function renderPhoneCell(item) {
         const raw = item ? item.contact_person_phone_number : '';
         if (raw === null || raw === undefined) return '-';
@@ -344,6 +340,7 @@
         );
     }
 
+    // Loading, empty, and error states
     const setLoading = (isLoading) => {
         state.loading = isLoading;
 
@@ -371,13 +368,14 @@
 
     function showError(message) {
         if (!els.noData) return;
-        // Raw-error sanitization: html/ngrok/bare-status text → generic message.
         const display = (message && !looksRawMessage(message)) ? message : GENERIC_ERROR;
         els.noData.innerHTML =
             `<i class="fas fa-triangle-exclamation"></i> ${escapeHtml(display)}`;
         els.noData.style.display = '';
     }
 
+    // Data fetching
+    // Loads the current page from the API. Cancels any previous request so that out-of-order responses are ignored
     async function fetchReservations() {
         if (state.controller) state.controller.abort();
         state.controller = new AbortController();
@@ -448,6 +446,7 @@
         }
     }
 
+    // Fetches a single reservation fresh from the server [used before opening the edit or view modal]
     async function refetchReserveItem(graveId) {
         if (!graveId) return null;
 
@@ -464,13 +463,14 @@
 
             const payload = (json && json.data) ? json.data : json;
             const itemData = (payload && payload.item) ? payload.item : payload;
-            return flattenItem(itemData);        
+            return flattenItem(itemData);
         } catch (err) {
             console.warn('[reserve.js] refetch item failed:', err);
             return null;
         }
     }
 
+    // Rendering
     function render() {
         renderRows();
         renderPagination();
@@ -512,6 +512,7 @@
 
             let actionButtons = '';
 
+            // Expiring and expired records can be viewed in detail
             if (item.type === 'expiring' || item.type === 'expired') {
                 actionButtons += `
           <button
@@ -563,6 +564,7 @@
         });
     }
 
+    // Builds the page-number carousel. Shows up to PAGINATION_WINDOW buttons with ellipses and a shortcut to the first or last page
     function renderPagination() {
         els.currentPageLabel.textContent = state.page;
         els.totalPagesLabel.textContent = state.totalPages;
@@ -622,6 +624,7 @@
         fetchReservations();
     }
 
+    // Row action handlers
     async function handleReserveClick(event) {
         const btn = event.currentTarget;
         const graveId = Number(btn.dataset.graveId);
@@ -644,6 +647,7 @@
         });
     }
 
+    // Opens the edit modal, preferring freshly fetched data over the row data
     async function openEditOldOccupant(item) {
         const fresh = await refetchReserveItem(item.grave_id);
         const payload = fresh || item;
@@ -657,6 +661,7 @@
         document.dispatchEvent(new CustomEvent('reserve:edit-old', { detail: payload }));
     }
 
+    // Opens the SMS modal when the contact number is clicked
     function handleSmsClick(event) {
         const link = event.target.closest('[data-action="sms"]');
         if (!link || !els.tbody.contains(link)) return;
@@ -682,6 +687,7 @@
         window.openSmsModal(phone, message);
     }
 
+    // Modal openers (with fallbacks)
     async function openReserveModal(item) {
         if (typeof window.openReserveBurialModal === 'function') {
             return await Promise.resolve(window.openReserveBurialModal(item));
@@ -708,18 +714,7 @@
         document.dispatchEvent(new CustomEvent('reserve:view', { detail: payload }));
     }
 
-    // ------------------------------------------------------------------
-    // CREATE RESERVATION (POST /reserve.php)
-    //
-    // The modal dispatches `reserve_burial_modal:save` with { mode, data }.
-    // `data` is the exact payload the PHP endpoint expects (N fields + 
-    // either `grave_id`/`grave_code` for vacant OR `old_interment_id` +
-    // `old_new_status` for replacement).
-    //
-    // NOTE: The old `reserve_burial_modal:update` flow was removed. The
-    // new PHP treats reservations as FROZEN — to change one, cancel it in
-    // monitor.php and create a new one.
-    // ------------------------------------------------------------------
+    // Save handler: listens for the modal's save event and posts the payload
     document.addEventListener('reserve_burial_modal:save', async (event) => {
         const detail = event.detail || {};
         if (detail.mode !== 'add') return;
@@ -758,20 +753,20 @@
 
             notify('success', 'Reservation created successfully.');
 
-            // CHANGED: notify the modal (it stays open — see handleSubmit).
             if (typeof detail.onSuccess === 'function') detail.onSuccess(data);
         } catch (err) {
             console.error('[reserve.js] Failed to create reservation:', err);
             notify('error', err.message || 'Failed to create reservation.');
 
-            // CHANGED: let the modal re-enable its Save button.
             if (typeof detail.onError === 'function') detail.onError(err);
         }
     });
 
+    // Search and filter input events
     let searchTimer = null;
 
     if (els.searchInput) {
+        // Debounced auto-search after the user stops typing
         els.searchInput.addEventListener('input', () => {
             toggleSearchClear(els.searchInput.value);
 
@@ -797,6 +792,7 @@
             }, SEARCH_DEBOUNCE_MS);
         });
 
+        // Enter triggers an immediate search and warns if too short
         els.searchInput.addEventListener('keydown', (event) => {
             if (event.key !== 'Enter') return;
             event.preventDefault();
@@ -804,8 +800,6 @@
 
             const value = els.searchInput.value.trim();
 
-            // NEW: Enter is an explicit action. If the term is non-empty but
-            // too short, warn via showAlertTOP instead of silently doing nothing.
             if (value.length > 0 && value.length < MIN_SEARCH_LENGTH) {
                 warnSearchTooShort(value);
                 return;
@@ -817,6 +811,7 @@
         });
     }
 
+    // Apply both the search term and the status filter at once
     if (els.filterBtn) {
         els.filterBtn.addEventListener('click', (event) => {
             event.preventDefault();
@@ -825,9 +820,6 @@
             if (els.searchInput) {
                 const value = els.searchInput.value.trim();
 
-                // NEW: Filter is an explicit action too. If the term is
-                // non-empty but too short, warn via showAlertTOP and abort
-                // the filter — don't silently apply the previous term.
                 if (value.length > 0 && value.length < MIN_SEARCH_LENGTH) {
                     warnSearchTooShort(value);
                     return;
@@ -844,6 +836,7 @@
         });
     }
 
+    // Pagination buttons
     if (els.prevBtn) {
         els.prevBtn.addEventListener('click', () => goToPage(state.page - 1));
     }
@@ -851,8 +844,10 @@
         els.nextBtn.addEventListener('click', () => goToPage(state.page + 1));
     }
 
+    // Delegated SMS click handler [table body]
     els.tbody.addEventListener('click', handleSmsClick);
 
+    // Public API for other scripts
     window.ReserveTable = {
         refresh: () => fetchReservations(),
         reload: () => fetchReservations(),
@@ -878,6 +873,7 @@
         },
     };
 
+    // Initialization
     if (els.statusFilter && els.statusFilter.value) {
         state.status = els.statusFilter.value || 'all';
     }
@@ -889,7 +885,6 @@
 
     if (els.noData) els.noData.style.display = 'none';
 
-    // NEW: inject spinner CSS once before first render.
     injectLoadingStyles();
 
     fetchReservations();
