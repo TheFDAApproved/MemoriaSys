@@ -9,7 +9,7 @@ function checkuser($force_exit = true)
     global $pdo;
     $jwt = null;
 
-    // 1. Check Authorization Header
+    // Check Authorization Header
     $authHeader = '';
     if (isset($_SERVER['HTTP_AUTHORIZATION'])) {
         $authHeader = trim($_SERVER['HTTP_AUTHORIZATION']);
@@ -20,7 +20,7 @@ function checkuser($force_exit = true)
     if (preg_match('/Bearer\s(\S+)/', $authHeader, $matches)) {
         $jwt = $matches[1];
     }
-    // 2. Fallback to HttpOnly Cookie
+    // Fallback to HttpOnly Cookie
     else if (isset($_COOKIE['auth_token'])) {
         $jwt = $_COOKIE['auth_token'];
     }
@@ -64,7 +64,7 @@ function checkuser($force_exit = true)
             return false;
         }
 
-        // --- SINGLE SESSION CHECK with robust handling ---
+        // SINGLE SESSION CHECK
         $storedToken = null;
         $storedSessionData = null;
         $sessionValid = false;
@@ -77,12 +77,12 @@ function checkuser($force_exit = true)
             }
         }
 
-        // If session_token is NULL or invalid JSON, treat as no active session → reject
+        // If session_token is null or invalid json, treat as no active session, reject
         if (!$sessionValid) {
             setcookie('auth_token', '', time() - JWT_EXPIRATION, '/');
 
             if ($force_exit) {
-                // If we have stored session data, use it to tell the user where the new login is
+                // If has stored session data, use it to tell where the new login is
                 if ($storedSessionData && is_array($storedSessionData)) {
                     $newIp = $storedSessionData['ip'] ?? 'Unknown IP';
                     $newTime = $storedSessionData['time'] ?? 'Unknown Time';

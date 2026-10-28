@@ -48,7 +48,7 @@ if ($userData) {
     Response::error("Already logged in as " . $userData['username'] . ". Try again, I logged you out", 400);
 }
 
-// --- HYBRID INPUT PARSER ---
+// HYBRID INPUT PARSER
 $rawData = array_merge(
     json_decode(file_get_contents("php://input"), true) ?: [],
     $_POST ?? []
@@ -76,15 +76,15 @@ try {
             Response::error("Your account is not verified yet. Please wait for admin verification.", 403);
         }
 
-        // --- Generate a unique session token ---
+        // Generate a unique session token
         $sessionTokenId = bin2hex(random_bytes(16));
 
-        // --- Gather device metadata ---
+        // Gather device metadata
         $ipAddress = $_SERVER['REMOTE_ADDR'] ?? 'Unknown IP';
         $userAgent = $_SERVER['HTTP_USER_AGENT'] ?? 'Unknown Device';
         $loginTime = date('M d, Y h:i A');
 
-        // --- Bundle into JSON ---
+        // Bundle into JSON
         $sessionData = json_encode([
             'token' => $sessionTokenId,
             'ip' => $ipAddress,
@@ -92,7 +92,7 @@ try {
             'time' => $loginTime
         ]);
 
-        // --- Store in database ---
+        // Store in database
         $updateStmt = $pdo->prepare("UPDATE users SET session_token = :data WHERE user_id = :id");
         $updateStmt->execute([':data' => $sessionData, ':id' => $user['user_id']]);
 
@@ -147,5 +147,5 @@ try {
 } catch (PDOException $e) {
     error_log($e->getMessage());
     systemLog("Database error during login attempt for username: " . $username . " " . $e->getMessage(), null);
-    Response::error("An error occurred while logging in " . $e->getMessage(), 500);
+    Response::error("An error occurred while logging in. Please try again", 500);
 }

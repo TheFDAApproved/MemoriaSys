@@ -2,14 +2,9 @@
 define('ITS_ME_JUSTTOVERIFY', true);
 
 require_once 'logger.php';
-
-// require_once 'responses.php';
 require_once 'checkuser.php';
 
 $userData = checkuser();
-// ==========================================
-// --- ADMIN VIEW LOGS ENDPOINT ---
-// ==========================================
 
 // Define the method and action specifically for this file
 $method = $_SERVER['REQUEST_METHOD'] ?? null;
