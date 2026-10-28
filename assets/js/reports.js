@@ -1,26 +1,21 @@
-/* =========================================================================
-   MEMORIA — Reports (Refactored Master Card Edition)
-   Sections:
-     1. Constants, helpers, filter state, filter groups
-     2. Dropdown behavior
-     3. Report switching
-     4. Filter engine (toggle / change / clear / debounced reload)
-     5. Data fetching
-     6. Render functions
-     7. Branding (settings, signatories, year options, payment options)
-     8. Bootstrap
-   ========================================================================= */
-
-/* -------------------------------------------------------------------------
-   1. CONSTANTS, HELPERS, FILTER STATE
-   ------------------------------------------------------------------------- */
+// Report page logic
+// Dropdown switches reports, filters debounce-reload its data, and print rebuilds branding then calls window.print()
+// All applied filters are echoed at the bottom of the printed output
 
 const API_ENDPOINT = "api/reports.php";
 const SETTINGS_ENDPOINT = "api/settings.php";
 const DEBOUNCE_MS = 350;
-
 const LOADER_SHOW_DELAY_MS = 1000;
 const LOADER_MIN_VISIBLE_MS = 1000;
+const DEFAULT_PER_PAGE = 500;
+
+const RESOURCE_PATHS = {
+  capacity: "cemetery_capacity",
+  expirations: "lease_expirations",
+  interments: "interments",
+  graves: "graves",
+  payments: "payments",
+};
 
 const requestTokens = Object.create(null);
 const loaderShowTimers = Object.create(null);
@@ -28,18 +23,35 @@ const loaderShownAt = Object.create(null);
 const loaderVisible = Object.create(null);
 
 let currentReportScope = "interments";
-let paymentOptionsLoaded = false;
+let filterOptionsCache = null;
 const settingsMap = Object.create(null);
 
 const filterState = {
-  interments: { address: "", gender: "", year: "", contact: "" },
-  graves: { status: "" },
+  interments: {
+    address: "",
+    gender: "", // comma-joined
+    barangay: "", // comma-joined
+    start_date: "",
+    end_date: "",
+    contact: "",
+  },
+  expirations: {
+    start_date: "",
+    end_date: "",
+    days: "",
+    show: "", // "" | "expired" | "expiring"
+  },
+  graves: {
+    status: "", // comma-joined
+  },
   payments: {
     purpose: "",
     channel: "",
     status: "",
-    amount_min: "",
-    amount_max: "",
+    start_date: "",
+    end_date: "",
+    minamount: "",
+    maxamount: "",
     search: "",
   },
 };
@@ -48,8 +60,14 @@ const FILTER_GROUPS = {
   interments: {
     address: ["address"],
     gender: ["gender"],
-    year: ["year"],
+    barangay: ["barangay"],
+    date_range: ["start_date", "end_date"],
     contact: ["contact"],
+  },
+  expirations: {
+    date_range: ["start_date", "end_date"],
+    days: ["days"],
+    show: ["show"],
   },
   graves: {
     status: ["status"],
@@ -58,25 +76,46 @@ const FILTER_GROUPS = {
     purpose: ["purpose"],
     channel: ["channel"],
     status: ["status"],
-    amount: ["amount_min", "amount_max"],
+    date_range: ["start_date", "end_date"],
+    amount: ["minamount", "maxamount"],
     search: ["search"],
   },
 };
 
+// (scope, pill) -> hint ids it owns, so we can hide its errors when the pill turns off
+const PILL_HINTS = {
+  interments: {
+    date_range: ["interments-date-hint"],
+  },
+  expirations: {
+    date_range: ["expirations-date-hint"],
+    days: ["expirations-days-hint"],
+  },
+  payments: {
+    date_range: ["payments-date-hint"],
+    amount: ["payments-amount-hint"],
+  },
+};
+
+const paginationState = {
+  interments: { page: 1 },
+  expirations: { page: 1 },
+  graves: { page: 1 },
+  payments: { page: 1 },
+};
+
 const debounceTimers = new Map();
 
-// ---- raw-error sanitization ----
-// Prevents ngrok/proxy HTML pages, bare HTTP status codes, JSON parse
-// failures, and network failures from being rendered into the report card.
 const GENERIC_ERROR = "Something went wrong. Please try again.";
 
+// Catch raw error shapes (HTML, HTTP codes, stack traces) that shouldn't reach the user
 function looksRawMessage(text) {
   if (!text) return true;
   const t = String(text).trim();
   if (!t) return true;
-  if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true; // HTML body
-  if (/ERR_NGROK_|ngrok/i.test(t)) return true; // ngrok
-  if (/^HTTP\s+\d{3}/i.test(t)) return true; // bare "HTTP 502"
+  if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true;
+  if (/ERR_NGROK_|ngrok/i.test(t)) return true;
+  if (/^HTTP\s+\d{3}/i.test(t)) return true;
   if (
     /non-JSON|Unexpected token|is not valid JSON|Unexpected end of JSON/i.test(
       t,
@@ -88,10 +127,11 @@ function looksRawMessage(text) {
     /^(TypeError|SyntaxError|ReferenceError|RangeError|DOMException)\b/i.test(t)
   )
     return true;
-  if (t.length > 200) return true; // giant dumps
+  if (t.length > 200) return true;
   return false;
 }
 
+// Use the raw text if it looks readable, otherwise fall back to a friendly message
 function friendlyMessage(raw, fallback) {
   if (!raw) return fallback || GENERIC_ERROR;
   const s = String(raw).trim();
@@ -99,6 +139,7 @@ function friendlyMessage(raw, fallback) {
   return s;
 }
 
+// Escape user data before putting it in innerHTML
 function esc(value) {
   if (value === null || value === undefined) return "";
   return String(value)
@@ -139,31 +180,47 @@ function fmtPeso(value) {
   );
 }
 
-function activeFiltersFor(scope) {
+function resetPage(scope) {
+  if (paginationState[scope]) paginationState[scope].page = 1;
+}
+
+function buildReportUrl(scope) {
+  const path = RESOURCE_PATHS[scope] || scope;
+  const params = new URLSearchParams();
   const state = filterState[scope] || {};
-  const out = {};
-  for (const [key, value] of Object.entries(state)) {
-    if (value !== "" && value !== null && value !== undefined) {
-      out[key] = value;
+
+  if (scope === "expirations") {
+    const show = state.show || "";
+    if (show === "expired") {
+      params.set("expired", "true");
+      params.set("expiring", "false");
+    } else if (show === "expiring") {
+      params.set("expired", "false");
+      params.set("expiring", "true");
+    }
+    if (state.start_date) params.set("start_date", state.start_date);
+    if (state.end_date) params.set("end_date", state.end_date);
+    // days="0" is a real value, so check for empty string instead of truthiness
+    if (state.days !== "" && state.days !== null && state.days !== undefined) {
+      params.set("days", state.days);
+    }
+  } else {
+    for (const [key, value] of Object.entries(state)) {
+      if (value !== "" && value !== null && value !== undefined) {
+        params.set(key, value);
+      }
     }
   }
-  return out;
-}
 
-function buildReportUrl(scope, overrideFilters) {
-  const params = new URLSearchParams();
-  params.set("report", scope);
-
-  const filters = overrideFilters ?? activeFiltersFor(scope);
-  for (const [key, value] of Object.entries(filters)) {
-    params.set(`f[${key}]`, value);
+  if (scope !== "capacity") {
+    const pag = paginationState[scope] || { page: 1 };
+    params.set("page", String(pag.page || 1));
+    params.set("limit", String(DEFAULT_PER_PAGE));
   }
-  return `${API_ENDPOINT}?${params.toString()}`;
-}
 
-/* -------------------------------------------------------------------------
-   2. DROPDOWN BEHAVIOR
-   ------------------------------------------------------------------------- */
+  const qs = params.toString();
+  return `${API_ENDPOINT}/${path}${qs ? "?" + qs : ""}`;
+}
 
 function toggleDropdown() {
   const dd = document.getElementById("customDropdown");
@@ -214,46 +271,147 @@ function selectOption(element, reportTitle) {
   switchReport(value);
 }
 
-/* -------------------------------------------------------------------------
-   3. REPORT SWITCHING
-   ------------------------------------------------------------------------- */
-
 async function switchReport(reportId) {
   currentReportScope = reportId;
 
-  document.querySelectorAll(".docSection").forEach((section) => {
-    section.style.display = "none";
+  document.querySelectorAll(".docSection").forEach((s) => {
+    s.style.display = "none";
   });
   const activeSection = document.getElementById(reportId + "-content");
   if (activeSection) activeSection.style.display = "block";
 
+  document.querySelectorAll(".paginationBar").forEach((bar) => {
+    bar.style.display = "none";
+  });
+
   document
     .querySelectorAll(".filterEngineContainer")
-    .forEach((panel) => panel.classList.remove("visible"));
+    .forEach((p) => p.classList.remove("visible"));
   const panel = document.getElementById("filter-panel-" + reportId);
   if (panel) panel.classList.add("visible");
 
-  // ★ CHANGED: kick off the report fetch FIRST. Its synchronous prelude
-  //   inserts the loading placeholder on this same tick — before any
-  //   await — so the spinner is on screen from the moment of the click.
-  const reportPromise = loadReportData(reportId, { immediate: true });
-
-  // ★ CHANGED: load payment options IN PARALLEL (previously awaited
-  //   before the report fetch, which left the payments section blank
-  //   for the full duration of that call).
-  const prerequisites =
-    reportId === "payments" && !paymentOptionsLoaded
-      ? loadPaymentOptions().then(() => {
-          paymentOptionsLoaded = true;
-        })
-      : Promise.resolve();
-
-  await Promise.all([prerequisites, reportPromise]);
+  await loadReportData(reportId, { immediate: true });
 }
 
-/* -------------------------------------------------------------------------
-   4. FILTER ENGINE
-   ------------------------------------------------------------------------- */
+function setHint(id, message) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = message || "";
+  el.style.display = message ? "block" : "none";
+}
+
+function hideHintsForPill(scope, pillName) {
+  const ids = (PILL_HINTS[scope] || {})[pillName] || [];
+  for (const id of ids) setHint(id, "");
+}
+
+function hideAllHints(scope) {
+  const map = PILL_HINTS[scope] || {};
+  for (const ids of Object.values(map)) {
+    for (const id of ids) setHint(id, "");
+  }
+}
+
+// Return true when the range is OK (or absent), and show a hint when invalid
+function validateDateRange(scope) {
+  const startEl = document.getElementById(`${scope}-input-start_date`);
+  const endEl = document.getElementById(`${scope}-input-end_date`);
+  const hintId = `${scope}-date-hint`;
+  if (!startEl || !endEl) return true;
+
+  const s = startEl.value;
+  const e = endEl.value;
+
+  if (s && e && s > e) {
+    setHint(hintId, "Start date cannot be after end date.");
+    return false;
+  }
+  setHint(hintId, "");
+  return true;
+}
+
+// Validate the expirations days input, empty is fine
+function validateExpirationDays() {
+  const input = document.getElementById("expirations-input-days");
+  if (!input) return true;
+  const hintId = "expirations-days-hint";
+
+  const raw = String(input.value).trim();
+  if (raw === "") {
+    setHint(hintId, "");
+    return true;
+  }
+
+  // Reject decimals like "1.5" since days must be a whole number
+  if (!/^-?\d+$/.test(raw)) {
+    setHint(hintId, "Days must be a whole number.");
+    return false;
+  }
+
+  const n = parseInt(raw, 10);
+  if (!Number.isFinite(n)) {
+    setHint(hintId, "Days must be a whole number.");
+    return false;
+  }
+  if (n < 0 || n > 365) {
+    setHint(hintId, "Days must be between 0 and 365.");
+    return false;
+  }
+
+  setHint(hintId, "");
+  return true;
+}
+
+// Check that payments minamount is not bigger than maxamount
+function checkPaymentsAmountValidity() {
+  const minEl = document.getElementById("payments-input-minamount");
+  const maxEl = document.getElementById("payments-input-maxamount");
+  if (!minEl || !maxEl) return true;
+
+  const minVal = parseFloat(minEl.value);
+  const maxVal = parseFloat(maxEl.value);
+
+  if (Number.isFinite(minVal) && Number.isFinite(maxVal) && minVal > maxVal) {
+    setHint(
+      "payments-amount-hint",
+      "Minimum amount cannot be greater than maximum amount.",
+    );
+    return false;
+  }
+  setHint("payments-amount-hint", "");
+  return true;
+}
+
+// Run every validator for the scope and return false on any failure
+function validateAllFilters(scope) {
+  let ok = true;
+
+  if (
+    scope === "interments" ||
+    scope === "expirations" ||
+    scope === "payments"
+  ) {
+    if (!validateDateRange(scope)) ok = false;
+  }
+
+  if (scope === "expirations") {
+    if (!validateExpirationDays()) ok = false;
+  }
+
+  if (scope === "payments") {
+    if (!checkPaymentsAmountValidity()) ok = false;
+  }
+
+  return ok;
+}
+
+function resetCheckboxGroup(scope, pillName) {
+  const grp = document.getElementById(`${scope}-${pillName}-checkboxes`);
+  if (!grp) return;
+  grp
+    .querySelectorAll('input[type="checkbox"]')
+    .forEach((cb) => (cb.checked = false));
+}
 
 function toggleFilter(scope, pillName) {
   const state = filterState[scope];
@@ -265,7 +423,6 @@ function toggleFilter(scope, pillName) {
     `#${scope}-pills .filterPill[data-filter="${pillName}"]`,
   );
   const block = document.getElementById(`${scope}-filter-${pillName}`);
-
   if (!pill || !block) return;
 
   const isActive = pill.classList.toggle("active");
@@ -276,10 +433,17 @@ function toggleFilter(scope, pillName) {
       state[key] = "";
       cancelDebounce(scope, key);
       const input = document.getElementById(`${scope}-input-${key}`);
-      if (input) input.value = "";
+      if (input) {
+        if (input.type === "checkbox") input.checked = false;
+        else input.value = "";
+      }
     }
+    resetCheckboxGroup(scope, pillName);
+    // Its constraints no longer apply, so clear any errors it owns
+    hideHintsForPill(scope, pillName);
   }
 
+  resetPage(scope);
   scheduleReload(scope, pillName);
 }
 
@@ -288,15 +452,73 @@ function onFilterValueChange(scope, filterName, value) {
   if (!state) return;
 
   state[filterName] = value ?? "";
-  const input = document.getElementById(`${scope}-input-${filterName}`);
-  const isTextInput = input && input.tagName === "INPUT";
+  resetPage(scope);
 
-  if (isTextInput) {
-    scheduleReload(scope, filterName);
-  } else {
+  // Run every validator before fetching, if any fail the hint is already showing so we stop
+  if (!validateAllFilters(scope)) return;
+
+  const input = document.getElementById(`${scope}-input-${filterName}`);
+  const immediate =
+    input && (input.tagName === "SELECT" || input.type === "date");
+
+  if (immediate) {
     cancelDebounce(scope, filterName);
     loadReportData(scope);
+  } else {
+    scheduleReload(scope, filterName);
   }
+}
+
+function onGravesStatusChange() {
+  const grp = document.getElementById("graves-status-checkboxes");
+  if (!grp) return;
+  const checked = Array.from(
+    grp.querySelectorAll('input[type="checkbox"]:checked'),
+  ).map((el) => el.value);
+  filterState.graves.status = checked.join(",");
+  resetPage("graves");
+  scheduleReload("graves", "status");
+}
+
+function onIntermentsGenderChange() {
+  const grp = document.getElementById("interments-gender-checkboxes");
+  if (!grp) return;
+  const checked = Array.from(
+    grp.querySelectorAll('input[type="checkbox"]:checked'),
+  ).map((el) => el.value);
+  filterState.interments.gender = checked.join(",");
+  resetPage("interments");
+  scheduleReload("interments", "gender");
+}
+
+function onIntermentsBarangayChange() {
+  const grp = document.getElementById("interments-barangay-checkboxes");
+  if (!grp) return;
+  const checked = Array.from(
+    grp.querySelectorAll('input[type="checkbox"]:checked'),
+  ).map((el) => el.value);
+  filterState.interments.barangay = checked.join(",");
+  resetPage("interments");
+  scheduleReload("interments", "barangay");
+}
+
+function onPageChange(scope, value) {
+  const pag = paginationState[scope];
+  if (!pag) return;
+
+  // Don't paginate when filters are invalid, the hint is already showing
+  if (!validateAllFilters(scope)) return;
+
+  if (value === "prev") {
+    pag.page = Math.max(1, pag.page - 1);
+  } else if (value === "next") {
+    pag.page = pag.page + 1;
+  } else {
+    const n = parseInt(value, 10);
+    if (Number.isFinite(n) && n >= 1) pag.page = n;
+  }
+
+  loadReportData(scope);
 }
 
 function clearAllFilters(scope) {
@@ -317,10 +539,16 @@ function clearAllFilters(scope) {
       state[key] = "";
       cancelDebounce(scope, key);
       const input = document.getElementById(`${scope}-input-${key}`);
-      if (input) input.value = "";
+      if (input) {
+        if (input.type === "checkbox") input.checked = false;
+        else input.value = "";
+      }
     }
+    resetCheckboxGroup(scope, pillName);
   }
 
+  hideAllHints(scope);
+  resetPage(scope);
   loadReportData(scope);
 }
 
@@ -345,16 +573,141 @@ function cancelDebounce(scope, filterName) {
   }
 }
 
-/* -------------------------------------------------------------------------
-   5. DATA FETCHING
-   ------------------------------------------------------------------------- */
+// Format a start/end pair into a phrase for the applied-filters line
+function formatDateRangeLabel(start, end) {
+  if (start && end) {
+    if (start === end) return `on ${fmtDate(start)}`;
+    return `${fmtDate(start)} – ${fmtDate(end)}`;
+  }
+  if (start) return `from ${fmtDate(start)}`;
+  return `up to ${fmtDate(end)}`;
+}
+
+// Build a list of human-readable filter summaries, empty means nothing is on
+function buildAppliedFilterParts(scope) {
+  if (scope === "capacity") return [];
+
+  const state = filterState[scope] || {};
+  const parts = [];
+
+  if (scope === "interments") {
+    if (state.address) parts.push(`Address: "${state.address}"`);
+    if (state.gender) {
+      parts.push(
+        `Gender: ${state.gender.split(",").filter(Boolean).join(", ")}`,
+      );
+    }
+    if (state.barangay) {
+      parts.push(
+        `Barangay: ${state.barangay.split(",").filter(Boolean).join(", ")}`,
+      );
+    }
+    if (state.start_date || state.end_date) {
+      parts.push(
+        `Burial date: ${formatDateRangeLabel(state.start_date, state.end_date)}`,
+      );
+    }
+    if (state.contact === "has_contact") parts.push("Has contact person");
+    else if (state.contact === "no_contact") parts.push("No contact person");
+  }
+
+  if (scope === "expirations") {
+    if (state.start_date || state.end_date) {
+      parts.push(
+        `Expiration date: ${formatDateRangeLabel(state.start_date, state.end_date)}`,
+      );
+    } else if (
+      state.days !== "" &&
+      state.days !== null &&
+      state.days !== undefined
+    ) {
+      const n = Number(state.days);
+      if (Number.isFinite(n)) {
+        if (n === 0) parts.push("Expiring today");
+        else if (n === 1) parts.push("Expiring today and tomorrow");
+        else parts.push(`Expiring within ${n} days`);
+      }
+    }
+    if (state.show === "expired") parts.push("Only expired leases");
+    else if (state.show === "expiring") parts.push("Only expiring leases");
+  }
+
+  if (scope === "graves") {
+    if (state.status) {
+      parts.push(
+        `Category: ${state.status.split(",").filter(Boolean).join(", ")}`,
+      );
+    }
+  }
+
+  if (scope === "payments") {
+    if (state.purpose) parts.push(`Purpose: ${state.purpose}`);
+    if (state.channel) parts.push(`Channel: ${state.channel}`);
+    if (state.status) {
+      const label =
+        { pending: "Pending", partial: "Partial", confirmed: "Confirmed" }[
+          state.status
+        ] || state.status;
+      parts.push(`Status: ${label}`);
+    }
+    if (state.start_date || state.end_date) {
+      parts.push(
+        `Recorded: ${formatDateRangeLabel(state.start_date, state.end_date)}`,
+      );
+    }
+    const minHas =
+      state.minamount !== "" &&
+      state.minamount !== null &&
+      state.minamount !== undefined;
+    const maxHas =
+      state.maxamount !== "" &&
+      state.maxamount !== null &&
+      state.maxamount !== undefined;
+    if (minHas && maxHas) {
+      parts.push(
+        `Amount: ${fmtPeso(state.minamount)} – ${fmtPeso(state.maxamount)}`,
+      );
+    } else if (minHas) {
+      parts.push(`Amount: ≥ ${fmtPeso(state.minamount)}`);
+    } else if (maxHas) {
+      parts.push(`Amount: ≤ ${fmtPeso(state.maxamount)}`);
+    }
+    if (state.search) parts.push(`Search: "${state.search}"`);
+  }
+
+  return parts;
+}
+
+// Show the applied-filters line for the current scope, hide it when empty
+function updateAppliedFilters(scope) {
+  const el = document.getElementById("applied-filters");
+  if (!el) return;
+
+  const parts = buildAppliedFilterParts(scope);
+  if (parts.length === 0) {
+    el.innerHTML = "";
+    el.style.display = "none";
+    return;
+  }
+
+  el.innerHTML = `<strong>Filters applied:</strong> ${parts
+    .map((p) => esc(p))
+    .join(" · ")}`;
+  el.style.display = "block";
+}
+
+function hideAppliedFilters() {
+  const el = document.getElementById("applied-filters");
+  if (!el) return;
+  el.innerHTML = "";
+  el.style.display = "none";
+}
 
 async function loadReportData(scope, options = {}) {
   const container = document.getElementById(`${scope}-content`);
   if (!container) return;
 
   const immediate = options.immediate === true;
-
   const token = (requestTokens[scope] = (requestTokens[scope] || 0) + 1);
 
   clearTimeout(loaderShowTimers[scope]);
@@ -365,8 +718,6 @@ async function loadReportData(scope, options = {}) {
   const hasContent = container.classList.contains("has-content");
 
   if (!hasContent) {
-    // Synchronous placeholder insert — happens before the fetch below,
-    // so the spinner paints on the very next frame.
     container.innerHTML = `
       <div class="loadingPlaceholder">
         <i class="fas fa-spinner fa-spin"></i>
@@ -378,10 +729,10 @@ async function loadReportData(scope, options = {}) {
     loaderShownAt[scope] = Date.now();
     loaderVisible[scope] = true;
   } else {
+    // Delay showing the loader so fast responses don't cause a flash
     loaderShowTimers[scope] = setTimeout(() => {
       if (requestTokens[scope] !== token) return;
       if (!container.classList.contains("has-content")) return;
-
       container.classList.add("is-loading");
       loaderShownAt[scope] = Date.now();
       loaderVisible[scope] = true;
@@ -407,7 +758,6 @@ async function loadReportData(scope, options = {}) {
       if (requestTokens[scope] !== token) return;
 
       if (!json || json.status !== 200) {
-        // Raw-error sanitization: html/ngrok/bare-status text → generic message.
         errorMessage = friendlyMessage(json?.message, "No data available.");
       } else {
         payload = json.data || {};
@@ -421,6 +771,7 @@ async function loadReportData(scope, options = {}) {
 
   if (requestTokens[scope] !== token) return;
 
+  // Keep the loader up for a short minimum so it doesn't blink
   if (loaderVisible[scope]) {
     const elapsed = Date.now() - (loaderShownAt[scope] || 0);
     if (elapsed < LOADER_MIN_VISIBLE_MS) {
@@ -432,27 +783,47 @@ async function loadReportData(scope, options = {}) {
   if (errorMessage !== null) {
     container.innerHTML = `<div class="noDataFallbackMessage visible">${esc(errorMessage)}</div>`;
     container.classList.add("has-content");
+    hidePaginationBar(scope);
+    hideAppliedFilters();
   } else {
-    switch (scope) {
-      case "capacity":
-        renderCapacity(payload, container);
-        break;
-      case "expirations":
-        renderExpirations(payload, container);
-        break;
-      case "interments":
-        renderInterments(payload, container);
-        break;
-      case "graves":
-        renderGraves(payload, container);
-        break;
-      case "payments":
-        renderPayments(payload, container);
-        break;
-      default:
-        container.innerHTML = `<div class="noDataFallbackMessage visible">Unknown report scope.</div>`;
+    try {
+      switch (scope) {
+        case "capacity":
+          renderCapacity(payload, container);
+          break;
+        case "expirations":
+          renderExpirations(payload, container);
+          break;
+        case "interments":
+          renderInterments(payload, container);
+          break;
+        case "graves":
+          renderGraves(payload, container);
+          break;
+        case "payments":
+          renderPayments(payload, container);
+          break;
+        default:
+          container.innerHTML = `<div class="noDataFallbackMessage visible">Unknown report scope.</div>`;
+      }
+      container.classList.add("has-content");
+      updateAppliedFilters(scope);
+
+      if (payload && payload.pagination) {
+        renderPaginationBar(
+          scope,
+          payload.pagination,
+          Number(payload.returned_records) || 0,
+        );
+      } else {
+        hidePaginationBar(scope);
+      }
+    } catch (err) {
+      console.error("Render failed:", err);
+      container.innerHTML = `<div class="noDataFallbackMessage visible">Unable to display report data.</div>`;
+      hidePaginationBar(scope);
+      hideAppliedFilters();
     }
-    container.classList.add("has-content");
   }
 
   clearTimeout(loaderShowTimers[scope]);
@@ -476,14 +847,55 @@ function updateGenerationDate() {
   meta.textContent = `${name} • Generated on: ${dateStr}`;
 }
 
-/* -------------------------------------------------------------------------
-   6. RENDER FUNCTIONS
-   ------------------------------------------------------------------------- */
+function hidePaginationBar(scope) {
+  const bar = document.getElementById(`${scope}-pagination`);
+  if (bar) bar.style.display = "none";
+}
 
-// ---- Chart instance registry -------------------------------------------
-// Re-rendering (via filter change, report switch, or print re-fetch) would
-// otherwise leak Chart.js instances and cause ResizeObserver noise, so we
-// destroy any tracked instance before rebuilding the same canvas.
+function renderPaginationBar(scope, pagination, returnedRecords) {
+  const bar = document.getElementById(`${scope}-pagination`);
+  if (!bar) return;
+
+  const total = Number(pagination?.total_records) || 0;
+  if (total === 0) {
+    bar.style.display = "none";
+    return;
+  }
+
+  const currentPage = Number(pagination.current_page) || 1;
+  const perPage = Number(pagination.per_page) || DEFAULT_PER_PAGE;
+  const totalPages = Math.max(1, Number(pagination.total_pages) || 1);
+
+  const rangeStart = returnedRecords > 0 ? (currentPage - 1) * perPage + 1 : 0;
+  const rangeEnd = Math.min(total, rangeStart + returnedRecords - 1);
+
+  const startEl = bar.querySelector(".paginationRangeStart");
+  const endEl = bar.querySelector(".paginationRangeEnd");
+  const totalEl = bar.querySelector(".paginationTotalRecords");
+  const pagesEl = bar.querySelector(".paginationTotalPages");
+  if (startEl) startEl.textContent = String(rangeStart);
+  if (endEl) endEl.textContent = String(rangeEnd);
+  if (totalEl) totalEl.textContent = String(total);
+  if (pagesEl) pagesEl.textContent = String(totalPages);
+
+  const select = bar.querySelector(".pageSelect");
+  if (select) {
+    let html = "";
+    for (let i = 1; i <= totalPages; i++) {
+      html += `<option value="${i}"${i === currentPage ? " selected" : ""}>${i}</option>`;
+    }
+    select.innerHTML = html;
+    select.disabled = totalPages <= 1;
+  }
+
+  const prevBtn = bar.querySelector(".pagePrevBtn");
+  const nextBtn = bar.querySelector(".pageNextBtn");
+  if (prevBtn) prevBtn.disabled = currentPage <= 1;
+  if (nextBtn) nextBtn.disabled = currentPage >= totalPages;
+
+  bar.style.display = "flex";
+}
+
 const reportCharts = Object.create(null);
 
 function destroyReportCharts(...keys) {
@@ -492,15 +904,13 @@ function destroyReportCharts(...keys) {
       try {
         reportCharts[key].destroy();
       } catch (_) {
-        /* noop */
+        // ignore if destroy fails
       }
       delete reportCharts[key];
     }
   }
 }
 
-// Canonical category palette — mirrors the dashboard's color mapping so
-// capacity/graves visually agree with the home dashboard.
 const CATEGORY_ORDER = [
   "Vacant",
   "Occupied",
@@ -537,11 +947,7 @@ function renderCapacity(data, container) {
     <div class="docBlockHeader">Overall Cemetery Status</div>
     <table class="cleanTable">
       <thead>
-        <tr>
-          <th>Metric</th>
-          <th>Count</th>
-          <th>Share</th>
-        </tr>
+        <tr><th>Metric</th><th>Count</th><th>Share</th></tr>
       </thead>
       <tbody>
         <tr><td><strong>Total Graves</strong></td><td>${total}</td><td>100.0%</td></tr>
@@ -556,27 +962,16 @@ function renderCapacity(data, container) {
 
     <div class="docBlockHeader">Grave Status Distribution</div>
     <div style="display:grid;grid-template-columns:minmax(220px,1fr) minmax(280px,2fr);gap:16px;align-items:stretch;margin-bottom:16px;">
-      <div style="position:relative;min-height:260px;">
-        <canvas id="capacity-status-pie"></canvas>
-      </div>
-      <div style="position:relative;min-height:260px;">
-        <canvas id="capacity-monthly-line"></canvas>
-      </div>
+      <div style="position:relative;min-height:260px;"><canvas id="capacity-status-pie"></canvas></div>
+      <div style="position:relative;min-height:260px;"><canvas id="capacity-monthly-line"></canvas></div>
     </div>
 
     <div class="docBlockHeader">Breakdown by Block</div>
     <table class="cleanTable">
       <thead>
         <tr>
-          <th>Block</th>
-          <th>Type</th>
-          <th>Total</th>
-          <th>Occupied</th>
-          <th>Vacant</th>
-          <th>Expiring</th>
-          <th>Expired</th>
-          <th>Reserved</th>
-          <th>Other</th>
+          <th>Block</th><th>Type</th><th>Total</th><th>Occupied</th><th>Vacant</th>
+          <th>Expiring</th><th>Expired</th><th>Reserved</th><th>Other</th>
         </tr>
       </thead>
       <tbody>`;
@@ -599,12 +994,9 @@ function renderCapacity(data, container) {
       </tr>`;
     }
   }
-
   html += `</tbody></table>`;
 
   container.innerHTML = html;
-
-  // Canvases are now in the DOM — build the charts.
   renderCapacityPieChart(data.grave_status_distribution || {});
   renderCapacityBarChart(data.monthly_lease_expiration || {});
 }
@@ -612,13 +1004,11 @@ function renderCapacity(data, container) {
 function renderCapacityPieChart(distribution) {
   const canvas = document.getElementById("capacity-status-pie");
   if (!canvas) return;
-
   const wrap = canvas.parentElement;
 
   if (typeof Chart === "undefined") {
-    if (wrap) {
-      wrap.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;min-height:220px;color:#94a3b8;font-size:12px;text-align:center;padding:12px;">Charts require Chart.js to be loaded on this page.</div>`;
-    }
+    if (wrap)
+      wrap.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;min-height:220px;color:#94a3b8;font-size:12px;text-align:center;padding:12px;">Charts require Chart.js.</div>`;
     return;
   }
 
@@ -635,9 +1025,8 @@ function renderCapacityPieChart(distribution) {
   }
 
   if (labels.length === 0) {
-    if (wrap) {
+    if (wrap)
       wrap.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;min-height:220px;color:#94a3b8;font-size:12px;">No grave status data available.</div>`;
-    }
     return;
   }
 
@@ -658,7 +1047,6 @@ function renderCapacityPieChart(distribution) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      // Static render → safe for the print pipeline (no mid-animation capture).
       animation: false,
       plugins: {
         legend: {
@@ -688,21 +1076,18 @@ function renderCapacityPieChart(distribution) {
 function renderCapacityBarChart(monthly) {
   const canvas = document.getElementById("capacity-monthly-line");
   if (!canvas) return;
-
   const wrap = canvas.parentElement;
 
   if (typeof Chart === "undefined") {
-    if (wrap) {
-      wrap.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;min-height:220px;color:#94a3b8;font-size:12px;text-align:center;padding:12px;">Charts require Chart.js to be loaded on this page.</div>`;
-    }
+    if (wrap)
+      wrap.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;min-height:220px;color:#94a3b8;font-size:12px;text-align:center;padding:12px;">Charts require Chart.js.</div>`;
     return;
   }
 
   const keys = Object.keys(monthly || {}).sort();
   if (keys.length === 0) {
-    if (wrap) {
+    if (wrap)
       wrap.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;min-height:220px;color:#94a3b8;font-size:12px;">No monthly lease data available.</div>`;
-    }
     return;
   }
 
@@ -716,12 +1101,10 @@ function renderCapacityBarChart(monthly) {
   const values = keys.map((k) => Number(monthly[k]) || 0);
   const hasAny = values.some((v) => v > 0);
 
-  // "Today" cutoff — lexicographic comparison works for YYYY-MM keys.
   const now = new Date();
   const currentKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const isPastKey = (k) => k < currentKey;
 
-  // Reuse the same palette as the rest of the app.
   const COLOR_EXPIRED = "#ef4444";
   const COLOR_EXPIRED_DARK = "#dc2626";
   const COLOR_EXPIRING = "#f59e0b";
@@ -733,11 +1116,7 @@ function renderCapacityBarChart(monthly) {
   const borderColors = keys.map((k) =>
     isPastKey(k) ? COLOR_EXPIRED_DARK : COLOR_EXPIRING_DARK,
   );
-  const hoverBackgroundColors = borderColors.slice();
-  const hoverBorderColors = borderColors.slice();
 
-  // Tooltip clarifies past / current / future so the two-color meaning
-  // never has to be inferred from color alone.
   const describeKey = (k) => {
     if (k < currentKey) return "overdue";
     if (k === currentKey) return "this month";
@@ -758,8 +1137,8 @@ function renderCapacityBarChart(monthly) {
           borderRadius: 6,
           borderSkipped: false,
           maxBarThickness: 32,
-          hoverBackgroundColor: hoverBackgroundColors,
-          hoverBorderColor: hoverBorderColors,
+          hoverBackgroundColor: borderColors.slice(),
+          hoverBorderColor: borderColors.slice(),
         },
       ],
     },
@@ -823,14 +1202,21 @@ function renderCapacityBarChart(monthly) {
 }
 
 function renderExpirations(data, container) {
-  const expired = Array.isArray(data.expired) ? data.expired : [];
-  const expiring = Array.isArray(data.expiring) ? data.expiring : [];
-  const days = Number(data?.filters?.days) || 30;
-
-  if (expired.length === 0 && expiring.length === 0) {
-    container.innerHTML = `<div class="noDataFallbackMessage visible">No expired or expiring leases at this time.</div>`;
+  const rows = Array.isArray(data.rows) ? data.rows : [];
+  if (rows.length === 0) {
+    container.innerHTML = `<div class="noDataFallbackMessage visible">No lease expirations match the current filters.</div>`;
     return;
   }
+
+  const filtered = data.filtered_by || {};
+  const hasDateRange = Boolean(filtered.start_date || filtered.end_date);
+
+  const expired = rows.filter(
+    (r) => r.bucket === "expired" || r.is_expired === true,
+  );
+  const expiring = rows.filter(
+    (r) => r.bucket === "expiring" || r.is_expired === false,
+  );
 
   const renderRow = (it) => {
     const contactName = it.contact_person_name || "No contact person";
@@ -848,12 +1234,40 @@ function renderExpirations(data, container) {
   };
 
   let html = "";
+
+  if (hasDateRange) {
+    const parts = [];
+    if (filtered.start_date) parts.push(fmtDate(filtered.start_date));
+    if (filtered.end_date) parts.push(fmtDate(filtered.end_date));
+    const label = parts.join(" → ");
+    html += `<p style="color:#64748b;font-size:12px;margin:0 0 12px;">Filtered to <strong>${esc(label)}</strong>.</p>`;
+  }
+
   if (expired.length > 0) {
-    html += `<div class="docBlockHeader danger">Already Expired — Action Required</div>`;
+    html += `<div class="docBlockHeader danger">Already Expired</div>`;
     html += expired.map(renderRow).join("");
   }
   if (expiring.length > 0) {
-    html += `<div class="docBlockHeader warning">Expiring Within ${days} Days</div>`;
+    // If days is null a date range is active, otherwise it's the real N (0 is fine)
+    const daysEcho =
+      filtered.days === null || filtered.days === undefined
+        ? null
+        : Number(filtered.days);
+
+    let heading;
+    if (hasDateRange) {
+      heading = "Upcoming Expirations";
+    } else if (daysEcho === 0) {
+      heading = "Expiring Today";
+    } else if (daysEcho === 1) {
+      heading = "Expiring Today and Tomorrow";
+    } else if (Number.isFinite(daysEcho)) {
+      heading = `Expiring Within ${daysEcho} Days`;
+    } else {
+      heading = "Expiring Soon";
+    }
+
+    html += `<div class="docBlockHeader warning">${esc(heading)}</div>`;
     html += expiring.map(renderRow).join("");
   }
 
@@ -877,7 +1291,6 @@ function renderInterments(data, container) {
   let html = "";
   for (const [monthYear, items] of groups.entries()) {
     html += `<div class="docBlockHeader">${esc(monthYear)}</div>`;
-
     for (const it of items) {
       const contactName = it.contact_person_name || "No contact person on file";
       const contactPhone = it.contact_person_phone || "";
@@ -922,13 +1335,12 @@ function renderInterments(data, container) {
 function renderGraves(data, container) {
   const rows = Array.isArray(data.rows) ? data.rows : [];
   if (rows.length === 0) {
-    container.innerHTML = `<div class="noDataFallbackMessage visible">No grave records match the selected filter.</div>`;
+    container.innerHTML = `<div class="noDataFallbackMessage visible">No grave records match the selected filters.</div>`;
     return;
   }
 
   const total = Number(data.total_records) || rows.length;
 
-  // Compute per-category counts for the chips row.
   const counts = Object.create(null);
   for (const it of rows) {
     const cat = it.category || it.status || "Other";
@@ -977,7 +1389,6 @@ function renderGraves(data, container) {
         ? `Row ${it.row_num ?? "—"} / Column ${it.col_num ?? "—"}`
         : null;
 
-    // Lease context (only when the backend provides it).
     let leaseLine = "";
     if (it.min_lease_expiration) {
       const days = it.days_until_expiration;
@@ -1118,10 +1529,6 @@ function renderPayments(data, container) {
   container.innerHTML = html;
 }
 
-/* -------------------------------------------------------------------------
-   7. BRANDING
-   ------------------------------------------------------------------------- */
-
 async function loadReportBranding() {
   try {
     const res = await fetch(SETTINGS_ENDPOINT, { cache: "no-store" });
@@ -1141,9 +1548,11 @@ async function loadReportBranding() {
     console.warn("Branding unavailable, using fallbacks.", err);
   } finally {
     bindReportSignatories(settingsMap);
+    applyBarangayOptions();
   }
 }
 
+// Fill each signature slot from people_name_N / people_title_N, cycling every 4 slots
 function bindReportSignatories(map) {
   document.querySelectorAll(".sigContainer").forEach((slot, index) => {
     const slotIndex = index % 4;
@@ -1157,115 +1566,103 @@ function bindReportSignatories(map) {
   });
 }
 
-async function loadYearOptions() {
-  const select = document.getElementById("interments-input-year");
-  if (!select) return;
-
+function parseBarangayList(raw) {
+  if (Array.isArray(raw)) {
+    return raw.filter((x) => typeof x === "string" && x.trim() !== "");
+  }
+  if (typeof raw !== "string" || !raw.trim()) return [];
   try {
-    const res = await fetch(`${API_ENDPOINT}?report=years`, {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return parsed.filter((x) => typeof x === "string" && x.trim() !== "");
+    }
+  } catch (_) {
+    // not valid JSON, treat as empty
+  }
+  return [];
+}
+
+function applyBarangayOptions() {
+  const container = document.getElementById("interments-barangay-checkboxes");
+  if (!container) return;
+
+  const list = parseBarangayList(settingsMap["barangay_options"]);
+
+  if (list.length === 0) {
+    container.innerHTML = `<p style="color:#94a3b8;font-size:12px;margin:0;">No barangays configured in settings.</p>`;
+    return;
+  }
+
+  const current = (filterState.interments.barangay || "")
+    .split(",")
+    .filter(Boolean);
+
+  container.innerHTML = list
+    .map(
+      (b) => `
+    <label class="checkboxItem">
+      <input type="checkbox" value="${esc(b)}"${
+        current.includes(b) ? " checked" : ""
+      } onchange="onIntermentsBarangayChange()" />
+      <span>${esc(b)}</span>
+    </label>`,
+    )
+    .join("");
+}
+
+async function loadFilterOptions() {
+  try {
+    const res = await fetch(`${API_ENDPOINT}/populate_filters`, {
       cache: "no-store",
     });
     if (!res.ok) throw new Error("HTTP " + res.status);
 
     const json = await res.json();
-    const years = Array.isArray(json?.data?.years) ? json.data.years : [];
-    if (years.length === 0) return;
+    if (!json || json.status !== 200 || !json.data) {
+      throw new Error("Invalid filter options payload");
+    }
 
-    const previous = select.value;
-    select.innerHTML =
-      '<option value="">Any year</option>' +
-      years.map((y) => `<option value="${esc(y)}">${esc(y)}</option>`).join("");
-
-    if (years.map(String).includes(previous)) select.value = previous;
+    filterOptionsCache = json.data;
+    applyFilterOptions(filterOptionsCache);
+    return filterOptionsCache;
   } catch (err) {
-    console.warn("Year options unavailable, keeping defaults.", err);
+    console.warn("Filter options unavailable.", err);
+    return null;
   }
 }
 
-async function loadPaymentOptions() {
+function applyFilterOptions(opts) {
   const purposeSelect = document.getElementById("payments-input-purpose");
   const channelSelect = document.getElementById("payments-input-channel");
-  if (!purposeSelect && !channelSelect) return;
 
-  try {
-    const res = await fetch(`${API_ENDPOINT}?report=payment_options`, {
-      cache: "no-store",
-    });
-    if (!res.ok) throw new Error("HTTP " + res.status);
+  const purposes = Array.isArray(opts?.payments?.purposes)
+    ? opts.payments.purposes
+    : [];
+  const channels = Array.isArray(opts?.payments?.channels)
+    ? opts.payments.channels
+    : [];
 
-    const json = await res.json();
-    const purposes = Array.isArray(json?.data?.purposes)
-      ? json.data.purposes
-      : [];
-    const channels = Array.isArray(json?.data?.channels)
-      ? json.data.channels
-      : [];
+  // Rebuild the options but keep whatever the user already picked
+  if (purposeSelect && purposes.length > 0) {
+    const prev = purposeSelect.value;
+    purposeSelect.innerHTML =
+      '<option value="">Any purpose</option>' +
+      purposes
+        .map((p) => `<option value="${esc(p)}">${esc(p)}</option>`)
+        .join("");
+    if (purposes.includes(prev)) purposeSelect.value = prev;
+  }
 
-    if (purposeSelect && purposes.length > 0) {
-      const prev = purposeSelect.value;
-      purposeSelect.innerHTML =
-        '<option value="">Any purpose</option>' +
-        purposes
-          .map((p) => `<option value="${esc(p)}">${esc(p)}</option>`)
-          .join("");
-      if (purposes.includes(prev)) purposeSelect.value = prev;
-    }
-
-    if (channelSelect && channels.length > 0) {
-      const prev = channelSelect.value;
-      channelSelect.innerHTML =
-        '<option value="">Any channel</option>' +
-        channels
-          .map((c) => `<option value="${esc(c)}">${esc(c)}</option>`)
-          .join("");
-      if (channels.includes(prev)) channelSelect.value = prev;
-    }
-  } catch (err) {
-    console.warn("Payment options unavailable, keeping defaults.", err);
+  if (channelSelect && channels.length > 0) {
+    const prev = channelSelect.value;
+    channelSelect.innerHTML =
+      '<option value="">Any channel</option>' +
+      channels
+        .map((c) => `<option value="${esc(c)}">${esc(c)}</option>`)
+        .join("");
+    if (channels.includes(prev)) channelSelect.value = prev;
   }
 }
-
-/**
- * Ensures the graves status filter dropdown offers the enriched category
- * set (Vacant / Occupied / Expiring / Expired / Reserved / Other) rather
- * than just Vacant/Occupied. Preserves the first "any"/placeholder option
- * and the currently selected value; skips the rebuild entirely if the
- * dropdown is already fully populated.
- */
-function loadGravesCategoryOptions() {
-  const select = document.getElementById("graves-input-status");
-  if (!select) return;
-
-  const categories = [
-    "Vacant",
-    "Occupied",
-    "Expiring",
-    "Expired",
-    "Reserved",
-    "Other",
-  ];
-  const existingValues = Array.from(select.options).map((o) => o.value);
-  const allPresent = categories.every((c) => existingValues.includes(c));
-  if (allPresent) return;
-
-  const prev = select.value;
-  const firstOpt = select.options[0];
-  const anyLabel = firstOpt
-    ? firstOpt.textContent || "Any status"
-    : "Any status";
-  const anyValue = firstOpt ? firstOpt.value || "" : "";
-
-  select.innerHTML = [
-    `<option value="${esc(anyValue)}">${esc(anyLabel)}</option>`,
-    ...categories.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`),
-  ].join("");
-
-  if (categories.includes(prev)) select.value = prev;
-}
-
-/* -------------------------------------------------------------------------
-   8. BOOTSTRAP
-   ------------------------------------------------------------------------- */
 
 document.addEventListener("DOMContentLoaded", () => {
   const initialContainer = document.getElementById("interments-content");
@@ -1278,23 +1675,22 @@ document.addEventListener("DOMContentLoaded", () => {
     initialContainer.classList.remove("is-loading");
   }
 
-  const reportLoad = switchReport("interments");
-
   loadReportBranding();
-  loadYearOptions();
-  loadGravesCategoryOptions();
+  loadFilterOptions();
 
+  const reportLoad = switchReport("interments");
   reportLoad.catch((err) => console.error("Initial report load failed:", err));
 });
-
-/* -------------------------------------------------------------------------
-   9. PRINT PIPELINE
-   ------------------------------------------------------------------------- */
 
 const PRINT_MIN_PAINT_MS = 120;
 const PRINT_MAX_WAIT_MS = 4000;
 
 function printCurrentReport() {
+  // Don't print an error state, let the user fix the filters first
+  if (!validateAllFilters(currentReportScope)) {
+    return;
+  }
+
   const btn = document.getElementById("printReportBtn");
   if (btn && btn.dataset.busy === "1") return;
 
@@ -1305,24 +1701,20 @@ function printCurrentReport() {
     if (label) label.textContent = "Preparing…";
   }
 
+  // Drop pending debounced reloads so we don't fetch twice
   for (const [key, timer] of debounceTimers.entries()) {
     clearTimeout(timer);
     debounceTimers.delete(key);
   }
 
-  // ★ Refetch EVERYTHING that appears in the printed document:
-  //   1. Branding first   → settingsMap + .sigName/.sigTitle + cemetery name
-  //   2. Report data next → table body + "Generated on" meta line
-  //   3. Wait for paint + assets, then print.
   loadReportBranding()
-    .then(() => loadReportData(currentReportScope))
+    .then(() => loadReportData(currentReportScope, { immediate: true }))
     .then(() => waitForPaintAndAssets())
     .then(() => {
       window.print();
     })
     .catch((err) => {
       console.error("Print prep failed:", err);
-      // Fallback: still print whatever is on screen.
       window.print();
     })
     .finally(() => {
@@ -1336,6 +1728,7 @@ function printCurrentReport() {
     });
 }
 
+// Poll until images load, fonts are ready, and a paint has happened
 function waitForPaintAndAssets() {
   const start = Date.now();
 
@@ -1358,6 +1751,7 @@ function waitForPaintAndAssets() {
         fontsReady &&
         Date.now() - start >= PRINT_MIN_PAINT_MS
       ) {
+        // Two rafs make sure the layout has painted before we print
         requestAnimationFrame(() => requestAnimationFrame(finish));
       } else {
         setTimeout(check, 50);

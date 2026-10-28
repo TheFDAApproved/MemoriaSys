@@ -1,44 +1,28 @@
-/* =========================================================================
-   MEMORIA — REPORTS
-   Sections:
-     1. Variables & Reset
-     2. Control workspace (dropdown + print button + filter panels)
-     3. Report card shell (letter-size, three-zone flex layout)
-     4. Card content blocks (tables, bullet lists, block headers)
-     5. Signatories
-     6. Print rules
-     7. Animations
-   ========================================================================= */
-
-/* -------------------------------------------------------------------------
-   1. VARIABLES & RESET
-   ------------------------------------------------------------------------- */
+/* Report page styles
+   Screen shows a control deck above a letter-size card
+   Print hides the deck and prints only the active card
+   Card uses three flex zones so the body paginates while header/footer stay put */
 
 :root {
-  /* Backgrounds */
   --bg-body: #f5f6f7;
   --bg-card: #ffffff;
   --bg-hover: #f8fafc;
   --bg-active: #f1f5f9;
 
-  /* Text Colors */
   --text-main: #1e293b;
   --text-muted: #334155;
   --text-light: #475569;
   --text-lighter: #64748b;
   --text-placeholder: #94a3b8;
 
-  /* Borders */
   --border-light: #e2e8f0;
   --border-base: #cbd5e1;
   --border-card: #dcdcdc;
 
-  /* Accents */
   --accent-primary: #0056b3;
   --accent-hover: #004494;
   --accent-light: rgba(0, 86, 179, 0.15);
 
-  /* Status Colors */
   --status-danger: #dc3545;
   --status-danger-bg: #f8d7da;
   --status-danger-text: #ef4444;
@@ -93,10 +77,6 @@ body {
   gap: 24px;
 }
 
-/* -------------------------------------------------------------------------
-   2. CONTROL WORKSPACE
-   ------------------------------------------------------------------------- */
-
 .controlWorkspaceDeck {
   width: 100%;
   max-width: 816px;
@@ -113,8 +93,6 @@ body {
   gap: 16px;
   width: 100%;
 }
-
-/* ----- Dropdown ----- */
 
 .dropdownWrapper {
   flex: 1;
@@ -283,8 +261,6 @@ body {
   color: var(--accent-primary);
 }
 
-/* ----- Print button ----- */
-
 .printPdfBtn {
   background: var(--accent-primary);
   color: #fff;
@@ -310,8 +286,6 @@ body {
   background: var(--accent-hover);
   transform: translateY(-1px);
 }
-
-/* ----- Filter panels ----- */
 
 .filterEngineContainer {
   background: var(--bg-card);
@@ -474,10 +448,39 @@ body {
   flex-shrink: 0;
 }
 
-/* -------------------------------------------------------------------------
-   3. REPORT CARD — THREE-ZONE LETTER SIZE
-   ------------------------------------------------------------------------- */
+/* Grave status checkboxes */
+.checkboxGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  padding: 4px 0;
+}
 
+.checkboxItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-muted);
+  user-select: none;
+  transition: color 0.15s ease;
+}
+
+.checkboxItem:hover {
+  color: var(--text-main);
+}
+
+.checkboxItem input[type="checkbox"] {
+  margin: 0;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent-primary);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* Letter-size card (816x1056 is letter at 96dpi) split into header / body / footer */
 .reportCard {
   width: 816px;
   min-height: 1056px;
@@ -554,10 +557,6 @@ body {
   margin-top: auto;
 }
 
-/* -------------------------------------------------------------------------
-   4. CARD CONTENT BLOCKS
-   ------------------------------------------------------------------------- */
-
 .docBlockHeader {
   font-size: 13.5px;
   font-weight: 700;
@@ -583,8 +582,6 @@ body {
   border-bottom-color: var(--status-warning-bg);
 }
 
-/* ----- Tables ----- */
-
 .cleanTable {
   width: 100%;
   border-collapse: collapse;
@@ -593,10 +590,12 @@ body {
   page-break-inside: auto;
 }
 
+/* Repeat the table header on every printed page */
 .cleanTable thead {
   display: table-header-group;
 }
 
+/* Keep a row from being cut in half across pages */
 .cleanTable tr {
   page-break-inside: avoid;
 }
@@ -624,8 +623,6 @@ body {
   border-bottom: none;
 }
 
-/* ----- Bullet items ----- */
-
 .bulletItem {
   font-size: 13px;
   line-height: 1.55;
@@ -651,8 +648,6 @@ body {
   color: var(--text-light);
 }
 
-/* ----- Empty / error state ----- */
-
 .noDataFallbackMessage {
   display: none;
   text-align: center;
@@ -668,8 +663,6 @@ body {
 .noDataFallbackMessage.visible {
   display: block;
 }
-
-/* ----- Status Colors & Summaries ----- */
 
 .statusPending {
   color: var(--status-warning);
@@ -723,9 +716,140 @@ body {
   margin-top: 2px;
 }
 
-/* -------------------------------------------------------------------------
-   5. SIGNATORIES
-   ------------------------------------------------------------------------- */
+.paginationBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  padding: 10px 14px;
+  margin-top: 20px;
+  background: var(--bg-hover);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--text-light);
+  animation: fadeIn 0.2s ease-out;
+}
+
+.paginationInfo {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-lighter);
+  line-height: 1.4;
+}
+
+.paginationInfo strong {
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.paginationControl {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pagePrevBtn,
+.pageNextBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border-base);
+  background: var(--bg-card);
+  color: var(--text-muted);
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 11px;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.pagePrevBtn:hover:not(:disabled),
+.pageNextBtn:hover:not(:disabled) {
+  background: var(--bg-active);
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+}
+
+.pagePrevBtn:disabled,
+.pageNextBtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.pagePrevBtn:focus-visible,
+.pageNextBtn:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
+}
+
+.pageSelectLabel {
+  font-size: 12.5px;
+  color: var(--text-lighter);
+  margin-left: 2px;
+}
+
+.pageSelect {
+  padding: 5px 8px;
+  font-size: 12.5px;
+  font-family: inherit;
+  border: 1px solid var(--border-base);
+  border-radius: 5px;
+  background: var(--bg-card);
+  color: var(--text-muted);
+  cursor: pointer;
+  min-width: 62px;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.pageSelect:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.pageSelect:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pageTotalLabel {
+  font-size: 12.5px;
+  color: var(--text-lighter);
+  margin-left: 2px;
+}
+
+.pageTotalLabel strong {
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+/* Applied filters line, shows up in the printed PDF */
+.docAppliedFilters {
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--text-lighter);
+  margin: -12px 0 20px 0;
+  padding: 6px 12px;
+  border: 1px dashed var(--border-base);
+  border-radius: 4px;
+  line-height: 1.5;
+  page-break-inside: avoid;
+}
+
+.docAppliedFilters strong {
+  color: var(--text-muted);
+  font-weight: 600;
+}
 
 .signatorySection {
   display: grid;
@@ -758,6 +882,7 @@ body {
   min-height: 20px;
 }
 
+/* Keep the line blank when there's no name to sign */
 .sigName:empty {
   border-bottom-color: transparent;
 }
@@ -770,12 +895,13 @@ body {
   line-height: 1.4;
 }
 
-/* Hide print spacers on screen */
+/* Spacers only show up when printing, to leave room for the fixed header and footer */
 .print-header-spacer,
 .print-footer-spacer {
   display: none;
 }
-/* Table pagination resets for the Master Table */
+
+/* Wrapper used to repeat the header and footer on every printed page */
 .printPaginationTable {
   width: 100%;
   border-collapse: collapse;
@@ -787,13 +913,10 @@ body {
   border: none;
 }
 
-/* -------------------------------------------------------------------------
-   6. PRINT
-   ------------------------------------------------------------------------- */
 @media print {
   @page {
-    margin: 0; /* Zero margin pushes elements flush to the paper edge */
-    size: letter portrait; /* Enforces Short Bond Paper */
+    margin: 0;
+    size: letter portrait;
   }
 
   html,
@@ -810,14 +933,15 @@ body {
     margin: 0 !important;
   }
 
-  /* Hide screen-only UI */
+  /* Hide the control deck and other screen-only pieces */
   .controlWorkspaceDeck,
   .deckTopBar,
   .dropdownWrapper,
   .filterEngineContainer,
   .customOptionsPanel,
   .printPdfBtn,
-  .noDataFallbackMessage {
+  .noDataFallbackMessage,
+  .paginationBar {
     display: none !important;
   }
 
@@ -827,15 +951,12 @@ body {
     border: none;
     box-shadow: none;
   }
+
+  /* Only print the active card, not the others kept hidden on screen */
   .reportCard:not(.active) {
     display: none !important;
   }
 
-  /* 
-     ===================================================
-     THE MAGIC: Fixed positions force repeating in Chrome 
-     ===================================================
-  */
   .print-fixed-header {
     position: fixed !important;
     top: 0;
@@ -854,15 +975,12 @@ body {
     z-index: 1000;
   }
 
-  /* 
-     ===================================================
-     TABLE SPACERS: Prevents text from hiding behind header/footer 
-     ===================================================
-  */
   .printPaginationTable {
     width: 100%;
     border-collapse: collapse;
   }
+
+  /* Tell the browser to repeat thead and tfoot on each printed page */
   .printPaginationTable thead {
     display: table-header-group !important;
   }
@@ -875,26 +993,20 @@ body {
     display: block !important;
   }
 
-  /* INCREASE THIS IF TEXT OVERLAPS THE HEADER */
+  /* Push content below the fixed header */
   .print-header-spacer {
     height: 130px !important;
   }
 
-  /* INCREASE THIS IF TEXT OVERLAPS THE FOOTER */
+  /* Push content above the fixed footer */
   .print-footer-spacer {
-    height: 150px !important; /* Changed from 80px. Increase to 180px or 200px if it still overlaps! */
+    height: 150px !important;
   }
 
-  /* Ensure the signatures look good at the end of the report */
-  .signatorySection {
-    margin-top: 40px !important;
-    page-break-inside: avoid !important;
-  }
-
-  /* General print formatting */
   .docBody {
     padding: 0 40px !important;
   }
+
   .reportHeaderImage,
   .reportFooterImage {
     max-width: 100%;
@@ -902,18 +1014,29 @@ body {
     display: block;
   }
 
-  /* Prevent blocks from slicing in half */
-  .docBlockHeader,
+  /* Keep a block header attached to the first item under it */
+  .docBlockHeader {
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Keep list items, table rows, and summary grids from tearing across pages */
   .bulletItem,
   .cleanTable tr,
-  .paymentSummaryGrid,
-  .signatorySection {
+  .paymentSummaryGrid {
     page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Keep all signatures on the same page */
+  .signatorySection {
+    margin-top: 0px !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 }
-/* -------------------------------------------------------------------------
-   7. ANIMATIONS & LOADERS
-   ------------------------------------------------------------------------- */
 
 @keyframes fadeIn {
   from {
@@ -961,6 +1084,7 @@ body {
   animation: fadeIn 0.15s ease-out;
 }
 
+/* Font Awesome spinner icon drawn as the loading state */
 .docSection.is-loading::after {
   content: "\f110";
   font-family: "Font Awesome 6 Free";
@@ -976,6 +1100,7 @@ body {
   animation: fa-spin 1s infinite linear;
 }
 
+/* Fall back to an ellipsis if Font Awesome didn't load */
 @supports not (font-family: "Font Awesome 6 Free") {
   .docSection.is-loading::after {
     content: "…";
@@ -984,10 +1109,6 @@ body {
     margin-left: -8px;
   }
 }
-
-/* -------------------------------------------------------------------------
-   8. RESPONSIVE
-   ------------------------------------------------------------------------- */
 
 @media screen and (max-width: 900px) {
   .reportsContent {
