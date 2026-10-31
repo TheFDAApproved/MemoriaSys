@@ -19,12 +19,10 @@
     <meta property="og:title" content="Memoria | Cemetery Management System">
     <meta property="og:description" content="Efficiently manage and locate records within the Cemetery.">
     <meta property="og:image" content="https://cdn1.iconfinder.com/data/icons/government-buildings-5/504/cemetery-graveyard-tombstone-burial-memorial-512.png">
-
     <meta name="twitter:card" content="summary_large_image">
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
 
@@ -36,6 +34,7 @@
 </head>
 <body>
     <div class="paymentsContainer">
+        <!-- Search and filter controls -->
         <div class="tableControls">
             <div class="searchBox">
                 <i class="fas fa-search"></i>
@@ -61,6 +60,7 @@
             </button>
         </div>
 
+        <!-- Payment records table -->
         <div class="table">
             <div class="tableHeader">
                 <h3>Payment Records</h3>
@@ -90,6 +90,7 @@
                     <tbody id="paymentsTableBody"></tbody>
                 </table>
 
+                <!-- Shown when no rows match the current filters -->
                 <p class="noData" id="burialNoData">
                     <i class="fas fa-inbox"></i>
                     No records found
@@ -97,6 +98,7 @@
             </div>
         </div>
 
+        <!-- Pagination controls -->
         <div class="paginationContainer">
             <div class="paginationControls">
                 <button type="button" class="pageNavBtn" id="prev_page_btn" aria-label="Previous page">

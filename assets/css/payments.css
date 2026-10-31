@@ -1,7 +1,8 @@
-/* ==================================================================
-   Payments page — styled to match accounts.css / the rest of Memoria.
-   Same tokens, spacing, radii, and interaction conventions.
-   ================================================================== */
+html {
+    height: 100%;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+}
 
 body {
     margin: 0;
@@ -13,17 +14,22 @@ body {
     overflow: hidden;
 }
 
+/* Main page container */
 .paymentsContainer {
     display: flex;
     flex-direction: column;
     height: 100vh;
+    height: 100dvh;
     width: 100%;
     max-width: none;
     margin: 0;
     padding: 24px;
-    overflow: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
+/* Use border-box sizing for form controls and scrollable areas */
 .paymentsContainer,
 .searchBox input,
 .mainSelect,
@@ -32,8 +38,7 @@ body {
     box-sizing: border-box;
 }
 
-/* ---------------- Controls (search + filters) ---------------- */
-
+/* Search and filter controls */
 .tableControls {
     flex-shrink: 0;
     display: flex;
@@ -41,15 +46,17 @@ body {
     align-items: center;
     gap: 12px;
     margin-bottom: 20px;
+    min-width: 0;
 }
 
 .searchBox {
     position: relative;
     flex: 1 1 260px;
-    min-width: 220px;
+    min-width: 0;
     max-width: 480px;
 }
 
+/* Push the status filter to the right of the search box */
 .searchBox+.controlItem {
     margin-left: auto;
 }
@@ -95,52 +102,7 @@ body {
     box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.1);
 }
 
-.controlItem {
-    flex: 0 1 auto;
-    min-width: 160px;
-}
-
-.mainSelect {
-    padding: 11px 36px 11px 14px;
-    background-color: #ffffff;
-    cursor: pointer;
-    appearance: none;
-    -webkit-appearance: none;
-    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23606770' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'/%3e%3c/svg%3e");
-    background-repeat: no-repeat;
-    background-position: right 14px center;
-    background-size: 12px;
-}
-
-.filterActionBtn {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 11px 20px;
-    font-size: 14px;
-    font-weight: 600;
-    font-family: inherit;
-    color: #ffffff;
-    background: var(--mainColor);
-    border: none;
-    border-radius: 10px;
-    cursor: pointer;
-    transition: opacity 0.2s ease;
-}
-
-.filterActionBtn i {
-    font-size: 13px;
-}
-
-.filterActionBtn:hover {
-    opacity: 0.9;
-}
-
-.filterActionBtn:focus-visible {
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.25);
-}
-
+/* Clear button inside the search box [hidden by default] */
 .searchClearBtn {
     position: absolute;
     top: 50%;
@@ -175,11 +137,58 @@ body {
     box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.15);
 }
 
-/* ---------------- Table card ---------------- */
+.controlItem {
+    flex: 0 1 auto;
+    min-width: 160px;
+    max-width: 100%;
+}
 
+.mainSelect {
+    padding: 11px 36px 11px 14px;
+    background-color: #ffffff;
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23606770' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+    background-size: 12px;
+}
+
+.filterActionBtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    color: #ffffff;
+    background: var(--mainColor);
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: opacity 0.2s ease;
+}
+
+.filterActionBtn i {
+    font-size: 13px;
+}
+
+.filterActionBtn:hover {
+    opacity: 0.9;
+}
+
+.filterActionBtn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.25);
+}
+
+/* Data table */
 .table {
     flex-shrink: 0;
-    min-height: 0;
+    min-height: 200px;
     display: flex;
     flex-direction: column;
     flex: 1 1 auto;
@@ -209,6 +218,7 @@ body {
 .pageInfoText {
     font-size: 13px;
     color: #606770;
+    white-space: nowrap;
 }
 
 .pageInfoText strong,
@@ -217,6 +227,7 @@ body {
     font-weight: 700;
 }
 
+/* Scrollable area that holds the table and empty state */
 .tableScrollWrapper {
     flex: 1 1 auto;
     min-height: 0;
@@ -225,11 +236,14 @@ body {
     overflow-y: auto;
     overflow-x: auto;
     width: 100%;
+    max-width: 100%;
     background: #ffffff;
     border: 1px solid #e5e7eb;
     border-top: none;
     border-radius: 0 0 10px 10px;
     box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
 }
 
 .tableScrollWrapper::-webkit-scrollbar {
@@ -258,6 +272,7 @@ body {
     font-size: 14px;
 }
 
+/* Sticky header stays visible while the table scrolls */
 .tableScrollWrapper thead th {
     position: sticky;
     top: 0;
@@ -294,14 +309,13 @@ body {
     border-bottom: none;
 }
 
-/* Pin action column width so nothing jumps when rows re-render */
+/* Keep the action column at a fixed width */
 .tableScrollWrapper thead th:nth-child(12),
 .tableScrollWrapper tbody td:nth-child(12) {
     width: 120px;
 }
 
-/* ---------------- Cell helpers ---------------- */
-
+/* Status badges and action buttons */
 .statusBadge {
     display: inline-flex;
     align-items: center;
@@ -349,8 +363,6 @@ body {
     color: #9ca3af;
 }
 
-/* ---------------- Action buttons ---------------- */
-
 .actionBtn {
     display: inline-flex;
     align-items: center;
@@ -395,8 +407,7 @@ body {
     color: #dc2626;
 }
 
-/* ---------------- No data state ---------------- */
-
+/* Empty state [shown when no records match] */
 .noData {
     flex: 1 1 auto;
     display: flex;
@@ -417,11 +428,11 @@ body {
     color: #cbd5e1;
 }
 
-/* ---------------- Pagination ---------------- */
-
+/* Pagination */
 .paginationContainer {
     flex-shrink: 0;
     display: flex;
+    flex-wrap: wrap;
     justify-content: center;
     margin-top: 20px;
 }
@@ -430,6 +441,7 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 10px;
+    max-width: 100%;
     padding: 6px;
     background: #ffffff;
     border: 1px solid #e5e7eb;
@@ -438,6 +450,7 @@ body {
 }
 
 .pageNavBtn {
+    flex: 0 0 auto;
     width: 36px;
     height: 36px;
     display: inline-flex;
@@ -467,9 +480,11 @@ body {
     cursor: not-allowed;
 }
 
+/* Sliding window of page number buttons */
 .carouselViewport {
     overflow: hidden;
     max-width: 320px;
+    min-width: 0;
 }
 
 .carouselTrack {
@@ -513,7 +528,73 @@ body {
     border-color: var(--mainColor);
 }
 
-/* ---------------- Responsive ---------------- */
+/* Responsive  */
+@media (max-width: 1200px) {
+    .paymentsContainer {
+        padding: 20px;
+    }
+
+    .carouselViewport {
+        max-width: 280px;
+    }
+}
+
+@media (max-width: 1024px) {
+    .searchBox {
+        flex: 1 1 220px;
+    }
+
+    .carouselViewport {
+        max-width: 250px;
+    }
+}
+
+@media (max-width: 768px) {
+    .paymentsContainer {
+        padding: 16px;
+    }
+
+    .tableControls {
+        gap: 10px;
+        margin-bottom: 16px;
+    }
+
+    .searchBox {
+        flex: 1 1 100%;
+        max-width: none;
+    }
+
+    .searchBox+.controlItem {
+        margin-left: 0;
+    }
+
+    .controlItem {
+        flex: 1 1 160px;
+        min-width: 0;
+    }
+
+    .filterActionBtn {
+        flex: 0 0 auto;
+        padding: 11px 16px;
+    }
+
+    .tableHeader {
+        padding: 12px 14px;
+    }
+
+    .tableScrollWrapper thead th,
+    .tableScrollWrapper tbody td {
+        padding: 12px 14px;
+    }
+
+    .paginationContainer {
+        margin-top: 16px;
+    }
+
+    .carouselViewport {
+        max-width: 220px;
+    }
+}
 
 @media (max-width: 640px) {
     .paymentsContainer {
@@ -537,5 +618,82 @@ body {
 
     .carouselViewport {
         max-width: 220px;
+    }
+
+    .pageNavBtn,
+    .carouselTrack button {
+        width: 32px;
+        height: 32px;
+    }
+
+    .paginationControls {
+        gap: 6px;
+        padding: 5px;
+    }
+
+    .noData {
+        padding: 36px 16px;
+    }
+}
+
+@media (max-width: 420px) {
+    .paymentsContainer {
+        padding: 12px;
+    }
+
+    .tableControls {
+        gap: 8px;
+        margin-bottom: 12px;
+    }
+
+    .tableHeader {
+        padding: 10px 12px;
+    }
+
+    .tableHeader h3 {
+        font-size: 15px;
+    }
+
+    .pageInfoText {
+        font-size: 12px;
+    }
+
+    .tableScrollWrapper thead th,
+    .tableScrollWrapper tbody td {
+        padding: 10px 12px;
+    }
+
+    .carouselViewport {
+        max-width: 150px;
+    }
+
+    .paginationContainer {
+        margin-top: 12px;
+    }
+
+    .table {
+        min-height: 180px;
+    }
+}
+
+@media (max-height: 600px) {
+    .paymentsContainer {
+        padding: 12px 16px;
+    }
+
+    .tableControls {
+        margin-bottom: 12px;
+    }
+
+    .table {
+        min-height: 160px;
+    }
+
+    .paginationContainer {
+        margin-top: 12px;
+    }
+
+    .noData {
+        padding: 24px 16px;
     }
 }
