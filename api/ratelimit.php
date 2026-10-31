@@ -125,6 +125,7 @@ function applyDefaultRateLimit()
     $isForgotPassword = (bool) preg_match('#(^|/)(api/)?users(\.php)?/forgot-password(/|$)#i', $path);
     $isAuth           = (bool) preg_match('#(^|/)(api/)?auth(\.php)?(/|$)#i', $path);
     $isUsers          = (bool) preg_match('#(^|/)(api/)?users(\.php)?(/|$)#i', $path);
+    $isPayments       = (bool) preg_match('#(^|/)(api/)?payments(\.php)?(/|$)#i', $path);
 
     // Auth DELETE (logout / revoke session) stays exempt, as before
     if ($isAuth && $method === 'DELETE') {
@@ -133,7 +134,7 @@ function applyDefaultRateLimit()
 
     if ($method === 'POST') {
         if ($isForgotPassword) {
-            handleRateLimit(5, 100, 'forgot-password');  // 5 per 100s
+            handleRateLimit(3, 100, 'forgot-password');  // 3 per 100s (forgot password)
             return;
         }
         if ($isAuth) {
@@ -141,7 +142,11 @@ function applyDefaultRateLimit()
             return;
         }
         if ($isUsers) {
-            handleRateLimit(5, 100, 'user-create');      // 5 per 100s
+            handleRateLimit(5, 100, 'user-create');      // 5 per 100s (creating new users)
+            return;
+        }
+        if ($isPayments) {
+            handleRateLimit(4, 100, 'payment-create');  // 4 per 100s (image uploads payments screenshots)
             return;
         }
     }
