@@ -31,9 +31,7 @@
     <link
       rel="stylesheet"
       href="api/rootcolors.php"
-      onerror="
-        console.error('Failed to load custom colors. Using default theme.')
-      "
+      onerror="console.error('Failed to load custom colors. Using default theme.')"
     />
     <link rel="stylesheet" href="assets/css/sidebar.css" />
     <link rel="stylesheet" href="assets/css/map.css" />
@@ -51,7 +49,6 @@
     />
 
     <script>
-      // Run this instantly before the page paints
       if (localStorage.getItem("memoria_role") === "Administrator") {
         document.documentElement.classList.add("role-admin");
       }
@@ -131,6 +128,13 @@
           </div>
 
           <div class="mapCanvas" id="mapCanvas">
+            <!-- ===== CEMETERY BACKGROUND IMAGE (Sits behind the canvas) ===== -->
+            <img
+              id="cemetery_map_image"
+              src="assets/images/cemetery_map_image.png"
+              onerror="this.onerror = null; this.src = 'api/images/cemetery_map_image.png'; console.error('Failed to load dynamic logo. Using default logo.');"
+              alt="Cemetery Map Image"
+            />
             <canvas id="mapCvs"></canvas>
             <div class="mapHint" id="mapHint"></div>
             <div class="mapLoading" id="mapLoading">Loading map&hellip;</div>

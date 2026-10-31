@@ -138,6 +138,7 @@ CREATE TABLE blocks (
     coordinates JSON,
     `rows` INT NOT NULL DEFAULT 0,
     `cols` INT NOT NULL DEFAULT 0,
+    rotation DECIMAL(10,6) DEFAULT 0.000000,
     custom TINYINT(1) NOT NULL DEFAULT 0,
     remarks TEXT,
 
@@ -157,8 +158,8 @@ CREATE TABLE blocks (
     FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
 
-INSERT INTO `blocks` (`block_id`, `block_name`, `block_type`, `image_link`, `coordinates`, `rows`, `cols`, `custom`, `remarks`, `created_at`, `updated_at`, `deleted_at`, `created_by`, `updated_by`) VALUES
-(1, 'Santa Cecelia', 'Niche', '', NULL, 5, 5, 0, '', '2026-10-11 15:18:34', '2026-10-11 15:18:34', NULL, 1, 1);
+INSERT INTO `blocks` (`block_id`, `block_name`, `block_type`, `image_link`, `coordinates`, `rows`, `cols`, `custom`, `rotation`, `remarks`, `created_at`, `updated_at`, `deleted_at`, `created_by`, `updated_by`) VALUES
+(1, 'Santa Cecelia', 'Niche', '', NULL, 5, 5, 0, 0.000000, '', '2026-10-11 15:18:34', '2026-10-11 15:18:34', NULL, 1, 1);
 
 
 --  ----------------------------------------------------------------------

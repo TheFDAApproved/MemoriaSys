@@ -426,7 +426,7 @@ if ($method === 'GET') {
         $sql = "
             SELECT
                 b.block_id, b.block_name, b.block_type, b.coordinates,
-                b.image_link, b.`rows`, b.`cols`, b.custom
+                b.image_link, b.`rows`, b.`cols`, b.custom, b.rotation
             FROM blocks b
             WHERE b.deleted_at IS NULL
             $searchSQL
@@ -521,7 +521,7 @@ if ($method === 'POST') {
         $stmt = $pdo->prepare("
             INSERT INTO blocks
                 (block_name, block_type, coordinates, remarks, image_link,
-                 `rows`, `cols`, custom, created_by, updated_by)
+                 `rows`, `cols`, custom, rotatiom, created_by, updated_by)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ");
         $stmt->execute([
@@ -533,6 +533,7 @@ if ($method === 'POST') {
             $rows,
             $cols,
             $custom,
+            $rawData['rotation'] ?? 0,
             $userData['user_id'],
             $userData['user_id'],
         ]);
@@ -578,7 +579,7 @@ if ($method === 'PUT') {
         Response::error("rows and cols cannot exceed $maxAllowed.", 400);
     }
 
-    $scalarFields = ['block_type', 'coordinates', 'remarks', 'image_link', 'custom'];
+    $scalarFields = ['block_type', 'coordinates', 'remarks', 'image_link', 'custom', 'rotation'];
     $hasFieldUpdate = false;
     foreach ($scalarFields as $f) {
         if (array_key_exists($f, $rawData)) {

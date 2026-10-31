@@ -1,9 +1,9 @@
 // assets/js/public_map.js
 const PUBLIC_MAP = (() => {
   const API_URL = "api/blocks.php";
-  const PADDING = 40;
-  const MAX_SCALE = 1.5; // cap zoom-in for tiny maps
   const PLACEHOLDER_WAIT_MS = 8000;
+  const MAP_W = 1000;
+  const MAP_H = 500;
 
   let canvasWrap, cv, ctx;
   let cvW = 0,
@@ -58,20 +58,36 @@ const PUBLIC_MAP = (() => {
   // ── CANVAS ────────────────────────────────────────────────
   function syncCanvasSize() {
     if (!canvasWrap || !cv) return;
-    const w = canvasWrap.clientWidth;
-    const h = canvasWrap.clientHeight;
-    if (!w || !h) return;
+    const containerW = canvasWrap.clientWidth;
+    const containerH = canvasWrap.clientHeight;
+    if (!containerW || !containerH) return;
+
+    const displayW = containerW;
+    const displayH = containerH;
+
     const dpr = window.devicePixelRatio || 1;
-    cvW = w;
-    cvH = h;
-    const bw = Math.round(w * dpr);
-    const bh = Math.round(h * dpr);
+    cvW = displayW;
+    cvH = displayH;
+
+    const bw = Math.round(displayW * dpr);
+    const bh = Math.round(displayH * dpr);
     if (cv.width !== bw || cv.height !== bh) {
       cv.width = bw;
       cv.height = bh;
-      cv.style.width = `${w}px`;
-      cv.style.height = `${h}px`;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    
+    cv.style.width = `${displayW}px`;
+    cv.style.height = `${displayH}px`;
+    cv.style.left = `0px`;
+    cv.style.top = `0px`;
+
+    const bg = document.getElementById("cemetery_map_image");
+    if (bg) {
+      bg.style.width = `${displayW}px`;
+      bg.style.height = `${displayH}px`;
+      bg.style.left = `0px`;
+      bg.style.top = `0px`;
+      bg.style.objectFit = "fill";
     }
   }
 
@@ -89,11 +105,22 @@ const PUBLIC_MAP = (() => {
     if (!ctx) return;
     if (!cvW || !cvH) {
       syncCanvasSize();
-      if (!cvW || !cvH) return; // wait for a real size
+      if (!cvW || !cvH) return;
     }
-    ctx.clearRect(0, 0, cvW, cvH);
+
+    const dpr = window.devicePixelRatio || 1;
+    const scaleX = (cvW * dpr) / MAP_W;
+    const scaleY = (cvH * dpr) / MAP_H;
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
 
     if (!blockOrder.length) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.fillStyle = "#94a3b8";
       ctx.font = "13px Inter, sans-serif";
       ctx.textAlign = "center";
@@ -103,45 +130,30 @@ const PUBLIC_MAP = (() => {
       return;
     }
 
-    // Fit-to-screen: global bounds of all valid blocks
-    let minX = Infinity,
-      minY = Infinity,
-      maxX = -Infinity,
-      maxY = -Infinity;
-    for (const bid of blockOrder) {
-      const pts = blocks[bid].points;
-      for (let i = 0; i < pts.length; i++) {
-        const p = pts[i];
-        if (p.x < minX) minX = p.x;
-        if (p.y < minY) minY = p.y;
-        if (p.x > maxX) maxX = p.x;
-        if (p.y > maxY) maxY = p.y;
-      }
-    }
-
-    const mapW = Math.max(1, maxX - minX);
-    const mapH = Math.max(1, maxY - minY);
-    let scale = Math.min(
-      (cvW - PADDING * 2) / mapW,
-      (cvH - PADDING * 2) / mapH,
-    );
-    scale = Math.min(scale, MAX_SCALE);
-    const offsetX = (cvW - mapW * scale) / 2 - minX * scale;
-    const offsetY = (cvH - mapH * scale) / 2 - minY * scale;
-
     for (const bid of blockOrder) {
       const b = blocks[bid];
       const pts = b.points;
       const hov = hoveredBlock === bid;
 
+      const bounds = polyBounds(pts);
+      const cx = bounds.x + bounds.w / 2;
+      const cy = bounds.y + bounds.h / 2;
+      const rotation = b.rotation || 0;
+
+      // ── APPLY ROTATION ──
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(rotation);
+      ctx.translate(-cx, -cy);
+      
       ctx.beginPath();
       for (let i = 0; i < pts.length; i++) {
-        const px = pts[i].x * scale + offsetX;
-        const py = pts[i].y * scale + offsetY;
-        if (i === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
+        if (i === 0) ctx.moveTo(pts[i].x, pts[i].y);
+        else ctx.lineTo(pts[i].x, pts[i].y);
       }
       ctx.closePath();
+
+      ctx.globalAlpha = 0.8;
 
       ctx.fillStyle = hov ? "#bfdbfe" : "#dbeafe";
       ctx.strokeStyle = hov ? "#1d4ed8" : "#3b82f6";
@@ -149,40 +161,41 @@ const PUBLIC_MAP = (() => {
       ctx.fill();
       ctx.stroke();
 
-      // Label
+      ctx.globalAlpha = 1.0;
+
       const bnds = b.bounds;
-      const cx = (bnds.x + bnds.w / 2) * scale + offsetX;
-      const cy = (bnds.y + bnds.h / 2) * scale + offsetY;
+      const tcx = bnds.x + bnds.w / 2; // Fixed duplicate variable name
+      const tcy = bnds.y + bnds.h / 2; // Fixed duplicate variable name
+      const fontScale = cvW / MAP_W;
 
       ctx.fillStyle = "#1e3a5f";
-      ctx.font = "600 13px Inter, sans-serif";
+      ctx.font = `600 ${13 / fontScale}px Inter, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(b.block_name, cx, cy);
+      ctx.fillText(b.block_name, tcx, tcy);
       ctx.textBaseline = "alphabetic";
-    }
 
-    // Store transform for hit-testing
-    cv._mapScale = scale;
-    cv._mapOffsetX = offsetX;
-    cv._mapOffsetY = offsetY;
+      ctx.restore(); // <--- THIS WAS MISSING!
+    }
   }
 
   // ── EVENTS ────────────────────────────────────────────────
   function getXY(e) {
     const r = cv.getBoundingClientRect();
     const s = e.touches ? e.touches[0] : e;
-    return { x: s.clientX - r.left, y: s.clientY - r.top };
+    const scaleX = MAP_W / cvW;
+    const scaleY = MAP_H / cvH;
+    return {
+      x: (s.clientX - r.left) * scaleX,
+      y: (s.clientY - r.top) * scaleY,
+    };
   }
 
   function getHitBlock(x, y) {
-    if (!cv._mapScale) return null;
-    const mx = (x - cv._mapOffsetX) / cv._mapScale;
-    const my = (y - cv._mapOffsetY) / cv._mapScale;
     return blockOrder
       .slice()
       .reverse()
-      .find((id) => pointInPoly(mx, my, blocks[id].points));
+      .find((id) => pointInPoly(x, y, blocks[id].points));
   }
 
   function initEvents() {
@@ -315,7 +328,14 @@ const PUBLIC_MAP = (() => {
     mapCard.style.overflow = "hidden";
     mapCard.innerHTML = `
       <div id="publicMapCanvas" style="position:absolute;inset:0;background:#f1f5f9">
-        <canvas id="publicMapCvs" style="position:absolute;top:0;left:0;display:block"></canvas>
+        <img
+          id="cemetery_map_image"
+          src="api/images/cemetery_map_image.png"
+          onerror="this.onerror = null; this.src = 'assets/images/cemetery_map_image.png'; console.error('Failed to load dynamic logo. Using default logo.');"
+          alt="Cemetery Map Image"
+          style="position:absolute;top:0;left:0;width:100%;height:100%;object-fit:fill;z-index:0;pointer-events:none;user-select:none;"
+        />
+        <canvas id="publicMapCvs" style="position:absolute;top:0;left:0;display:block;background:transparent;z-index:1"></canvas>
         <div id="publicMapLoading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#f1f5f9;z-index:10"></div>
       </div>
 
@@ -365,7 +385,12 @@ const PUBLIC_MAP = (() => {
         const pts = parseCoordinates(row.coordinates);
         if (!pts) continue;
         const bid = "b" + row.block_id;
-        blocks[bid] = { ...row, points: pts, bounds: polyBounds(pts) };
+        blocks[bid] = { 
+          ...row, 
+          points: pts, 
+          bounds: polyBounds(pts),
+          rotation: parseFloat(row.rotation) || 0
+        };
         blockOrder.push(bid);
       }
 

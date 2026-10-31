@@ -13,7 +13,9 @@ const MAP = (() => {
   // ── CONSTANTS ────────────────────────────────────────────────────────────
   const CELL = 22;
   const API_BLOCKS = "api/blocks.php";
-
+  const MAP_W = 1000; // Fixed virtual map width
+  const MAP_H = 500;  // Fixed virtual map height
+  
   // ── STATE VARIABLES ──────────────────────────────────────────────────────
   let mapEditMode = false;
   let hasUnsavedChanges = false;
@@ -52,9 +54,45 @@ const MAP = (() => {
     origPts: null,
     isCustom: false,
   };
+  let rotateDrag = {
+    active: false,
+    bid: null,
+    centerX: 0,
+    centerY: 0,
+    startAngle: 0,
+    origRotation: 0,
+  };
 
   const $ = (id) => document.getElementById(id);
   let canvasWrap, cv, ctx;
+
+  // Helper to check distance to a point that has been rotated around a center
+  function getDistToRotatedPoint(mx, my, px, py, cx, cy, rotation) {
+    // 1. Move mouse to be relative to the block's center
+    const dx = mx - cx;
+    const dy = my - cy;
+    
+    // 2. Rotate the mouse backwards by the block's rotation
+    const cos = Math.cos(-rotation);
+    const sin = Math.sin(-rotation);
+    const rotatedX = cx + (dx * cos - dy * sin);
+    const rotatedY = cy + (dx * sin + dy * cos);
+    
+    // 3. Now check distance to the unrotated corner
+    return Math.sqrt((rotatedX - px) ** 2 + (rotatedY - py) ** 2);
+  }
+
+  // Un-rotates a mouse click back to the block's original orientation
+  function screenToUnrotated(sx, sy, cx, cy, rotation) {
+    const dx = sx - cx;
+    const dy = sy - cy;
+    const cos = Math.cos(-rotation);
+    const sin = Math.sin(-rotation);
+    return {
+      x: cx + (dx * cos - dy * sin),
+      y: cy + (dx * sin + dy * cos),
+    };
+  }
 
   // ── UI HELPERS ───────────────────────────────────────────────────────────
   function setHint(t) {
@@ -104,7 +142,7 @@ const MAP = (() => {
     return Math.random().toString(36).slice(2, 8);
   }
   function snap(v) {
-    return Math.round(v / CELL) * CELL;
+    return v; // Removed the Math.round(v / CELL) * CELL so you have free movement
   }
 
   function rectToPoints(x, y, w, h) {
@@ -312,10 +350,10 @@ const MAP = (() => {
   // Clamp a translation so the block's bounds stay within the canvas, or
   // at least partially visible when the block is larger than the canvas.
   function clampTranslate(b, dx, dy) {
-    const minX = Math.min(0, cvW - b.w);
-    const maxX = Math.max(0, cvW - b.w);
-    const minY = Math.min(0, cvH - b.h);
-    const maxY = Math.max(0, cvH - b.h);
+    const minX = Math.min(0, MAP_W - b.w);
+    const maxX = Math.max(0, MAP_W - b.w);
+    const minY = Math.min(0, MAP_H - b.h);
+    const maxY = Math.max(0, MAP_H - b.h);
     const newX = Math.max(minX, Math.min(maxX, b.x + dx));
     const newY = Math.max(minY, Math.min(maxY, b.y + dy));
     return { dx: newX - b.x, dy: newY - b.y };
@@ -323,40 +361,61 @@ const MAP = (() => {
 
   // Clamp a resize so the block can't extend past the canvas edges.
   function clampResize(origX, origY, origW, origH, dx, dy) {
-    const maxNewW = Math.max(CELL * 2, cvW - origX);
-    const maxNewH = Math.max(CELL * 2, cvH - origY);
-    const newW = Math.max(CELL * 2, Math.min(maxNewW, origW + dx));
-    const newH = Math.max(CELL * 2, Math.min(maxNewH, origH + dy));
+    // Allowed to shrink down to 1px, cannot exceed the map edge
+    const maxNewW = Math.max(1, MAP_W - origX);
+    const maxNewH = Math.max(1, MAP_H - origY);
+    const newW = Math.max(1, Math.min(maxNewW, origW + dx));
+    const newH = Math.max(1, Math.min(maxNewH, origH + dy));
     return { newW, newH };
   }
 
   // ── CANVAS MANAGEMENT ────────────────────────────────────────────────────
   function syncCanvasSize() {
-    const w = canvasWrap.clientWidth,
-      h = canvasWrap.clientHeight;
+    const containerW = canvasWrap.clientWidth;
+    const containerH = canvasWrap.clientHeight;
+    if (!containerW || !containerH) return;
+
+    // Fill the entire container (stretches the map)
+    const displayW = containerW;
+    const displayH = containerH;
+
     const dpr = window.devicePixelRatio || 1;
-    cvW = w;
-    cvH = h;
-    const bw = Math.round(w * dpr),
-      bh = Math.round(h * dpr);
+    cvW = displayW;
+    cvH = displayH;
+
+    const bw = Math.round(displayW * dpr);
+    const bh = Math.round(displayH * dpr);
     if (cv.width !== bw || cv.height !== bh) {
       cv.width = bw;
       cv.height = bh;
-      cv.style.width = `${w}px`;
-      cv.style.height = `${h}px`;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.imageSmoothingEnabled = true;
+    }
+
+    // Set canvas to fill the container
+    cv.style.width = `${displayW}px`;
+    cv.style.height = `${displayH}px`;
+    cv.style.left = `0px`;
+    cv.style.top = `0px`;
+
+    // Set image to fill the container exactly the same way
+    const bg = document.getElementById("cemetery_map_image");
+    if (bg) {
+      bg.style.width = `${displayW}px`;
+      bg.style.height = `${displayH}px`;
+      bg.style.left = `0px`;
+      bg.style.top = `0px`;
+      bg.style.objectFit = "fill";
     }
   }
 
-  let rafPending = false;
-  function scheduleDraw() {
-    if (rafPending) return;
-    rafPending = true;
-    requestAnimationFrame(() => {
-      rafPending = false;
-      draw();
-    });
+  function screenToMap(sx, sy) {
+    const rect = cv.getBoundingClientRect();
+    // Because the canvas is scaled and cropped, we calculate the ratio dynamically
+    const scaleX = MAP_W / cvW; 
+    const scaleY = MAP_H / cvH;
+    return {
+      x: (sx - rect.left) * scaleX,
+      y: (sy - rect.top) * scaleY,
+    };
   }
 
   // ── API & DATA PERSISTENCE ───────────────────────────────────────────────
@@ -369,6 +428,7 @@ const MAP = (() => {
       coordinates: JSON.stringify(b.coordinates),
       custom: b.custom ? 1 : 0,
       remarks: b.remarks || null,
+      rotation: b.rotation || 0,
     };
     const isNew = !b.block_id;
     const url = isNew ? API_BLOCKS : `${API_BLOCKS}/${b.block_id}`;
@@ -414,6 +474,9 @@ const MAP = (() => {
   }
 
   function persistLoad() {
+
+    const loader = $("mapLoading");
+    if (loader) loader.style.display = "block";
     fetch(API_BLOCKS)
       .then((r) => r.json())
       .then((res) => {
@@ -467,6 +530,7 @@ const MAP = (() => {
             total_graves: parseInt(row.total_graves, 10) || 0,
             vacant_count: parseInt(row.vacant, 10) || 0,
             occupied_count: parseInt(row.occupied, 10) || 0,
+            rotation: parseFloat(row.rotation) || 0,
             x: Math.min(...xs),
             y: Math.min(...ys),
             w: Math.max(...xs) - Math.min(...xs),
@@ -502,22 +566,36 @@ const MAP = (() => {
   }
 
   // ── CANVAS RENDER ENGINE ─────────────────────────────────────────────────
+    let rafPending = false;
+  function scheduleDraw() {
+    if (rafPending) return;
+    rafPending = true;
+    requestAnimationFrame(() => {
+      rafPending = false;
+      draw();
+    });
+  }
+
   function draw() {
     if (!cvW || !cvH) syncCanvasSize();
-    ctx.clearRect(0, 0, cvW, cvH);
+    if (!cvW || !cvH) return;
 
-    const interacting = blockDrag.active || resizeDrag.active;
-    ctx.imageSmoothingQuality = interacting ? "low" : "high";
+    const dpr = window.devicePixelRatio || 1;
+    const scaleX = (cvW * dpr) / MAP_W;
+    const scaleY = (cvH * dpr) / MAP_H;
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+
+    ctx.imageSmoothingEnabled = false;
 
     if (!blockOrder.length) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
       ctx.fillStyle = "#94a3b8";
       ctx.font = "13px Inter, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(
-        'No blocks yet. Click "Add Block" to get started.',
-        cvW / 2,
-        cvH / 2,
-      );
+      ctx.fillText('No blocks yet. Click "Add Block" to get started.', cvW / 2, cvH / 2);
       return;
     }
 
@@ -528,171 +606,162 @@ const MAP = (() => {
       const isResh = reshapeMode && reshapeBid === bid;
       const isDrag = blockDrag.active && blockDrag.bid === bid;
       const isResize = resizeDrag.active && resizeDrag.bid === bid;
+      const isRotate = rotateDrag.active && rotateDrag.bid === bid;
       const { total, occ } = blockStats(b);
+      
       const bounds = polyBounds(pts);
+      const cx = bounds.x + bounds.w / 2;
+      const cy = bounds.y + bounds.h / 2;
+      const rotation = b.rotation || 0;
 
-      ctx.globalAlpha =
-        reshapeMode && !isResh ? 0.25 : isDrag || isResize ? 0.75 : 1;
+      // 1. ROTATE THE CANVAS FOR EVERYTHING BELOW
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(rotation);
+      ctx.translate(-cx, -cy);
 
+      ctx.globalAlpha = reshapeMode && !isResh ? 0.25 : isDrag || isResize || isRotate ? 0.75 : 1;
+
+      // 2. DRAW THE BLOCK SHAPE
       ctx.beginPath();
-      pts.forEach((p, i) =>
-        i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y),
-      );
+      pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
       ctx.closePath();
 
-      let fill = "#dbeafe",
-        stroke = "#3b82f6";
+      let fill = "#dbeafe", stroke = "#3b82f6";
       if (b.needsPlacement) {
-        fill = "#fef3c7";
-        stroke = "#f59e0b";
+        fill = "#fef3c7"; stroke = "#f59e0b";
       } else if (total > 0) {
-        if (occ === 0) {
-          fill = "#dbeafe";
-          stroke = "#3b82f6";
-        } else if (occ === total) {
-          fill = "#fee2e2";
-          stroke = "#ef4444";
-        } else {
-          fill = "#fef9c3";
-          stroke = "#eab308";
-        }
+        if (occ === 0) { fill = "#dbeafe"; stroke = "#3b82f6"; }
+        else if (occ === total) { fill = "#fee2e2"; stroke = "#ef4444"; }
+        else { fill = "#fef9c3"; stroke = "#eab308"; }
       }
-      if (isResh) {
-        fill = "#fef9c3";
-        stroke = "#f59e0b";
-      }
-      if (isDrag || isResize) {
-        fill = "#ede9fe";
-        stroke = "#8b5cf6";
-      }
-      if (hov && !isDrag && !isResize) stroke = "#1d4ed8";
+      if (isResh) { fill = "#fef9c3"; stroke = "#f59e0b"; }
+      if (isDrag || isResize || isRotate) { fill = "#ede9fe"; stroke = "#8b5cf6"; }
+      if (hov && !isDrag && !isResize && !isRotate) stroke = "#1d4ed8";
 
+      ctx.globalAlpha = 0.8;
       ctx.fillStyle = fill;
       ctx.strokeStyle = stroke;
-      ctx.lineWidth = isResh || hov || isDrag || isResize ? 2 : 1;
+      ctx.lineWidth = isResh || hov || isDrag || isResize || isRotate ? 2 : 1;
       ctx.fill();
       ctx.stroke();
+      ctx.globalAlpha = 1.0;
 
-      if (mapEditMode && hov && !reshapeMode && !blockDrag.active) {
-        const hx = bounds.x + bounds.w,
-          hy = bounds.y + bounds.h;
+      // 3. DRAW HANDLES (Only in Edit Layout mode)
+      if (mapEditMode && !reshapeMode) {
+        // Use the bounding box to guarantee Top-Left and Bottom-Right positions
+        const minX = bounds.x;
+        const minY = bounds.y;
+        const maxX = bounds.x + bounds.w;
+        const maxY = bounds.y + bounds.h;
+
+        // Bottom-Right: Resize handle (Blue)
         ctx.beginPath();
-        ctx.arc(hx, hy, 6, 0, Math.PI * 2);
-        ctx.fillStyle = "#3b82f6";
-        ctx.strokeStyle = "#fff";
-        ctx.lineWidth = 2;
-        ctx.fill();
+        ctx.arc(maxX, maxY, 10, 0, Math.PI * 2); 
+        ctx.fillStyle = "#3b82f6"; ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
+        ctx.fill(); ctx.stroke();
+
+        // Top-Left: Rotate handle (Orange)
+        ctx.beginPath();
+        ctx.arc(minX, minY, 10, 0, Math.PI * 2); 
+        ctx.fillStyle = "#f59e0b"; ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
+        ctx.fill(); ctx.stroke();
+        
+        // Dashed line to center
+        ctx.beginPath();
+        ctx.moveTo(minX, minY);
+        ctx.lineTo(cx, cy);
+        ctx.strokeStyle = "rgba(245, 158, 11, 0.4)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
         ctx.stroke();
+        ctx.setLineDash([]);
       }
 
+      // 4. DRAW RESHAPE PREVIEW (Green/Grey and dots)
+      if (isResh) {
+        if (pendingSplit) {
+          drawSplitPreview();
+        } else {
+          pts.forEach((p, i) => {
+            const next = pts[(i + 1) % pts.length];
+            ctx.beginPath();
+            ctx.arc((p.x + next.x) / 2, (p.y + next.y) / 2, 3, 0, Math.PI * 2);
+            ctx.fillStyle = "rgba(99,102,241,0.5)";
+            ctx.fill();
+          });
+          pts.forEach((p) => {
+            ctx.beginPath();
+            ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+            ctx.fillStyle = "#6366f1"; ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
+            ctx.fill(); ctx.stroke();
+          });
+
+          if (drawPoints.length > 0) {
+            ctx.beginPath();
+            ctx.moveTo(drawPoints[0].x, drawPoints[0].y);
+            drawPoints.forEach((p, i) => { if (i > 0) ctx.lineTo(p.x, p.y); });
+            const edge = closestEdge(pts, mousePos.x, mousePos.y);
+            if (edge && edge.dist < 20) ctx.lineTo(edge.point.x, edge.point.y);
+            else ctx.lineTo(mousePos.x, mousePos.y);
+            ctx.strokeStyle = "#22c55e"; ctx.lineWidth = 2; ctx.setLineDash([5, 3]);
+            ctx.stroke(); ctx.setLineDash([]);
+            drawPoints.forEach((p) => {
+              ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+              ctx.fillStyle = "#22c55e"; ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
+              ctx.fill(); ctx.stroke();
+            });
+          } else {
+            const edge = closestEdge(pts, mousePos.x, mousePos.y);
+            if (edge && edge.dist < 20) {
+              ctx.beginPath(); ctx.arc(edge.point.x, edge.point.y, 6, 0, Math.PI * 2);
+              ctx.fillStyle = "#22c55e"; ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
+              ctx.fill(); ctx.stroke();
+            }
+          }
+        }
+      }
+
+      // 5. DRAW TEXT
       const label = labelAnchor(pts);
       const roomy = bounds.h >= 56;
+      const fontScale = cvW / MAP_W;
 
       ctx.fillStyle = "#1e3a5f";
-      ctx.font = "500 13px Inter, sans-serif";
+      ctx.font = `500 ${13 / fontScale}px Inter, sans-serif`;
       ctx.textAlign = "center";
       ctx.fillText(b.block_name, label.x, roomy ? label.y - 14 : label.y + 4);
 
       if (roomy) {
         ctx.fillStyle = "#475569";
-        ctx.font = "10px Inter, sans-serif";
+        ctx.font = `${10 / fontScale}px Inter, sans-serif`;
         ctx.fillText(`${b.rows}\u00d7${b.cols}`, label.x, label.y + 2);
-        ctx.fillText(
-          `${occ} occupied \u00b7 ${total - occ} vacant`,
-          label.x,
-          label.y + 16,
-        );
+        ctx.fillText(`${occ} occupied \u00b7 ${total - occ} vacant`, label.x, label.y + 16);
       }
 
-      if (!reshapeMode && !isDrag && !isResize && roomy) {
+      if (!reshapeMode && !isDrag && !isResize && !isRotate && roomy) {
         const footY = bounds.y + bounds.h - 8;
         const hintY = pointInPoly(label.x, footY, pts) ? footY : label.y + 30;
         ctx.fillStyle = mapEditMode ? "#3b82f6" : "#2563eb";
-        ctx.font = "10px Inter, sans-serif";
-        ctx.fillText(
-          mapEditMode
-            ? "click to reshape \u00b7 drag to move"
-            : "click to view",
-          label.x,
-          hintY,
-        );
+        ctx.font = `${10 / fontScale}px Inter, sans-serif`;
+        ctx.fillText(mapEditMode ? "click to reshape \u00b7 drag to move" : "click to view", label.x, hintY);
       }
 
-      if (isResh && pendingSplit) drawSplitPreview();
-
-      if (isResh && !pendingSplit) {
-        pts.forEach((p, i) => {
-          const next = pts[(i + 1) % pts.length];
-          ctx.beginPath();
-          ctx.arc((p.x + next.x) / 2, (p.y + next.y) / 2, 3, 0, Math.PI * 2);
-          ctx.fillStyle = "rgba(99,102,241,0.5)";
-          ctx.fill();
-        });
-        pts.forEach((p) => {
-          ctx.beginPath();
-          ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-          ctx.fillStyle = "#6366f1";
-          ctx.strokeStyle = "#fff";
-          ctx.lineWidth = 2;
-          ctx.fill();
-          ctx.stroke();
-        });
-
-        if (drawPoints.length > 0) {
-          ctx.beginPath();
-          ctx.moveTo(drawPoints[0].x, drawPoints[0].y);
-          drawPoints.forEach((p, i) => {
-            if (i > 0) ctx.lineTo(p.x, p.y);
-          });
-          const edge = closestEdge(pts, mousePos.x, mousePos.y);
-          if (edge && edge.dist < 20) ctx.lineTo(edge.point.x, edge.point.y);
-          else ctx.lineTo(mousePos.x, mousePos.y);
-          ctx.strokeStyle = "#22c55e";
-          ctx.lineWidth = 2;
-          ctx.setLineDash([5, 3]);
-          ctx.stroke();
-          ctx.setLineDash([]);
-          drawPoints.forEach((p) => {
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-            ctx.fillStyle = "#22c55e";
-            ctx.strokeStyle = "#fff";
-            ctx.lineWidth = 2;
-            ctx.fill();
-            ctx.stroke();
-          });
-        } else {
-          const edge = closestEdge(pts, mousePos.x, mousePos.y);
-          if (edge && edge.dist < 20) {
-            ctx.beginPath();
-            ctx.arc(edge.point.x, edge.point.y, 6, 0, Math.PI * 2);
-            ctx.fillStyle = "#22c55e";
-            ctx.strokeStyle = "#fff";
-            ctx.lineWidth = 2;
-            ctx.fill();
-            ctx.stroke();
-          }
-        }
-      }
-
+      // 6. DRAW DRAG GHOST
       if (isDrag) {
         const gx = snap(blockDrag.dx) - blockDrag.dx;
         const gy = snap(blockDrag.dy) - blockDrag.dy;
         if (gx || gy) {
           ctx.beginPath();
-          pts.forEach((p, i) =>
-            i === 0
-              ? ctx.moveTo(p.x + gx, p.y + gy)
-              : ctx.lineTo(p.x + gx, p.y + gy),
-          );
+          pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x + gx, p.y + gy) : ctx.lineTo(p.x + gx, p.y + gy));
           ctx.closePath();
-          ctx.strokeStyle = "#8b5cf6";
-          ctx.lineWidth = 1;
-          ctx.setLineDash([4, 4]);
-          ctx.stroke();
-          ctx.setLineDash([]);
+          ctx.strokeStyle = "#8b5cf6"; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+          ctx.stroke(); ctx.setLineDash([]);
         }
       }
+      
+      // 7. RESTORE CANVAS
+      ctx.restore(); 
       ctx.globalAlpha = 1;
     });
   }
@@ -700,13 +769,13 @@ const MAP = (() => {
   function drawSplitPreview() {
     const keep = pendingSplit.keep === "a" ? pendingSplit.a : pendingSplit.b;
     const drop = pendingSplit.keep === "a" ? pendingSplit.b : pendingSplit.a;
+    
     const trace = (poly) => {
       ctx.beginPath();
-      poly.forEach((p, i) =>
-        i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y),
-      );
+      poly.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
       ctx.closePath();
     };
+
     trace(drop);
     ctx.fillStyle = "rgba(148,163,184,0.35)";
     ctx.fill();
@@ -723,11 +792,14 @@ const MAP = (() => {
     ctx.lineWidth = 2.5;
     ctx.stroke();
 
-    ctx.font = "600 11px Inter, sans-serif";
+    const fontScale = cvW / MAP_W;
+    ctx.font = `600 ${11 / fontScale}px Inter, sans-serif`;
     ctx.textAlign = "center";
+    
     const kc = polyCentroid(keep);
     ctx.fillStyle = "#15803d";
     ctx.fillText("KEEP", kc.x, kc.y - 20);
+    
     const dc = polyCentroid(drop);
     ctx.fillStyle = "#64748b";
     ctx.fillText("REMOVE", dc.x, dc.y - 20);
@@ -743,21 +815,35 @@ const MAP = (() => {
   function getXY(e) {
     const r = cv.getBoundingClientRect();
     const s = e.touches ? e.touches[0] : e;
-    return { x: s.clientX - r.left, y: s.clientY - r.top };
+    const sx = s.clientX - r.left;
+    const sy = s.clientY - r.top;
+    return screenToMap(sx + r.left, sy + r.top);
   }
 
   // ── RESHAPE MODE LOGIC ───────────────────────────────────────────────────
   function handleDrawClick(mx, my) {
-    const pts = ensurePolygon(blocks[reshapeBid]);
-    const edge = closestEdge(pts, mx, my);
+    const blk = blocks[reshapeBid];
+    const pts = ensurePolygon(blk);
+    
+    // 1. Check if the block is rotated
+    const bounds = polyBounds(pts);
+    const cx = bounds.x + bounds.w / 2;
+    const cy = bounds.y + bounds.h / 2;
+    const rotation = blk.rotation || 0;
+
+    // 2. Un-rotate the mouse click so we can check the real edges
+    const clickPoint = screenToUnrotated(mx, my, cx, cy, rotation);
+    
+    // 3. Find the closest edge using the un-rotated click point
+    const edge = closestEdge(pts, clickPoint.x, clickPoint.y);
     const onEdge = edge && edge.dist < 24;
 
     if (drawPoints.length === 0) {
       if (!onEdge) return;
       drawPoints = [
         {
-          x: snap(edge.point.x),
-          y: snap(edge.point.y),
+          x: edge.point.x,
+          y: edge.point.y,
           edgeIndex: edge.edgeIndex,
           onEdge: true,
         },
@@ -801,7 +887,8 @@ const MAP = (() => {
       return;
     }
 
-    drawPoints.push({ x: snap(mx), y: snap(my), onEdge: false });
+    // Add a waypoint using the un-rotated coordinates
+    drawPoints.push({ x: snap(clickPoint.x), y: snap(clickPoint.y), onEdge: false });
     updateReshapeToolbar();
     draw();
   }
@@ -920,12 +1007,22 @@ const MAP = (() => {
       if (
         blockDrag.active ||
         resizeDrag.active ||
+        rotateDrag.active ||
         (reshapeMode && drawPoints.length > 0)
       ) {
         if (e.cancelable) e.preventDefault();
       }
       const { x, y } = getXY(e);
       mousePos = { x, y };
+
+      if (rotateDrag.active) {
+        const angle = Math.atan2(y - rotateDrag.centerY, x - rotateDrag.centerX);
+        const delta = angle - rotateDrag.startAngle;
+        const blk = blocks[rotateDrag.bid];
+        blk.rotation = rotateDrag.origRotation + delta;
+        scheduleDraw();
+        return;
+      }
 
       if (blockDrag.active) {
         const b = polyBounds(blockDrag.origPts);
@@ -945,8 +1042,8 @@ const MAP = (() => {
       }
 
       if (resizeDrag.active) {
-        const rawDx = snap(x - resizeDrag.startX);
-        const rawDy = snap(y - resizeDrag.startY);
+        const rawDx = x - resizeDrag.startX;
+        const rawDy = y - resizeDrag.startY;
         const { newW, newH } = clampResize(
           resizeDrag.origX,
           resizeDrag.origY,
@@ -978,6 +1075,18 @@ const MAP = (() => {
       }
 
       if (reshapeMode) {
+        if (reshapeBid) {
+          const blk = blocks[reshapeBid];
+          const bounds = polyBounds(ensurePolygon(blk));
+          const cx = bounds.x + bounds.w / 2;
+          const cy = bounds.y + bounds.h / 2;
+          const rotation = blk.rotation || 0;
+          
+          // Save the mouse position as UN-ROTATED coordinates
+          mousePos = screenToUnrotated(x, y, cx, cy, rotation);
+        } else {
+          mousePos = { x, y };
+        }
         scheduleDraw();
         return;
       }
@@ -990,18 +1099,22 @@ const MAP = (() => {
 
       if (bid && mapEditMode && !reshapeMode) {
         const b = blocks[bid];
-        const bounds = polyBounds(ensurePolygon(b));
-        const isHandle =
-          Math.sqrt(
-            (x - (bounds.x + bounds.w)) ** 2 + (y - (bounds.y + bounds.h)) ** 2,
-          ) < 10;
-        canvasWrap.style.cursor = isHandle ? "nwse-resize" : "grab";
-      } else {
-        canvasWrap.style.cursor = bid
-          ? mapEditMode
-            ? "grab"
-            : "pointer"
-          : "default";
+        const pts = ensurePolygon(b);
+        const bounds = polyBounds(pts);
+        const rotation = b.rotation || 0;
+        const cx = bounds.x + bounds.w / 2;
+        const cy = bounds.y + bounds.h / 2;
+
+        const distRotate = getDistToRotatedPoint(x, y, bounds.x, bounds.y, cx, cy, rotation);
+        const distResize = getDistToRotatedPoint(x, y, bounds.x + bounds.w, bounds.y + bounds.h, cx, cy, rotation);
+
+        if (distRotate < 20) {
+          canvasWrap.style.cursor = "crosshair";
+        } else if (distResize < 20) {
+          canvasWrap.style.cursor = "nwse-resize";
+        } else {
+          canvasWrap.style.cursor = "grab";
+        }
       }
     };
 
@@ -1018,40 +1131,44 @@ const MAP = (() => {
 
       if (mapEditMode) {
         for (let i = blockOrder.length - 1; i >= 0; i--) {
-          const bid = blockOrder[i],
-            b = blocks[bid];
+          const bid = blockOrder[i], b = blocks[bid];
           if (b.needsPlacement) continue;
-          const bounds = polyBounds(ensurePolygon(b));
-          if (
-            Math.sqrt(
-              (x - (bounds.x + bounds.w)) ** 2 +
-                (y - (bounds.y + bounds.h)) ** 2,
-            ) < 12
-          ) {
+          
+          // 1. Define pts and bounds right at the start of the loop
+          const pts = ensurePolygon(b);
+          const bounds = polyBounds(pts);
+          const rotation = b.rotation || 0;
+          const cx = bounds.x + bounds.w / 2;
+          const cy = bounds.y + bounds.h / 2;
+
+          // 2. Check the rotation handle (Top-Left of bounds)
+          const distRotate = getDistToRotatedPoint(x, y, bounds.x, bounds.y, cx, cy, rotation);
+          if (distRotate < 20) {
+            rotateDrag = {
+              active: true, bid, centerX: cx, centerY: cy,
+              startAngle: Math.atan2(y - cy, x - cx), origRotation: rotation,
+            };
+            return;
+          }
+
+          // 3. Check the resize handle (Bottom-Right of bounds)
+          const distResize = getDistToRotatedPoint(x, y, bounds.x + bounds.w, bounds.y + bounds.h, cx, cy, rotation);
+          if (distResize < 20) {
             resizeDrag = {
-              active: true,
-              bid,
-              startX: x,
-              startY: y,
-              origX: bounds.x,
-              origY: bounds.y,
-              origW: bounds.w,
-              origH: bounds.h,
-              origPts: ensurePolygon(b).map((p) => ({ ...p })),
+              active: true, bid, startX: x, startY: y,
+              origX: bounds.x, origY: bounds.y, origW: bounds.w, origH: bounds.h,
+              origPts: pts.map((p) => ({ ...p })),
               isCustom: isCustomShape(b),
             };
             return;
           }
         }
+
+        // 4. Check for dragging anywhere in the middle
         const bid = hitBlock(x, y);
         if (!bid) return;
         blockDrag = {
-          active: true,
-          bid,
-          startX: x,
-          startY: y,
-          dx: 0,
-          dy: 0,
+          active: true, bid, startX: x, startY: y, dx: 0, dy: 0,
           origPts: ensurePolygon(blocks[bid]).map((p) => ({ ...p })),
         };
         canvasWrap.style.cursor = "grabbing";
@@ -1065,6 +1182,16 @@ const MAP = (() => {
     };
 
     const handleUp = (e) => {
+      if (rotateDrag.active) {
+        rotateDrag.active = false;
+        canvasWrap.style.cursor = "grab";
+        hasUnsavedChanges = true;
+        blocks[rotateDrag.bid]._dirty = true;
+        setSaveBtnDirty();
+        draw();
+        return;
+      }
+
       if (resizeDrag.active) {
         resizeDrag.active = false;
         canvasWrap.style.cursor = "grab";
@@ -1077,19 +1204,16 @@ const MAP = (() => {
       }
 
       if (blockDrag.active) {
-        const bid = blockDrag.bid,
-          blk = blocks[bid];
+        const bid = blockDrag.bid, blk = blocks[bid];
         const isClick = Math.hypot(blockDrag.dx, blockDrag.dy) < 5;
         if (isClick) {
           blk.coordinates = blockDrag.origPts;
         } else {
           const b = polyBounds(blockDrag.origPts);
-          const dx = snap(blockDrag.dx),
-            dy = snap(blockDrag.dy);
+          const dx = snap(blockDrag.dx), dy = snap(blockDrag.dy);
           const { dx: fdx, dy: fdy } = clampTranslate(b, dx, dy);
           blk.coordinates = blockDrag.origPts.map((p) => ({
-            x: p.x + fdx,
-            y: p.y + fdy,
+            x: p.x + fdx, y: p.y + fdy,
           }));
           hasUnsavedChanges = true;
           blk._dirty = true;
@@ -1137,11 +1261,13 @@ const MAP = (() => {
     if (typeof ResizeObserver !== "undefined") {
       new ResizeObserver(() => {
         syncCanvasSize();
+        draw(); // <--- ADDED: Instantly redraw so blocks don't disappear
         scheduleDraw();
       }).observe(canvasWrap);
     } else {
       window.addEventListener("resize", () => {
         syncCanvasSize();
+        draw(); // <--- ADDED: Instantly redraw
         scheduleDraw();
       });
     }
@@ -1220,9 +1346,7 @@ const MAP = (() => {
     saveBtn.disabled = false;
 
     $("btnAddBlock").style.display = "none";
-    setHint(
-      "Click a block to change its shape, drag to move, or grab the corner dot to resize.",
-    );
+    setHint("Click a block to move it. Drag the corner dots to resize or rotate.");
     draw();
   }
 
@@ -1356,14 +1480,13 @@ const MAP = (() => {
     const step = CELL * 2,
       perRow = 6,
       i = blockOrder.length;
-    let bx = snap(60 + (i % perRow) * step);
-    let by = snap(60 + Math.floor(i / perRow) * step);
+    let bx = 60 + (i % perRow) * step;
+    let by = 60 + Math.floor(i / perRow) * step;
 
-    // Clamp so the block fits (or at least starts within) the canvas.
-    const maxBx = Math.max(8, cvW - bw - 8);
-    const maxBy = Math.max(8, cvH - bh - 8);
-    bx = snap(Math.max(8, Math.min(maxBx, bx)));
-    by = snap(Math.max(8, Math.min(maxBy, by)));
+    const maxBx = Math.max(1, MAP_W - bw - 8);
+    const maxBy = Math.max(1, MAP_H - bh - 8);
+    bx = Math.max(1, Math.min(maxBx, bx));
+    by = Math.max(1, Math.min(maxBy, by));
     return { bx, by };
   }
 
@@ -1403,8 +1526,9 @@ const MAP = (() => {
       const blockType = $("fBt").value;
       const imageUrl = normalizeImageUrl($("fBImg").value);
 
-      const bw = cols * CELL || CELL * 4;
-      const bh = rows * CELL || CELL * 4;
+      // If you enter 0 rows/cols, it creates a 20x20 block instead of 88x88
+      const bw = cols > 0 ? cols * CELL : 20;
+      const bh = rows > 0 ? rows * CELL : 20;
       const { bx, by } = nextBlockPosition(bw, bh);
       const points = rectToPoints(bx, by, bw, bh);
 
