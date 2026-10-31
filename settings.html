@@ -176,7 +176,10 @@
           <i class="fas fa-cogs"></i>
           <div>
             <h2>System Configuration</h2>
-            <p>Manage branding, integration, and report settings</p>
+            <p>
+              Manage branding, integration, reports, and the cemetery map
+              settings
+            </p>
           </div>
         </div>
 
@@ -318,10 +321,7 @@
               <label>Reports Header &amp; Footer</label>
               <div class="reportUploadRow">
                 <div class="reportUploadBox">
-                  <div
-                    class="reportPreview"
-                    data-default-src="assets/images/header.png"
-                  >
+                  <div class="reportPreview">
                     <img
                       id="preview_header"
                       src="api/images/header.png"
@@ -425,6 +425,81 @@
                             );
                           };
                           x.src = 'api/images/footer.png';
+                          refreshImages();
+                        "
+                      >
+                        <i class="fas fa-rotate-left"></i>
+                      </button>
+                      <div class="infoWrap">
+                        <button
+                          class="infoIcon"
+                          type="button"
+                          aria-label="Remember to hard refresh"
+                          aria-expanded="false"
+                        >
+                          <i class="fas fa-info-circle"></i>
+                        </button>
+                        <div class="infoPopup" role="tooltip">
+                          It takes time to reflect the saved image. Hard reload
+                          or hard refresh if possible
+                        </div>
+                      </div>
+                    </div>
+                    <span>PNG Only</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <hr class="formDivider" />
+
+            <div class="systemItem">
+              <label>Cemetery Map</label>
+              <div class="reportUploadRow">
+                <div class="reportUploadBox">
+                  <div class="reportPreview" style="height: 100%">
+                    <img
+                      id="preview_cemetery_map_image"
+                      src="api/images/cemetery_map_image.png"
+                      alt="Cemetery Map Image"
+                      onerror="
+                        this.onerror = null;
+                        this.src = 'assets/images/cemetery_map_image.png';
+                        console.error(
+                          'Failed to load dynamic logo. Using default logo.',
+                        );
+                      "
+                    />
+                  </div>
+                  <div class="reportUploadMeta">
+                    <div class="actionButtons">
+                      <label class="btn secondaryBtn">
+                        <i class="fas fa-upload"></i> Upload Cemetery Map
+                        <input
+                          type="file"
+                          id="cemetery_map_image"
+                          accept="image/png"
+                          onchange="
+                            previewImage(this, 'preview_cemetery_map_image')
+                          "
+                        />
+                      </label>
+                      <button
+                        class="btn resetBtn"
+                        type="button"
+                        title="Reset to default header"
+                        onclick="
+                          var x = document.getElementById(
+                            'preview_cemetery_map_image',
+                          );
+                          x.onerror = function () {
+                            this.onerror = null;
+                            this.src = 'assets/images/cemetery_map_image.png';
+                            console.error(
+                              'Failed to load dynamic logo. Using default logo.',
+                            );
+                          };
+                          x.src = 'api/images/cemetery_map_image.png';
                           refreshImages();
                         "
                       >

@@ -574,6 +574,11 @@ document.addEventListener("DOMContentLoaded", () => {
   const IMAGE_SETTINGS = [
     { key: "header", desc: "Report Header Image", inputId: "header" },
     { key: "footer", desc: "Report Footer Image", inputId: "footer" },
+    {
+      key: "cemetery_map_image",
+      desc: "For the cemetery map backgound image",
+      inputId: "cemetery_map_image",
+    },
   ];
 
   /* -------- Map an API error message back to the settings field(s) --------

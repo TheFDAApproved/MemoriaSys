@@ -40,6 +40,7 @@ const IMAGE_SETTING_KEYS = [
     'qr_code',
     'header',
     'footer',
+    'cemetery_map_image'
 ];
 
 // JSON list keys: value must be valid JSON
@@ -128,7 +129,7 @@ try {
     switch ($method) {
 
         case 'GET':
-            // Full view for admin; public, grounds, and office were served above
+            // Full view for admin here only, public, grounds, and office were served above
             if ($resourceId) {
                 $stmt = $pdo->prepare("
                     SELECT * FROM settings 
