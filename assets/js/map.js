@@ -447,6 +447,13 @@ const MAP = (() => {
         if (r && r.success && r.data && r.data.block_id && !b.block_id) {
           b.block_id = r.data.block_id;
         }
+        
+        if (r && r.success) {
+          // Clear the local dirty state instantly so it doesn't save again
+          b._dirty = false;
+          b.needsPlacement = false;
+        }
+        
         return r;
       });
   }
@@ -657,13 +664,13 @@ const MAP = (() => {
 
         // Bottom-Right: Resize handle (Blue)
         ctx.beginPath();
-        ctx.arc(maxX, maxY, 10, 0, Math.PI * 2); 
+        ctx.arc(maxX, maxY, 5, 0, Math.PI * 2); 
         ctx.fillStyle = "#3b82f6"; ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
         ctx.fill(); ctx.stroke();
 
         // Top-Left: Rotate handle (Orange)
         ctx.beginPath();
-        ctx.arc(minX, minY, 10, 0, Math.PI * 2); 
+        ctx.arc(minX, minY, 5, 0, Math.PI * 2); 
         ctx.fillStyle = "#f59e0b"; ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
         ctx.fill(); ctx.stroke();
         
@@ -1290,6 +1297,8 @@ const MAP = (() => {
 
     $("btnSaveMap").addEventListener("click", async () => {
       const btn = $("btnSaveMap");
+      
+      // If there are no changes, just exit immediately
       if (!hasUnsavedChanges) {
         exitEditMap();
         return;
@@ -1307,14 +1316,27 @@ const MAP = (() => {
           btn.innerHTML = origHtml;
           setHint("Save failed: " + (result.message || "unknown error"));
           if (window.showAlertTOP) {
-            showAlertTOP(
-              "Save failed: " + (result.message || "unknown error"),
-              "error",
-            );
+            showAlertTOP("Save failed: " + (result.message || "unknown error"), "error");
           }
           return;
         }
+
+        // ── INSTANT UPDATE & EXIT LOGIC ──
+        // 1. Clear all local flags
+        blockOrder.forEach((bid) => {
+          blocks[bid]._dirty = false;
+          blocks[bid].needsPlacement = false; 
+        });
+        hasUnsavedChanges = false; 
+
+        // 2. Restore the buttons to normal (this is handled by exitEditMap)
+        // 3. Force a redraw so colors update instantly
+        draw(); 
+        updateStatus();
+
+        // 4. Exit edit mode immediately! (This hides Save/Cancel and shows Edit Layout/Add Block)
         exitEditMap();
+
         if (window.showAlertTOP) showAlertTOP("Map saved.", "success");
       } catch (err) {
         console.error("Save failed:", err);
@@ -1776,9 +1798,9 @@ const MAP = (() => {
               </div>
               
               <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; font-size:10px; color:#64748b; margin-top:6px;">
-                <div><span style="font-weight:600;">DOB:</span> ${dob}</div>
-                <div><span style="font-weight:600;">DOD:</span> ${dod}</div>
-                <div><span style="font-weight:600;">Buried:</span> ${buried}</div>
+                <div><span style="font-weight:600;">Date of Birth:</span> ${dob}</div>
+                <div><span style="font-weight:600;">Date of Death:</span> ${dod}</div>
+                <div><span style="font-weight:600;">Date Buried:</span> ${buried}</div>
                 <div><span style="font-weight:600;">Expiry:</span> ${expiry}</div>
               </div>
               
