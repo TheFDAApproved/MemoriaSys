@@ -19,6 +19,10 @@ if (empty($searchQuery)) {
     Response::error("Search query is required", 400);
 }
 
+if (mb_strlen($searchQuery) < 3) {
+    Response::error("Search term must be at least 3 characters long", 400);
+}
+
 try {
     // Can only search for those who are active
     $sql = "
