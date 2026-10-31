@@ -4,30 +4,37 @@ body {
     box-sizing: border-box;
     font-family: 'Inter', sans-serif;
     background: #f5f6f7;
-    height: 100%;
-    overflow: hidden;
+    min-height: 100vh;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 
+/* Page Layout */
 .accountsContent {
     display: flex;
     flex-direction: column;
     height: 100vh;
+    height: 100dvh;
+    min-height: 480px;
     width: 100%;
     max-width: none;
     margin: 0;
     padding: 24px;
-    overflow: hidden;
+    overflow: visible;
 }
 
+/* Keep sizing predictable across the main controls */
 .accountsContent,
 .searchBox input,
 .mainSelect,
 .tableScrollWrapper,
+.paginationControls,
 .carouselTrack button,
 .cellSelect {
     box-sizing: border-box;
 }
 
+/* Search and filter controls */
 .tableControls {
     flex-shrink: 0;
     display: flex;
@@ -44,6 +51,7 @@ body {
     max-width: 480px;
 }
 
+/* Push the filter controls to the right of the search box */
 .searchBox+.controlItem {
     margin-left: auto;
 }
@@ -87,6 +95,41 @@ body {
 .mainSelect:focus {
     border-color: var(--mainColor);
     box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.1);
+}
+
+/* Small clear (x) button placed inside the search input */
+.searchClearBtn {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    transform: translateY(-50%);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    font-size: 13px;
+    color: #606770;
+    background: transparent;
+    border: none;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+.searchClearBtn.is-visible {
+    display: inline-flex;
+}
+
+.searchClearBtn:hover {
+    background: #f3f4f6;
+    color: #1c1e21;
+}
+
+.searchClearBtn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.15);
 }
 
 .controlItem {
@@ -135,40 +178,7 @@ body {
     box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.25);
 }
 
-.searchClearBtn {
-    position: absolute;
-    top: 50%;
-    right: 12px;
-    transform: translateY(-50%);
-    display: none;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    padding: 0;
-    font-size: 13px;
-    color: #606770;
-    background: transparent;
-    border: none;
-    border-radius: 50%;
-    cursor: pointer;
-    transition: background 0.2s ease, color 0.2s ease;
-}
-
-.searchClearBtn.is-visible {
-    display: inline-flex;
-}
-
-.searchClearBtn:hover {
-    background: #f3f4f6;
-    color: #1c1e21;
-}
-
-.searchClearBtn:focus-visible {
-    outline: none;
-    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.15);
-}
-
+/* Table header */
 .table {
     flex-shrink: 0;
 }
@@ -204,9 +214,10 @@ body {
     font-weight: 700;
 }
 
+/* Scrollable table */
 .tableScrollWrapper {
     flex: 1 1 auto;
-    min-height: 0;
+    min-height: 200px;
     display: flex;
     flex-direction: column;
     overflow-y: auto;
@@ -245,6 +256,7 @@ body {
     font-size: 14px;
 }
 
+/* Sticky header keeps column labels visible while scrolling */
 .tableScrollWrapper thead th {
     position: sticky;
     top: 0;
@@ -281,21 +293,23 @@ body {
     border-bottom: none;
 }
 
+/* Column widths for the role, status, and action columns */
 .tableScrollWrapper thead th:nth-child(5),
 .tableScrollWrapper tbody td:nth-child(5) {
-    width: 170px; 
+    width: 170px;
 }
 
 .tableScrollWrapper thead th:nth-child(6),
 .tableScrollWrapper tbody td:nth-child(6) {
-    width: 145px;  
+    width: 145px;
 }
 
 .tableScrollWrapper thead th:nth-child(8),
 .tableScrollWrapper tbody td:nth-child(8) {
-    width: 150px;  
+    width: 150px;
 }
 
+/* Inline select controls [edit mode] */
 .cellSelect {
     display: block;
     width: 100%;
@@ -328,6 +342,7 @@ body {
     box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.1);
 }
 
+/* Row action buttons */
 .actionBtn {
     display: inline-flex;
     align-items: center;
@@ -378,6 +393,7 @@ body {
     color: #16a34a;
 }
 
+/* Empty state */
 .noData {
     flex: 1 1 auto;
     display: flex;
@@ -398,10 +414,12 @@ body {
     color: #cbd5e1;
 }
 
+/* Pagination */
 .paginationContainer {
     flex-shrink: 0;
     display: flex;
     justify-content: center;
+    width: 100%;
     margin-top: 20px;
 }
 
@@ -409,6 +427,7 @@ body {
     display: inline-flex;
     align-items: center;
     gap: 10px;
+    max-width: 100%;
     padding: 6px;
     background: #ffffff;
     border: 1px solid #e5e7eb;
@@ -446,8 +465,11 @@ body {
     cursor: not-allowed;
 }
 
+/* Carousel wraps the numbered page buttons so it can slide horizontally */
 .carouselViewport {
     overflow: hidden;
+    flex: 1 1 auto;
+    min-width: 0;
     max-width: 320px;
 }
 
@@ -490,4 +512,91 @@ body {
     background: var(--mainColor);
     color: #ffffff;
     border-color: var(--mainColor);
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+    .searchBox {
+        max-width: none;
+    }
+}
+
+@media (max-width: 640px) {
+    .accountsContent {
+        padding: 14px;
+    }
+
+    .tableControls {
+        gap: 10px;
+        margin-bottom: 14px;
+    }
+
+    .searchBox {
+        flex: 1 1 100%;
+        min-width: 0;
+    }
+
+    .searchBox+.controlItem {
+        margin-left: 0;
+    }
+
+    .controlItem {
+        flex: 1 1 calc(50% - 5px);
+        min-width: 0;
+    }
+
+    .filterActionBtn {
+        flex: 1 1 100%;
+        justify-content: center;
+    }
+
+    .tableHeader {
+        padding: 12px 14px;
+    }
+
+    .tableScrollWrapper thead th {
+        padding: 12px 14px;
+    }
+
+    .tableScrollWrapper tbody td {
+        padding: 12px 14px;
+    }
+
+    .paginationContainer {
+        margin-top: 14px;
+    }
+
+    .noData {
+        padding: 32px 16px;
+    }
+}
+
+@media (max-width: 420px) {
+    .accountsContent {
+        padding: 10px;
+        min-height: 420px;
+    }
+
+    .controlItem {
+        flex: 1 1 100%;
+    }
+
+    .pageNavBtn {
+        width: 32px;
+        height: 32px;
+    }
+
+    .carouselTrack button {
+        width: 32px;
+        height: 32px;
+    }
+
+    .carouselViewport {
+        max-width: none;
+    }
+
+    .actionBtn {
+        width: 30px;
+        height: 30px;
+    }
 }

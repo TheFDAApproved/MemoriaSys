@@ -1,11 +1,14 @@
 document.addEventListener('DOMContentLoaded', function () {
+
+    // Configuration
     const MAX_PAGE_BUTTONS = 5;
     const PER_PAGE = 10;
     const MAX_SERVER_PAGES = 200;
     const API_URL = 'api/users.php';
-    const MIN_SEARCH_LENGTH = 3;   // minimum characters required to search
+    const MIN_SEARCH_LENGTH = 3;
     const GENERIC_ERROR = 'Something went wrong. Please try again.';
 
+    // Application state
     const state = {
         allUsers: [],
         data: [],
@@ -18,9 +21,10 @@ document.addEventListener('DOMContentLoaded', function () {
         requestId: 0,
         lastRenderKey: '',
         isLoading: false,
-        pendingAction: null   // { type: 'save' | 'delete', userId: number } | null
+        pendingAction: null
     };
 
+    // Cached DOM elements
     const els = {
         searchBox: document.querySelector('.searchBox'),
         searchInput: document.getElementById('user_search'),
@@ -38,7 +42,7 @@ document.addEventListener('DOMContentLoaded', function () {
         tableScrollWrapper: document.querySelector('.tableScrollWrapper')
     };
 
-    /* -------- injected styles (self-contained) -------- */
+    // Inject small styles for loading and pending row states
     (function injectStyles() {
         const css = [
             '.actionBtn.is-loading { pointer-events: none; opacity: 0.9; }',
@@ -55,7 +59,7 @@ document.addEventListener('DOMContentLoaded', function () {
         document.head.appendChild(s);
     })();
 
-    /* -------- clear-search button -------- */
+    // Clear button added inside the search box at runtime
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
     closeBtn.className = 'searchClearBtn';
@@ -63,7 +67,8 @@ document.addEventListener('DOMContentLoaded', function () {
     closeBtn.innerHTML = '<i class="fas fa-times"></i>';
     els.searchBox.appendChild(closeBtn);
 
-    /* -------- alert helper (always forwards the type) -------- */
+    // Notification helpers
+    // Show a message via the app alert if available, otherwise fall back to the console
     function notify(message, type) {
         const t = type || 'success';
         if (typeof showAlertTOP === 'function') {
@@ -74,7 +79,7 @@ document.addEventListener('DOMContentLoaded', function () {
         else console.log('[accounts][' + t + '] ' + message);
     }
 
-    /* -------- error helpers (filter "raw" infra errors) -------- */
+    // Build an error whose message should be hidden from the user
     function rawError(message, meta) {
         const err = new Error(message || GENERIC_ERROR);
         err.isRaw = true;
@@ -86,6 +91,7 @@ document.addEventListener('DOMContentLoaded', function () {
         return err;
     }
 
+    // Decide whether an error message is too technical to show to the user
     function isRawError(err) {
         if (!err) return true;
         if (err.isRaw) return true;
@@ -93,39 +99,35 @@ document.addEventListener('DOMContentLoaded', function () {
         const msg = String((err && err.message) || err).trim();
         if (!msg) return true;
 
-        // HTML body (ngrok / proxy / server 500 page)
         if (/<\s*[a-z!][\s\S]*>/i.test(msg)) return true;
-        // ngrok tunnel / agent errors
         if (/ERR_NGROK_|ngrok/i.test(msg)) return true;
-        // bare "HTTP 502" style
         if (/^HTTP\s+\d{3}$/i.test(msg)) return true;
-        // JSON-parse noise from an HTML / non-JSON body
         if (/non-JSON|Unexpected token|is not valid JSON|Unexpected end of JSON/i.test(msg)) return true;
-        // fetch() network failure (TypeError: Failed to fetch, etc.)
         if (err instanceof TypeError) return true;
         if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) return true;
-        // Giant messages are dumps, not user-facing text
         if (msg.length > 200) return true;
 
         return false;
     }
 
+    // Return a safe, user-friendly message for an error
     function friendlyMessage(err) {
         if (isRawError(err)) return GENERIC_ERROR;
         const msg = err && err.message ? String(err.message).trim() : '';
         return msg || GENERIC_ERROR;
     }
 
-    /* -------- confirm helper (uses confirm_ui.js when available) -------- */
+    // Confirmation helper
+    // Use the custom confirm dialog when available, otherwise use window.confirm
     async function askConfirm(message, opts) {
         if (typeof confirm_ui === 'function') {
             return !!(await confirm_ui(message, opts));
         }
-        // graceful fallback if confirm_ui.js isn't loaded
         return window.confirm(message);
     }
 
-    /* -------- pending-action helpers -------- */
+    // Pending action helpers
+    // Track which row is busy so it can be disabled while a request runs
     function setPending(type, userId) {
         state.pendingAction = { type: type, userId: Number(userId) };
         state.lastRenderKey = '';
@@ -145,7 +147,8 @@ document.addEventListener('DOMContentLoaded', function () {
             : '';
     }
 
-    /* -------- role helpers -------- */
+    // Display formatters
+    // Database stores "Grounds Staff"; the UI shows "Ground Staff"
     function toDisplayRole(dbRole) {
         return dbRole === 'Grounds Staff' ? 'Ground Staff' : dbRole;
     }
@@ -153,7 +156,7 @@ document.addEventListener('DOMContentLoaded', function () {
         return displayRole === 'Ground Staff' ? 'Grounds Staff' : displayRole;
     }
 
-    /* -------- phone helpers -------- */
+    // Format a phone number as +63 XXX XXX XXXX for display
     function formatPhoneDisplay(phone) {
         if (!phone) return '';
         var digits = String(phone).replace(/\D/g, '');
@@ -167,6 +170,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (digits.length > 6) out += ' ' + digits.slice(6, 10);
         return out;
     }
+    // Re-format a value typed into a phone input as +63 XXX XXX XXXX
     function formatPhoneInput(value) {
         var raw = String(value).replace(/^\+63\s*/, '');
         var digits = raw.replace(/\D/g, '');
@@ -177,6 +181,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (digits.length > 6) formatted += ' ' + digits.slice(6, 10);
         return formatted;
     }
+    // Convert a displayed phone number to the database format (+63XXXXXXXXXX)
     function formatPhoneForDb(displayValue) {
         var digits = String(displayValue).replace(/\D/g, '');
         if (digits.length === 12 && digits.slice(0, 2) === '63') return '+' + digits;
@@ -185,7 +190,8 @@ document.addEventListener('DOMContentLoaded', function () {
         return null;
     }
 
-    /* -------- fetch -------- */
+    // Data loading
+    // Fetch every matching user by walking through all server pages
     async function fetchAllMatchingUsers() {
         const all = [];
         let serverPage = 1;
@@ -210,7 +216,6 @@ document.addEventListener('DOMContentLoaded', function () {
             try {
                 data = JSON.parse(text);
             } catch (parseErr) {
-                // Non-JSON body: ngrok HTML page, proxy 502 page, etc.
                 throw rawError('Server returned non-JSON (status ' + res.status + ')', {
                     status: res.status,
                     body: text
@@ -218,7 +223,6 @@ document.addEventListener('DOMContentLoaded', function () {
             }
 
             if (!res.ok) {
-                // Only surface the API's own message; otherwise keep it raw.
                 const msg = data && (data.message || data.error);
                 if (typeof msg === 'string' && msg.trim()) throw new Error(msg);
                 throw rawError('HTTP ' + res.status, { status: res.status });
@@ -235,6 +239,7 @@ document.addEventListener('DOMContentLoaded', function () {
         return all;
     }
 
+    // Unverified accounts appear first, then sorted by user id
     function sortUsers(users) {
         const rank = function (s) { return s === 'Unverified' ? 0 : 1; };
         return users.slice().sort(function (a, b) {
@@ -245,6 +250,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    // Slice the full user list into the current page
     function applyPage() {
         state.totalPages = Math.max(1, Math.ceil(state.allUsers.length / PER_PAGE));
         if (state.page > state.totalPages) state.page = state.totalPages;
@@ -253,6 +259,7 @@ document.addEventListener('DOMContentLoaded', function () {
         state.data = state.allUsers.slice(start, start + PER_PAGE);
     }
 
+    // Load users from the API and refresh the table and pagination
     async function loadUsers(opts) {
         const silent = !!(opts && opts.silent);
         const reqId = ++state.requestId;
@@ -292,7 +299,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    /* -------- utils -------- */
+    // HTML helpers
     function escapeHtml(str) {
         return String(str).replace(/[&<>"']/g, function (c) {
             return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
@@ -306,9 +313,12 @@ document.addEventListener('DOMContentLoaded', function () {
         }).join('');
     }
 
+    // Options shown in the editable dropdowns
     const ROLE_OPTIONS = ['Ground Staff', 'Office Staff', 'Administrator'];
     const STATUS_OPTIONS = ['Verified', 'Unverified'];
 
+    // Rendering
+    // Key used to skip re-rendering when nothing visible has changed
     function buildRenderKey() {
         const pk = pendingKey();
         if (state.data.length === 0) {
@@ -319,35 +329,38 @@ document.addEventListener('DOMContentLoaded', function () {
         }).join(',') + ':' + state.editingId + ':' + state.page + ':' + pk;
     }
 
+    // Show a spinner row while the first page is loading
     function renderLoadingRow(message) {
         els.noData.style.display = 'none';
         els.tableBody.innerHTML =
             '<tr class="loadingRow"><td colspan="8">' +
-                '<i class="fas fa-spinner fa-spin"></i>' +
-                escapeHtml(message || 'Loading…') +
+            '<i class="fas fa-spinner fa-spin"></i>' +
+            escapeHtml(message || 'Loading…') +
             '</td></tr>';
         state.lastRenderKey = 'loading';
     }
 
+    // Build the action buttons for a row based on its state
     function renderActions(user, isEditing, rowPending) {
         if (rowPending && state.pendingAction.type === 'save') {
             return '<button type="button" class="actionBtn save-action is-loading" disabled title="Verifying via SMS…"><i class="fas fa-spinner fa-spin"></i></button>' +
-                   '<button type="button" class="actionBtn cancel-action" disabled title="Please wait"><i class="fas fa-times"></i></button>' +
-                   '<button type="button" class="actionBtn delete-action" disabled title="Please wait"><i class="fas fa-trash"></i></button>';
+                '<button type="button" class="actionBtn cancel-action" disabled title="Please wait"><i class="fas fa-times"></i></button>' +
+                '<button type="button" class="actionBtn delete-action" disabled title="Please wait"><i class="fas fa-trash"></i></button>';
         }
         if (rowPending && state.pendingAction.type === 'delete') {
             return '<button type="button" class="actionBtn edit-action" disabled><i class="fas fa-pen"></i></button>' +
-                   '<button type="button" class="actionBtn delete-action is-loading" disabled title="Deleting…"><i class="fas fa-spinner fa-spin"></i></button>';
+                '<button type="button" class="actionBtn delete-action is-loading" disabled title="Deleting…"><i class="fas fa-spinner fa-spin"></i></button>';
         }
         if (isEditing) {
             return '<button type="button" class="actionBtn save-action" data-action="save" title="Save"><i class="fas fa-check"></i></button>' +
-                   '<button type="button" class="actionBtn cancel-action" data-action="cancel" title="Cancel"><i class="fas fa-times"></i></button>' +
-                   '<button type="button" class="actionBtn delete-action" data-action="delete" title="Delete"><i class="fas fa-trash"></i></button>';
+                '<button type="button" class="actionBtn cancel-action" data-action="cancel" title="Cancel"><i class="fas fa-times"></i></button>' +
+                '<button type="button" class="actionBtn delete-action" data-action="delete" title="Delete"><i class="fas fa-trash"></i></button>';
         }
         return '<button type="button" class="actionBtn edit-action" data-action="edit" title="Edit"><i class="fas fa-pen"></i></button>' +
-               '<button type="button" class="actionBtn delete-action" data-action="delete" title="Delete"><i class="fas fa-trash"></i></button>';
+            '<button type="button" class="actionBtn delete-action" data-action="delete" title="Delete"><i class="fas fa-trash"></i></button>';
     }
 
+    // Render the current page of users into the table body
     function renderTable(silent) {
         if (state.isLoading && state.allUsers.length === 0) {
             if (state.lastRenderKey !== 'loading') renderLoadingRow('Loading accounts…');
@@ -391,7 +404,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const actions = renderActions(user, isEditing, rowPending);
 
             return '<tr data-user-id="' + escapeHtml(user.user_id) + '"' +
-                    (rowPending ? ' class="is-pending"' : '') + '>' +
+                (rowPending ? ' class="is-pending"' : '') + '>' +
                 '<td>' + escapeHtml(user.name) + '</td>' +
                 '<td>' + escapeHtml(user.username) + '</td>' +
                 '<td>' + escapeHtml(user.email) + '</td>' +
@@ -403,11 +416,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 '</tr>';
         }).join('');
 
+        // Keep the user's scroll position when re-rendering the same view
         if (els.tableScrollWrapper && prevScroll > 0) {
             els.tableScrollWrapper.scrollTop = prevScroll;
         }
     }
 
+    // Render the pagination buttons and page counters
     function renderPagination(silent) {
         const total = state.totalPages;
         els.currentPageNum.textContent = state.page;
@@ -434,6 +449,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const sameSet = existingValues.length === newValues.length &&
             existingValues.every(function (v, i) { return v === newValues[i]; });
 
+        // Reuse existing buttons when the visible page range has not changed.
         if (sameSet) {
             Array.prototype.forEach.call(existingButtons, function (btn, i) {
                 const pageNum = startPage + i;
@@ -459,6 +475,7 @@ document.addEventListener('DOMContentLoaded', function () {
         centerActivePage();
     }
 
+    // Shift the carousel so the active page button is centered
     function centerActivePage() {
         const active = els.carouselTrack.querySelector('button.active');
         if (!active) { els.carouselTrack.style.transform = 'translateX(0)'; return; }
@@ -473,6 +490,7 @@ document.addEventListener('DOMContentLoaded', function () {
         els.carouselTrack.style.transform = 'translateX(' + (-t) + 'px)';
     }
 
+    // Move to another page of the local user list
     function goToPage(page) {
         if (isPending()) return;
         if (page < 1 || page > state.totalPages) return;
@@ -487,12 +505,15 @@ document.addEventListener('DOMContentLoaded', function () {
         if (els.tableScrollWrapper) els.tableScrollWrapper.scrollTop = 0;
     }
 
+    // Local state helpers
+    // Show or hide the clear button based on whether the search box has text
     function updateCloseButton() {
         const hasText = els.searchInput.value.length > 0;
         closeBtn.classList.toggle('is-visible', hasText);
         els.searchInput.style.paddingRight = hasText ? '36px' : '';
     }
 
+    // Exit edit mode without saving
     function cancelEdit() {
         if (state.editingId === null) return;
         if (isPending()) return;
@@ -501,13 +522,15 @@ document.addEventListener('DOMContentLoaded', function () {
         renderTable(false);
     }
 
-    /* -------- local state helpers -------- */
+    // Find a user in the local list by id
     function findLocalUser(userId) {
         for (let i = 0; i < state.allUsers.length; i++) {
             if (Number(state.allUsers[i].user_id) === Number(userId)) return state.allUsers[i];
         }
         return null;
     }
+
+    // Check whether a user still matches the active filters
     function matchesActiveFilters(user) {
         if (!user) return false;
         if (state.appliedStatus && state.appliedStatus !== 'all' && user.status !== state.appliedStatus) return false;
@@ -517,6 +540,8 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         return true;
     }
+
+    // Re-render the table and pagination from the local user list
     function refreshFromLocalState() {
         state.lastRenderKey = '';
         applyPage();
@@ -524,7 +549,8 @@ document.addEventListener('DOMContentLoaded', function () {
         renderPagination(false);
     }
 
-    /* -------- outside-click cancels edit (not while pending) -------- */
+    // Event handlers
+    // Exit edit mode when the user clicks outside the editing row
     document.addEventListener('mousedown', function (e) {
         if (state.editingId === null) return;
         if (isPending()) return;
@@ -536,7 +562,7 @@ document.addEventListener('DOMContentLoaded', function () {
         cancelEdit();
     });
 
-    /* -------- row actions -------- */
+    // Handle edit, save, cancel, and delete actions inside the table
     els.tableBody.addEventListener('click', async function (e) {
         if (isPending()) return;
 
@@ -549,6 +575,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const userId = Number(row.getAttribute('data-user-id'));
         const action = btn.getAttribute('data-action');
 
+        // Edit: switch the row into edit mode
         if (action === 'edit') {
             state.editingId = userId;
             state.lastRenderKey = '';
@@ -560,8 +587,10 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
+        // Cancel: leave edit mode without saving
         if (action === 'cancel') { cancelEdit(); return; }
 
+        // Save: send the updated role and status to the API
         if (action === 'save') {
             const roleSel = row.querySelector('select[data-field="role"]');
             const statusSel = row.querySelector('select[data-field="status"]');
@@ -616,6 +645,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 const serverMsg = (data && (data.message || data.msg)) || null;
 
+                // Remove the row if the update no longer matches the current filters
                 if (original && !matchesActiveFilters(original)) {
                     state.allUsers = state.allUsers.filter(function (u) {
                         return Number(u.user_id) !== userId;
@@ -629,6 +659,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     notify(serverMsg || 'Account updated successfully.', 'success');
                 }
             } catch (err) {
+                // Restore the previous values if the save failed
                 if (original) {
                     original.role = oldRole;
                     original.status = oldStatus;
@@ -641,6 +672,7 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
+        // Delete: confirm, then remove the user via the API
         if (action === 'delete') {
             const confirmed = await askConfirm(
                 'This action can be undone by restoring from the database.',
@@ -652,7 +684,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             );
             if (!confirmed) return;
-            if (isPending()) return; // safety net after await
+            if (isPending()) return;
 
             setPending('delete', userId);
             renderTable(false);
@@ -693,7 +725,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    /* -------- search / filters -------- */
+    // Live search: resets filters and reloads when there is enough text
     els.searchInput.addEventListener('input', function () {
         if (isPending()) return;
         updateCloseButton();
@@ -704,7 +736,6 @@ document.addEventListener('DOMContentLoaded', function () {
         state.appliedRole = 'all';
 
         const val = els.searchInput.value;
-        // 1–2 characters is below the minimum: wait until it's 3+ (or empty)
         if (val.length > 0 && val.length < MIN_SEARCH_LENGTH) return;
 
         state.appliedSearch = val;
@@ -712,6 +743,7 @@ document.addEventListener('DOMContentLoaded', function () {
         loadUsers({ silent: true });
     });
 
+    // Pressing Enter in the search box applies search with the current filters
     els.searchInput.addEventListener('keydown', function (e) {
         if (e.key !== 'Enter') return;
         e.preventDefault();
@@ -719,7 +751,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const term = els.searchInput.value.trim();
 
-        // 1–2 characters typed → warn, do not search
         if (term.length > 0 && term.length < MIN_SEARCH_LENGTH) {
             if (typeof showAlertTOP === 'function') {
                 showAlertTOP('Search term too short', 'warning');
@@ -729,7 +760,6 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        // valid term (3+ chars, or empty = show all) → apply search + filters
         state.appliedStatus = els.statusFilter.value;
         state.appliedRole = els.roleFilter.value;
         state.appliedSearch = els.searchInput.value;
@@ -737,12 +767,14 @@ document.addEventListener('DOMContentLoaded', function () {
         loadUsers();
     });
 
+    // Clicking anywhere in the search box focuses the input
     els.searchBox.addEventListener('click', function (e) {
         if (e.target === closeBtn || closeBtn.contains(e.target)) return;
         if (isPending()) return;
         els.searchInput.focus();
     });
 
+    // Clear button empties the search input and reloads
     closeBtn.addEventListener('click', function (e) {
         e.stopPropagation();
         if (isPending()) return;
@@ -754,6 +786,7 @@ document.addEventListener('DOMContentLoaded', function () {
         els.searchInput.focus();
     });
 
+    // Filter button applies the selected status and role filters
     els.filterBtn.addEventListener('click', function () {
         if (isPending()) return;
         state.appliedStatus = els.statusFilter.value;
@@ -763,11 +796,14 @@ document.addEventListener('DOMContentLoaded', function () {
         loadUsers();
     });
 
+    // Pagination buttons
     els.prevBtn.addEventListener('click', function () { goToPage(state.page - 1); });
     els.nextBtn.addEventListener('click', function () { goToPage(state.page + 1); });
 
+    // Keep the active page button centered when the window resizes
     window.addEventListener('resize', centerActivePage);
 
+    // Initialization
     updateCloseButton();
     loadUsers();
 });
