@@ -1,18 +1,7 @@
-/**
- * Memoria – System Logs page controller
- *
- * Reads from api/logs.php (GET, ADMIN-only). The response is:
- *   { success: true, status: 200, message: "...", data: [ "STRING", ... ] }
- * where each STRING is: "TIMESTAMP] DESCRIPTION (User ID: N)".
- *
- * This controller parses those strings into structured rows, then does
- * search / date filter / pagination client-side.
- *
- * No PHP changes. No dummy data. XSS-safe rendering.
- */
 (function () {
     'use strict';
 
+    // Configuration
     const API_URL = 'api/logs.php';
     const PER_PAGE = 10;
     const SEARCH_MIN_LEN = 3;
@@ -20,6 +9,7 @@
     const PAGINATION_WINDOW = 5;
     const DEBUG = true;
 
+    // Application state
     const state = {
         allLogs: [],
         filtered: [],
@@ -30,6 +20,7 @@
         loading: false,
     };
 
+    // Cached DOM elements
     const el = {
         search: document.getElementById('log_search'),
         date: document.getElementById('filter_date'),
@@ -47,7 +38,8 @@
         return;
     }
 
-    // ------------------------------------------------------------------ helpers
+    // Small helper functions
+    // Escape special characters so values are safe to insert as HTML
     const escapeHtml = (v) => {
         if (v === null || v === undefined) return '';
         return String(v)
@@ -55,6 +47,7 @@
             .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     };
 
+    // Delay a function call until the user stops typing for `wait` ms
     const debounce = (fn, wait) => {
         let t;
         return function (...a) {
@@ -63,37 +56,37 @@
         };
     };
 
+    // Show a message to the user, using the shared alert if available
     const notify = (message, type) => {
         try {
             if (typeof window.showAlertTOP === 'function') {
                 window.showAlertTOP(message, type);
                 return;
             }
-        } catch (_) { /* fall through */ }
+        } catch (_) { }
         if (type === 'error') console.error(message);
         else console.log(message);
     };
 
-    // ---- raw-error sanitization ----
-    // Prevent ngrok/proxy HTML pages, bare HTTP status codes, JSON parse
-    // failures, and network failures from reaching the empty-state block.
     const GENERIC_ERROR = 'Something went wrong. Please try again.';
 
+    // Check if a message looks like a raw technical error that should be hidden
     const looksRawMessage = (text) => {
         if (!text) return true;
         const t = String(text).trim();
         if (!t) return true;
-        if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true;                          // HTML body
-        if (/ERR_NGROK_|ngrok/i.test(t)) return true;                            // ngrok
-        if (/^HTTP\s+\d{3}/i.test(t)) return true;                               // bare "HTTP 502"
-        if (/^Request failed \(HTTP \d{3}\)$/i.test(t)) return true;             // our own fallback
+        if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true;
+        if (/ERR_NGROK_|ngrok/i.test(t)) return true;
+        if (/^HTTP\s+\d{3}/i.test(t)) return true;
+        if (/^Request failed \(HTTP \d{3}\)$/i.test(t)) return true;
         if (/non-JSON|Unexpected token|is not valid JSON|Unexpected end of JSON/i.test(t)) return true;
         if (/Failed to fetch|NetworkError|Load failed/i.test(t)) return true;
         if (/^(TypeError|SyntaxError|ReferenceError|RangeError|DOMException)\b/i.test(t)) return true;
-        if (t.length > 200) return true;                                          // giant dumps
+        if (t.length > 200) return true;
         return false;
     };
 
+    // Replace technical errors with a friendly message for the user
     const friendlyMessage = (raw, fallback) => {
         if (!raw) return fallback || GENERIC_ERROR;
         const s = String(raw).trim();
@@ -101,15 +94,12 @@
         return s;
     };
 
-    // ------------------------------------------------------------------ styles
+    // Injected styles for the search clear button
     function injectStyles() {
         if (document.getElementById('logsSearchStyles')) return;
         const style = document.createElement('style');
         style.id = 'logsSearchStyles';
         style.textContent = `
-            /* ============================================================
-               Search clear button
-               ============================================================ */
             .pmSearchClearBtn {
                 position: absolute;
                 right: 8px;
@@ -152,7 +142,8 @@
         document.head.appendChild(style);
     }
 
-    // ------------------------------------------------------------------ response parsing
+    // Data extraction and parsing
+    // Try common JSON response shapes and return the array of logs
     const extractArray = (json) => {
         if (!json) return [];
         if (Array.isArray(json)) return json;
@@ -166,18 +157,16 @@
         return [];
     };
 
-    // "2026-10-15 22:43:42] Manual interment 2 created with status Active (User ID: 1)"
+    // Parse a single log entry written as plain text
     const parseLogString = (str) => {
         if (typeof str !== 'string') return null;
         const s = str.trim();
 
-        // [optional [ ] TIMESTAMP ] <description> (User ID: N)?
         const m = s.match(
             /^\[?(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})\]\s*(.*?)(?:\s*\(User ID:\s*(\d*)\))?\s*$/
         );
 
         if (!m) {
-            // Fallback: treat the whole string as a description.
             return {
                 created_at: '',
                 description: s,
@@ -200,19 +189,17 @@
         };
     };
 
-    // Pull a username out of "(admin)" or "username: admin" patterns.
+    // Find a username inside a log description, if present
     const extractUsername = (desc) => {
         if (!desc) return '';
-        // (admin) — short, no spaces or colons; excludes "(User ID: 1)".
         let m = desc.match(/\s\(([^\s():]+)\)\s/);
         if (m) return m[1];
-        // username: admin
         m = desc.match(/username:\s*([^\s(]+)/i);
         if (m) return m[1];
         return '';
     };
 
-    // Classify the description into a coarse activity type.
+    // Guess an event type based on keywords in the description
     const deriveActivity = (desc) => {
         if (!desc) return 'General';
         const t = desc.toLowerCase();
@@ -227,9 +214,8 @@
         return 'General';
     };
 
+    // Convert any log row (object or string) into one consistent shape
     const normalize = (row) => {
-        // If the API ever starts returning objects instead of strings,
-        // fall back to a field-mapped shape.
         if (row && typeof row === 'object') {
             return {
                 created_at: row.created_at || row.timestamp || row.logged_at || '',
@@ -244,7 +230,7 @@
         };
     };
 
-    // ------------------------------------------------------------------ formatting
+    // Date helpers
     const formatDateTime = (v) => {
         if (!v) return '—';
         const d = new Date(String(v).replace(' ', 'T'));
@@ -266,6 +252,7 @@
         return Number.isNaN(d.getTime()) ? null : d;
     };
 
+    // Format a date as YYYY-MM-DD [matches the date input value]
     const ymd = (d) => {
         if (!d) return '';
         return d.getFullYear() + '-'
@@ -273,7 +260,7 @@
             + String(d.getDate()).padStart(2, '0');
     };
 
-    // ------------------------------------------------------------------ rendering
+    // Empty-state helpers
     function hideNoData() {
         if (!el.noData) return;
         el.noData.hidden = true;
@@ -287,6 +274,7 @@
         el.noData.innerHTML = '<i class="fas fa-inbox"></i> ' + escapeHtml(msg || 'No logs found');
     }
 
+    // Skeleton loading rows
     function showSkeleton() {
         hideNoData();
         let html = '';
@@ -301,6 +289,8 @@
         el.tbody.innerHTML = html;
     }
 
+    // Rendering
+    // Draw the rows for the current page of filtered logs
     function renderPage() {
         el.tbody.innerHTML = '';
 
@@ -341,6 +331,7 @@
         renderPagination();
     }
 
+    // Update page numbers and the visible pagination window
     function renderPagination() {
         const total = Math.max(1, state.totalPages);
         const current = state.page;
@@ -353,6 +344,7 @@
         if (!el.carouselTrack) return;
         el.carouselTrack.innerHTML = '';
 
+        // Show a small window of page buttons centered on the current page
         const WINDOW = PAGINATION_WINDOW;
         let start = Math.max(1, current - Math.floor(WINDOW / 2));
         let end = Math.min(total, start + WINDOW - 1);
@@ -375,7 +367,8 @@
         }
     }
 
-    // ------------------------------------------------------------------ filtering
+    // Filtering
+    // Apply search text and date filter, then show page 1
     function applyFilters() {
         const term = (el.search?.value || '').trim().toLowerCase();
         const dateValue = el.date?.value || '';
@@ -399,7 +392,8 @@
         renderPage();
     }
 
-    // ------------------------------------------------------------------ search clear button
+    // Search clear button
+    // Add a small "x" button inside the search input wrapper
     function setupSearchClearButton() {
         const input = el.search;
         if (!input) return;
@@ -407,17 +401,13 @@
         const parent = input.parentElement;
         if (!parent) return;
 
-        // The button is positioned absolutely inside the input's wrapper,
-        // so the wrapper must establish a positioning context.
         if (window.getComputedStyle(parent).position === 'static') {
             parent.style.position = 'relative';
         }
 
-        // Reserve room so typed text never slides under the clear button.
         input.style.paddingRight = '30px';
         input.classList.add('pmSearchInputWithClear');
 
-        // Idempotent: avoid duplicating the button if init runs twice.
         const existing = parent.querySelector('.pmSearchClearBtn');
         if (existing) existing.remove();
 
@@ -446,7 +436,7 @@
         updateVisibility();
     }
 
-    // ------------------------------------------------------------------ load
+    // Loading logs from the API
     async function loadLogs() {
         if (state.loading) return;
         state.loading = true;
@@ -478,7 +468,6 @@
         } catch (err) {
             console.error('[logs] load error:', err);
             el.tbody.innerHTML = '';
-            // Raw-error sanitization: html/ngrok/bare-status text → generic message.
             showNoData(friendlyMessage(err && err.message, 'Unable to load logs.'));
             renderPagination();
         } finally {
@@ -486,7 +475,7 @@
         }
     }
 
-    // ------------------------------------------------------------------ events
+    // Event binding
     let eventsBound = false;
     function bindEvents() {
         if (eventsBound) return;
@@ -498,8 +487,6 @@
                 if (e.key !== 'Enter') return;
                 e.preventDefault();
                 const v = el.search.value.trim();
-                // Live typing never triggers the "too short" warning —
-                // that only fires on Enter. Here we just warn and bail.
                 if (v.length > 0 && v.length < SEARCH_MIN_LEN) {
                     notify('Too short to search', 'warning');
                     return;
@@ -533,7 +520,7 @@
         }
     }
 
-    // ------------------------------------------------------------------ init
+    // Start up
     injectStyles();
     hideNoData();
     setupSearchClearButton();

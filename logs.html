@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Memoria</title>
-
+    
     <meta name="description" content="Monitor user activities and system events in the Cemetery Management System.">
     <meta name="author" content="Team DND">
     <meta name="theme-color" content="#2f3136">
@@ -12,7 +12,6 @@
 
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
 
@@ -20,15 +19,14 @@
     <link rel="stylesheet" href="api/rootcolors.php" onerror="console.error('Failed to load custom colors. Using default theme.')">
     <link rel="stylesheet" href="assets/css/records.css">
     <link rel="stylesheet" href="assets/css/logs.css">
-    
+
     <script src="assets/js/check_user.js"></script>
 </head>
 <body>
 
-    <!-- Keep your existing sidebar / topbar include here -->
-
     <main class="logsContent">
 
+        <!-- Search and date filters -->
         <div class="tableControls logsControls">
             <div class="searchBox">
                 <i class="fas fa-search"></i>
@@ -40,6 +38,7 @@
             </div>
         </div>
 
+        <!-- Activity log table -->
         <div class="table logsTable">
             <div class="tableHeader">
                 <h3>Activity Log</h3>
@@ -68,6 +67,7 @@
             </div>
         </div>
 
+        <!-- Pagination controls -->
         <div class="paginationContainer">
             <div class="paginationControls">
                 <button type="button" class="pageNavBtn" id="prev_page_btn" aria-label="Previous page">
