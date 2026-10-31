@@ -1,1070 +1,571 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Memoria</title>
 
-    <meta
-      name="description"
-      content="Management system for the Cemetery. Locate plots, monitor leases, and manage notifications."
-    />
-    <meta name="author" content="Team DND" />
-    <meta name="theme-color" content="#2f3136" />
-    <meta name="robots" content="index, follow" />
+    <meta name="description" content="Management system for the Cemetery. Locate plots, monitor leases, and manage notifications.">
+    <meta name="author" content="Team DND">
+    <meta name="theme-color" content="#2f3136">
+    <meta name="robots" content="index, follow">
 
-    <meta name="geo.region" content="PH-CEB" />
-    <meta name="geo.placename" content="Mandaue City" />
+    <meta name="geo.region" content="PH-CEB">
+    <meta name="geo.placename" content="Mandaue City">
 
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
-    />
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
-    />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
 
-    <link rel="stylesheet" href="assets/css/root.css" />
-    <link
-      rel="stylesheet"
-      href="api/rootcolors.php"
-      onerror="
-        console.error('Failed to load custom colors. Using default theme.')
-      "
-    />
-    <link rel="stylesheet" href="assets/css/reports.css" />
+    <link rel="stylesheet" href="assets/css/root.css">
+    <link rel="stylesheet" href="api/rootcolors.php" onerror="console.error('Failed to load custom colors. Using default theme.')">
+    <link rel="stylesheet" href="assets/css/reports.css">
 
     <script src="assets/js/check_user.js"></script>
-  </head>
-
-  <body>
+</head>
+<body>
     <main class="reportsContent">
-      <!-- CONTROL WORKSPACE -->
-      <section class="controlWorkspaceDeck">
-        <div class="deckTopBar">
-          <div class="dropdownWrapper" id="customDropdown">
-            <span class="dropdownLabel">Report Type</span>
+        <section class="controlWorkspaceDeck">
+            <div class="deckTopBar">
 
-            <button
-              type="button"
-              class="customSelectTrigger"
-              onclick="toggleDropdown()"
-              aria-haspopup="listbox"
-              aria-expanded="false"
-            >
-              <span class="selectedOptionDisplay" id="selectedOptionTarget">
-                <i class="fas fa-id-badge"></i>
-                <span class="optionText">Interment Directory</span>
-              </span>
-              <i class="fas fa-chevron-down"></i>
-            </button>
+                <!-- Report type dropdown -->
+                <div class="dropdownWrapper" id="customDropdown">
+                    <span class="dropdownLabel">Report Type</span>
 
-            <div class="customOptionsPanel" role="listbox">
-              <div
-                class="customOptionRow"
-                data-value="capacity"
-                onclick="selectOption(this, 'Cemetery Capacity Summary')"
-              >
-                <div class="optionContent">
-                  <i class="fas fa-chart-pie"></i>
-                  <span class="optionText">Cemetery Capacity Summary</span>
-                </div>
-                <span class="optionBadge">Stats</span>
-              </div>
+                    <button type="button" class="customSelectTrigger" onclick="toggleDropdown()" aria-haspopup="listbox" aria-expanded="false">
+                        <span class="selectedOptionDisplay" id="selectedOptionTarget">
+                            <i class="fas fa-id-badge"></i>
+                            <span class="optionText">Interment Directory</span>
+                        </span>
+                        <i class="fas fa-chevron-down"></i>
+                    </button>
 
-              <div
-                class="customOptionRow"
-                data-value="expirations"
-                onclick="selectOption(this, 'Lease Expirations')"
-              >
-                <div class="optionContent">
-                  <i class="fas fa-exclamation-triangle"></i>
-                  <span class="optionText">Lease Expirations</span>
-                </div>
-                <span class="optionBadge badgeAlert">Alerts</span>
-              </div>
+                    <div class="customOptionsPanel" role="listbox">
+                        <div class="customOptionRow" data-value="capacity"
+                            onclick="selectOption(this, 'Cemetery Capacity Summary')">
+                            <div class="optionContent">
+                                <i class="fas fa-chart-pie"></i>
+                                <span class="optionText">Cemetery Capacity Summary</span>
+                            </div>
+                            <span class="optionBadge">Stats</span>
+                        </div>
 
-              <div
-                class="customOptionRow active"
-                data-value="interments"
-                onclick="selectOption(this, 'Interment Directory')"
-              >
-                <div class="optionContent">
-                  <i class="fas fa-id-badge"></i>
-                  <span class="optionText">Interment Directory</span>
-                </div>
-                <span class="optionBadge">Logs</span>
-              </div>
+                        <div class="customOptionRow" data-value="expirations"
+                            onclick="selectOption(this, 'Lease Expirations')">
+                            <div class="optionContent">
+                                <i class="fas fa-exclamation-triangle"></i>
+                                <span class="optionText">Lease Expirations</span>
+                            </div>
+                            <span class="optionBadge badgeAlert">Alerts</span>
+                        </div>
 
-              <div
-                class="customOptionRow"
-                data-value="graves"
-                onclick="selectOption(this, 'All Graves Registry')"
-              >
-                <div class="optionContent">
-                  <i class="fas fa-th"></i>
-                  <span class="optionText">All Graves Registry</span>
-                </div>
-                <span class="optionBadge">Matrix</span>
-              </div>
+                        <div class="customOptionRow active" data-value="interments"
+                            onclick="selectOption(this, 'Interment Directory')">
+                            <div class="optionContent">
+                                <i class="fas fa-id-badge"></i>
+                                <span class="optionText">Interment Directory</span>
+                            </div>
+                            <span class="optionBadge">Logs</span>
+                        </div>
 
-              <div
-                class="customOptionRow"
-                data-value="payments"
-                onclick="selectOption(this, 'Payment Ledger')"
-              >
-                <div class="optionContent">
-                  <i class="fas fa-receipt"></i>
-                  <span class="optionText">Payment Ledger</span>
-                </div>
-                <span class="optionBadge">Finance</span>
-              </div>
-            </div>
-          </div>
+                        <div class="customOptionRow" data-value="graves"
+                            onclick="selectOption(this, 'All Graves Registry')">
+                            <div class="optionContent">
+                                <i class="fas fa-th"></i>
+                                <span class="optionText">All Graves Registry</span>
+                            </div>
+                            <span class="optionBadge">Matrix</span>
+                        </div>
 
-          <button
-            type="button"
-            id="printReportBtn"
-            class="printPdfBtn"
-            onclick="printCurrentReport()"
-          >
-            <i class="fas fa-file-pdf"></i>
-            <span class="printBtnLabel">Export / Print PDF</span>
-          </button>
-        </div>
-
-        <!-- Interment filter panel -->
-        <div id="filter-panel-interments" class="filterEngineContainer visible">
-          <div class="filterPanelHeader">
-            <div class="filterGroupTitle">
-              <i class="fas fa-filter"></i> Filter Configuration
-            </div>
-            <button
-              type="button"
-              class="clearFiltersBtn"
-              onclick="clearAllFilters('interments')"
-            >
-              Clear all
-            </button>
-          </div>
-
-          <div class="filterPillsRow" id="interments-pills">
-            <button
-              type="button"
-              class="filterPill"
-              data-filter="address"
-              onclick="toggleFilter('interments', 'address')"
-            >
-              <i class="fas fa-map-marker-alt"></i> Address
-            </button>
-            <button
-              type="button"
-              class="filterPill"
-              data-filter="gender"
-              onclick="toggleFilter('interments', 'gender')"
-            >
-              <i class="fas fa-venus-mars"></i> Gender
-            </button>
-            <button
-              type="button"
-              class="filterPill"
-              data-filter="barangay"
-              onclick="toggleFilter('interments', 'barangay')"
-            >
-              <i class="fas fa-map-pin"></i> Barangay
-            </button>
-            <button
-              type="button"
-              class="filterPill"
-              data-filter="date_range"
-              onclick="toggleFilter('interments', 'date_range')"
-            >
-              <i class="fas fa-calendar-alt"></i> Date Range
-            </button>
-            <button
-              type="button"
-              class="filterPill"
-              data-filter="contact"
-              onclick="toggleFilter('interments', 'contact')"
-            >
-              <i class="fas fa-address-book"></i> Contact
-            </button>
-          </div>
-
-          <div class="filterControlsStack" id="interments-controls">
-            <div
-              id="interments-filter-address"
-              class="filterControlBlock"
-              data-filter="address"
-            >
-              <label class="paramLabel" for="interments-input-address">
-                Search — Barangay, Street, or Contact Person Address
-              </label>
-              <input
-                id="interments-input-address"
-                type="text"
-                class="inlineSelect"
-                placeholder="e.g. Tipolo, Mabini St."
-                oninput="
-                  onFilterValueChange('interments', 'address', this.value)
-                "
-              />
-            </div>
-
-            <div
-              id="interments-filter-gender"
-              class="filterControlBlock"
-              data-filter="gender"
-            >
-              <label class="paramLabel">
-                Gender of Deceased (check any that apply)
-              </label>
-              <div class="checkboxGroup" id="interments-gender-checkboxes">
-                <label class="checkboxItem">
-                  <input
-                    type="checkbox"
-                    value="Male"
-                    onchange="onIntermentsGenderChange()"
-                  />
-                  <span>Male</span>
-                </label>
-                <label class="checkboxItem">
-                  <input
-                    type="checkbox"
-                    value="Female"
-                    onchange="onIntermentsGenderChange()"
-                  />
-                  <span>Female</span>
-                </label>
-                <label class="checkboxItem">
-                  <input
-                    type="checkbox"
-                    value="Unknown"
-                    onchange="onIntermentsGenderChange()"
-                  />
-                  <span>Unknown</span>
-                </label>
-              </div>
-            </div>
-
-            <div
-              id="interments-filter-barangay"
-              class="filterControlBlock"
-              data-filter="barangay"
-            >
-              <label class="paramLabel">
-                Barangay on Record (check any that apply)
-              </label>
-              <div class="checkboxGroup" id="interments-barangay-checkboxes">
-                <!-- populated by applyBarangayOptions() from settings.barangay_options fetching api/settings -->
-              </div>
-            </div>
-
-            <div
-              id="interments-filter-date_range"
-              class="filterControlBlock"
-              data-filter="date_range"
-            >
-              <label class="paramLabel">Date Range (by burial date)</label>
-              <div class="rangeRow">
-                <input
-                  id="interments-input-start_date"
-                  type="date"
-                  class="inlineSelect"
-                  onchange="
-                    onFilterValueChange('interments', 'start_date', this.value)
-                  "
-                />
-                <span class="rangeDash">—</span>
-                <input
-                  id="interments-input-end_date"
-                  type="date"
-                  class="inlineSelect"
-                  onchange="
-                    onFilterValueChange('interments', 'end_date', this.value)
-                  "
-                />
-              </div>
-              <p
-                id="interments-date-hint"
-                style="
-                  display: none;
-                  color: #dc3545;
-                  font-size: 11.5px;
-                  margin: 4px 0 0;
-                "
-              ></p>
-            </div>
-
-            <div
-              id="interments-filter-contact"
-              class="filterControlBlock"
-              data-filter="contact"
-            >
-              <label class="paramLabel" for="interments-input-contact">
-                Contact Person on Record
-              </label>
-              <select
-                id="interments-input-contact"
-                class="inlineSelect"
-                onchange="
-                  onFilterValueChange('interments', 'contact', this.value)
-                "
-              >
-                <option value="">Any record</option>
-                <option value="has_contact">Has contact person</option>
-                <option value="no_contact">
-                  No contact person (CSWS-handled)
-                </option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <!-- Lease Expirations filter panel -->
-        <div id="filter-panel-expirations" class="filterEngineContainer">
-          <div class="filterPanelHeader">
-            <div class="filterGroupTitle">
-              <i class="fas fa-filter"></i> Filter Configuration
-            </div>
-            <button
-              type="button"
-              class="clearFiltersBtn"
-              onclick="clearAllFilters('expirations')"
-            >
-              Clear all
-            </button>
-          </div>
-
-          <div class="filterPillsRow" id="expirations-pills">
-            <button
-              type="button"
-              class="filterPill"
-              data-filter="date_range"
-              onclick="toggleFilter('expirations', 'date_range')"
-            >
-              <i class="fas fa-calendar-alt"></i> Date Range
-            </button>
-            <button
-              type="button"
-              class="filterPill"
-              data-filter="days"
-              onclick="toggleFilter('expirations', 'days')"
-            >
-              <i class="fas fa-hourglass-half"></i> Window (Days)
-            </button>
-            <button
-              type="button"
-              class="filterPill"
-              data-filter="show"
-              onclick="toggleFilter('expirations', 'show')"
-            >
-              <i class="fas fa-eye"></i> Status
-            </button>
-          </div>
-
-          <div class="filterControlsStack" id="expirations-controls">
-            <div
-              id="expirations-filter-date_range"
-              class="filterControlBlock"
-              data-filter="date_range"
-            >
-              <label class="paramLabel">Date Range (by lease expiration)</label>
-              <div class="rangeRow">
-                <input
-                  id="expirations-input-start_date"
-                  type="date"
-                  class="inlineSelect"
-                  onchange="
-                    onFilterValueChange('expirations', 'start_date', this.value)
-                  "
-                />
-                <span class="rangeDash">—</span>
-                <input
-                  id="expirations-input-end_date"
-                  type="date"
-                  class="inlineSelect"
-                  onchange="
-                    onFilterValueChange('expirations', 'end_date', this.value)
-                  "
-                />
-              </div>
-              <p
-                id="expirations-date-hint"
-                style="
-                  display: none;
-                  color: #dc3545;
-                  font-size: 11.5px;
-                  margin: 4px 0 0;
-                "
-              ></p>
-            </div>
-
-            <div
-              id="expirations-filter-days"
-              class="filterControlBlock"
-              data-filter="days"
-            >
-              <label class="paramLabel" for="expirations-input-days">
-                Expiring within N days (0 = today only, max 365). Ignored when a
-                date range is set.
-              </label>
-              <input
-                id="expirations-input-days"
-                type="number"
-                min="0"
-                max="365"
-                step="1"
-                class="inlineSelect"
-                placeholder="30 (default)"
-                oninput="onFilterValueChange('expirations', 'days', this.value)"
-              />
-              <p
-                id="expirations-days-hint"
-                style="
-                  display: none;
-                  color: #dc3545;
-                  font-size: 11.5px;
-                  margin: 4px 0 0;
-                "
-              ></p>
-            </div>
-
-            <div
-              id="expirations-filter-show"
-              class="filterControlBlock"
-              data-filter="show"
-            >
-              <label class="paramLabel" for="expirations-input-show">
-                Show Lease Status
-              </label>
-              <select
-                id="expirations-input-show"
-                class="inlineSelect"
-                onchange="
-                  onFilterValueChange('expirations', 'show', this.value)
-                "
-              >
-                <option value="">Both (expired &amp; expiring)</option>
-                <option value="expired">Only expired</option>
-                <option value="expiring">Only expiring</option>
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <!-- Graves filter panel -->
-        <div id="filter-panel-graves" class="filterEngineContainer">
-          <div class="filterPanelHeader">
-            <div class="filterGroupTitle">
-              <i class="fas fa-filter"></i> Filter Configuration
-            </div>
-            <button
-              type="button"
-              class="clearFiltersBtn"
-              onclick="clearAllFilters('graves')"
-            >
-              Clear all
-            </button>
-          </div>
-
-          <div class="filterPillsRow" id="graves-pills">
-            <button
-              type="button"
-              class="filterPill"
-              data-filter="status"
-              onclick="toggleFilter('graves', 'status')"
-            >
-              <i class="fas fa-circle-notch"></i> Grave Category
-            </button>
-          </div>
-
-          <div class="filterControlsStack" id="graves-controls">
-            <div
-              id="graves-filter-status"
-              class="filterControlBlock"
-              data-filter="status"
-            >
-              <label class="paramLabel">
-                Grave Categories (check any that apply)
-              </label>
-              <div class="checkboxGroup" id="graves-status-checkboxes">
-                <label class="checkboxItem">
-                  <input
-                    type="checkbox"
-                    value="Vacant"
-                    onchange="onGravesStatusChange()"
-                  />
-                  <span>Vacant</span>
-                </label>
-                <label class="checkboxItem">
-                  <input
-                    type="checkbox"
-                    value="Occupied"
-                    onchange="onGravesStatusChange()"
-                  />
-                  <span>Occupied</span>
-                </label>
-                <label class="checkboxItem">
-                  <input
-                    type="checkbox"
-                    value="Expiring"
-                    onchange="onGravesStatusChange()"
-                  />
-                  <span>Expiring</span>
-                </label>
-                <label class="checkboxItem">
-                  <input
-                    type="checkbox"
-                    value="Expired"
-                    onchange="onGravesStatusChange()"
-                  />
-                  <span>Expired</span>
-                </label>
-                <label class="checkboxItem">
-                  <input
-                    type="checkbox"
-                    value="Reserved"
-                    onchange="onGravesStatusChange()"
-                  />
-                  <span>Reserved</span>
-                </label>
-                <label class="checkboxItem">
-                  <input
-                    type="checkbox"
-                    value="Other"
-                    onchange="onGravesStatusChange()"
-                  />
-                  <span>Other</span>
-                </label>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Payments filter panel -->
-        <div id="filter-panel-payments" class="filterEngineContainer">
-          <div class="filterPanelHeader">
-            <div class="filterGroupTitle">
-              <i class="fas fa-filter"></i> Filter Configuration
-            </div>
-            <button
-              type="button"
-              class="clearFiltersBtn"
-              onclick="clearAllFilters('payments')"
-            >
-              Clear all
-            </button>
-          </div>
-
-          <div class="filterPillsRow" id="payments-pills">
-            <button
-              type="button"
-              class="filterPill"
-              data-filter="purpose"
-              onclick="toggleFilter('payments', 'purpose')"
-            >
-              <i class="fas fa-tag"></i> Purpose
-            </button>
-            <button
-              type="button"
-              class="filterPill"
-              data-filter="channel"
-              onclick="toggleFilter('payments', 'channel')"
-            >
-              <i class="fas fa-money-check"></i> Channel
-            </button>
-            <button
-              type="button"
-              class="filterPill"
-              data-filter="status"
-              onclick="toggleFilter('payments', 'status')"
-            >
-              <i class="fas fa-circle-check"></i> Status
-            </button>
-            <button
-              type="button"
-              class="filterPill"
-              data-filter="date_range"
-              onclick="toggleFilter('payments', 'date_range')"
-            >
-              <i class="fas fa-calendar-alt"></i> Date Range
-            </button>
-            <button
-              type="button"
-              class="filterPill"
-              data-filter="amount"
-              onclick="toggleFilter('payments', 'amount')"
-            >
-              <i class="fas fa-peso-sign"></i> Amount Range
-            </button>
-            <button
-              type="button"
-              class="filterPill"
-              data-filter="search"
-              onclick="toggleFilter('payments', 'search')"
-            >
-              <i class="fas fa-magnifying-glass"></i> Search
-            </button>
-          </div>
-
-          <div class="filterControlsStack" id="payments-controls">
-            <div
-              id="payments-filter-purpose"
-              class="filterControlBlock"
-              data-filter="purpose"
-            >
-              <label class="paramLabel" for="payments-input-purpose">
-                Payment Purpose
-              </label>
-              <select
-                id="payments-input-purpose"
-                class="inlineSelect"
-                onchange="
-                  onFilterValueChange('payments', 'purpose', this.value)
-                "
-              >
-                <option value="">Any purpose</option>
-              </select>
-            </div>
-
-            <div
-              id="payments-filter-channel"
-              class="filterControlBlock"
-              data-filter="channel"
-            >
-              <label class="paramLabel" for="payments-input-channel">
-                Payment Channel
-              </label>
-              <select
-                id="payments-input-channel"
-                class="inlineSelect"
-                onchange="
-                  onFilterValueChange('payments', 'channel', this.value)
-                "
-              >
-                <option value="">Any channel</option>
-              </select>
-            </div>
-
-            <div
-              id="payments-filter-status"
-              class="filterControlBlock"
-              data-filter="status"
-            >
-              <label class="paramLabel" for="payments-input-status">
-                Confirmation Status
-              </label>
-              <select
-                id="payments-input-status"
-                class="inlineSelect"
-                onchange="onFilterValueChange('payments', 'status', this.value)"
-              >
-                <option value="">Any status</option>
-                <option value="pending">Pending — awaiting both offices</option>
-                <option value="partial">Partial — one office confirmed</option>
-                <option value="confirmed">
-                  Confirmed — both offices signed
-                </option>
-              </select>
-            </div>
-
-            <!-- payments date range -->
-            <div
-              id="payments-filter-date_range"
-              class="filterControlBlock"
-              data-filter="date_range"
-            >
-              <label class="paramLabel">Date Range (by recorded date)</label>
-              <div class="rangeRow">
-                <input
-                  id="payments-input-start_date"
-                  type="date"
-                  class="inlineSelect"
-                  onchange="
-                    onFilterValueChange('payments', 'start_date', this.value)
-                  "
-                />
-                <span class="rangeDash">—</span>
-                <input
-                  id="payments-input-end_date"
-                  type="date"
-                  class="inlineSelect"
-                  onchange="
-                    onFilterValueChange('payments', 'end_date', this.value)
-                  "
-                />
-              </div>
-              <p
-                id="payments-date-hint"
-                style="
-                  display: none;
-                  color: #dc3545;
-                  font-size: 11.5px;
-                  margin: 4px 0 0;
-                "
-              ></p>
-            </div>
-
-            <div
-              id="payments-filter-amount"
-              class="filterControlBlock"
-              data-filter="amount"
-            >
-              <label class="paramLabel">Amount Range (₱)</label>
-              <div class="rangeRow">
-                <input
-                  id="payments-input-minamount"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  class="inlineSelect"
-                  placeholder="Minimum"
-                  oninput="
-                    onFilterValueChange('payments', 'minamount', this.value)
-                  "
-                />
-                <span class="rangeDash">—</span>
-                <input
-                  id="payments-input-maxamount"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  class="inlineSelect"
-                  placeholder="Maximum"
-                  oninput="
-                    onFilterValueChange('payments', 'maxamount', this.value)
-                  "
-                />
-              </div>
-              <p
-                id="payments-amount-hint"
-                style="
-                  display: none;
-                  color: #dc3545;
-                  font-size: 11.5px;
-                  margin: 4px 0 0;
-                "
-              ></p>
-            </div>
-
-            <div
-              id="payments-filter-search"
-              class="filterControlBlock"
-              data-filter="search"
-            >
-              <label class="paramLabel" for="payments-input-search">
-                Search — Reference Number, Payer, or Deceased Name
-              </label>
-              <input
-                id="payments-input-search"
-                type="text"
-                class="inlineSelect"
-                placeholder="e.g. REF-2025-001, Juan Dela Cruz"
-                oninput="onFilterValueChange('payments', 'search', this.value)"
-              />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- MASTER REPORT CARD -->
-      <article id="master-report-card" class="reportCard active">
-        <header class="docHeader print-fixed-header">
-          <img
-            class="reportHeaderImage"
-            src="api/images/header.png"
-            alt="Report Header"
-            onerror="
-              this.onerror = null;
-              this.src = 'assets/images/header.png';
-            "
-          />
-        </header>
-
-        <table class="printPaginationTable">
-          <thead>
-            <tr>
-              <td><div class="print-header-spacer"></div></td>
-            </tr>
-          </thead>
-
-          <tbody>
-            <tr>
-              <td>
-                <div class="docBody">
-                  <h2 id="report-dynamic-title" class="docContentTitle">
-                    Interment Directory
-                  </h2>
-                  <p class="docMetaSummary"></p>
-                  <p
-                    id="applied-filters"
-                    class="docAppliedFilters"
-                    style="display: none"
-                  ></p>
-
-                  <section
-                    class="docSection"
-                    id="capacity-content"
-                    style="display: none"
-                  ></section>
-
-                  <section
-                    class="docSection"
-                    id="expirations-content"
-                    style="display: none"
-                  ></section>
-                  <div
-                    class="paginationBar"
-                    id="expirations-pagination"
-                    data-scope="expirations"
-                    style="display: none"
-                  >
-                    <span class="paginationInfo">
-                      Showing
-                      <strong class="paginationRangeStart">0</strong>–<strong
-                        class="paginationRangeEnd"
-                        >0</strong
-                      >
-                      of
-                      <strong class="paginationTotalRecords">0</strong> records
-                    </span>
-                    <div class="paginationControl">
-                      <button
-                        type="button"
-                        class="pagePrevBtn"
-                        onclick="onPageChange('expirations', 'prev')"
-                        aria-label="Previous page"
-                      >
-                        <i class="fas fa-chevron-left"></i>
-                      </button>
-                      <label
-                        for="expirations-page-select"
-                        class="pageSelectLabel"
-                        >Page</label
-                      >
-                      <select
-                        class="pageSelect"
-                        id="expirations-page-select"
-                        onchange="onPageChange('expirations', this.value)"
-                      ></select>
-                      <span class="pageTotalLabel"
-                        >of
-                        <strong class="paginationTotalPages">1</strong></span
-                      >
-                      <button
-                        type="button"
-                        class="pageNextBtn"
-                        onclick="onPageChange('expirations', 'next')"
-                        aria-label="Next page"
-                      >
-                        <i class="fas fa-chevron-right"></i>
-                      </button>
+                        <div class="customOptionRow" data-value="payments"
+                            onclick="selectOption(this, 'Payment Ledger')">
+                            <div class="optionContent">
+                                <i class="fas fa-receipt"></i>
+                                <span class="optionText">Payment Ledger</span>
+                            </div>
+                            <span class="optionBadge">Finance</span>
+                        </div>
                     </div>
-                  </div>
-
-                  <section
-                    class="docSection"
-                    id="interments-content"
-                    style="display: block"
-                  ></section>
-                  <div
-                    class="paginationBar"
-                    id="interments-pagination"
-                    data-scope="interments"
-                    style="display: none"
-                  >
-                    <span class="paginationInfo">
-                      Showing
-                      <strong class="paginationRangeStart">0</strong>–<strong
-                        class="paginationRangeEnd"
-                        >0</strong
-                      >
-                      of
-                      <strong class="paginationTotalRecords">0</strong> records
-                    </span>
-                    <div class="paginationControl">
-                      <button
-                        type="button"
-                        class="pagePrevBtn"
-                        onclick="onPageChange('interments', 'prev')"
-                        aria-label="Previous page"
-                      >
-                        <i class="fas fa-chevron-left"></i>
-                      </button>
-                      <label
-                        for="interments-page-select"
-                        class="pageSelectLabel"
-                        >Page</label
-                      >
-                      <select
-                        class="pageSelect"
-                        id="interments-page-select"
-                        onchange="onPageChange('interments', this.value)"
-                      ></select>
-                      <span class="pageTotalLabel"
-                        >of
-                        <strong class="paginationTotalPages">1</strong></span
-                      >
-                      <button
-                        type="button"
-                        class="pageNextBtn"
-                        onclick="onPageChange('interments', 'next')"
-                        aria-label="Next page"
-                      >
-                        <i class="fas fa-chevron-right"></i>
-                      </button>
-                    </div>
-                  </div>
-
-                  <section
-                    class="docSection"
-                    id="graves-content"
-                    style="display: none"
-                  ></section>
-                  <div
-                    class="paginationBar"
-                    id="graves-pagination"
-                    data-scope="graves"
-                    style="display: none"
-                  >
-                    <span class="paginationInfo">
-                      Showing
-                      <strong class="paginationRangeStart">0</strong>–<strong
-                        class="paginationRangeEnd"
-                        >0</strong
-                      >
-                      of
-                      <strong class="paginationTotalRecords">0</strong> records
-                    </span>
-                    <div class="paginationControl">
-                      <button
-                        type="button"
-                        class="pagePrevBtn"
-                        onclick="onPageChange('graves', 'prev')"
-                        aria-label="Previous page"
-                      >
-                        <i class="fas fa-chevron-left"></i>
-                      </button>
-                      <label for="graves-page-select" class="pageSelectLabel"
-                        >Page</label
-                      >
-                      <select
-                        class="pageSelect"
-                        id="graves-page-select"
-                        onchange="onPageChange('graves', this.value)"
-                      ></select>
-                      <span class="pageTotalLabel"
-                        >of
-                        <strong class="paginationTotalPages">1</strong></span
-                      >
-                      <button
-                        type="button"
-                        class="pageNextBtn"
-                        onclick="onPageChange('graves', 'next')"
-                        aria-label="Next page"
-                      >
-                        <i class="fas fa-chevron-right"></i>
-                      </button>
-                    </div>
-                  </div>
-
-                  <section
-                    class="docSection"
-                    id="payments-content"
-                    style="display: none"
-                  ></section>
-                  <div
-                    class="paginationBar"
-                    id="payments-pagination"
-                    data-scope="payments"
-                    style="display: none"
-                  >
-                    <span class="paginationInfo">
-                      Showing
-                      <strong class="paginationRangeStart">0</strong>–<strong
-                        class="paginationRangeEnd"
-                        >0</strong
-                      >
-                      of
-                      <strong class="paginationTotalRecords">0</strong> records
-                    </span>
-                    <div class="paginationControl">
-                      <button
-                        type="button"
-                        class="pagePrevBtn"
-                        onclick="onPageChange('payments', 'prev')"
-                        aria-label="Previous page"
-                      >
-                        <i class="fas fa-chevron-left"></i>
-                      </button>
-                      <label for="payments-page-select" class="pageSelectLabel"
-                        >Page</label
-                      >
-                      <select
-                        class="pageSelect"
-                        id="payments-page-select"
-                        onchange="onPageChange('payments', this.value)"
-                      ></select>
-                      <span class="pageTotalLabel"
-                        >of
-                        <strong class="paginationTotalPages">1</strong></span
-                      >
-                      <button
-                        type="button"
-                        class="pageNextBtn"
-                        onclick="onPageChange('payments', 'next')"
-                        aria-label="Next page"
-                      >
-                        <i class="fas fa-chevron-right"></i>
-                      </button>
-                    </div>
-                  </div>
                 </div>
 
-                <div class="signatorySection">
-                  <div class="sigContainer">
-                    <span class="sigName"></span><span class="sigTitle"></span>
-                  </div>
-                  <div class="sigContainer">
-                    <span class="sigName"></span><span class="sigTitle"></span>
-                  </div>
-                  <div class="sigContainer">
-                    <span class="sigName"></span><span class="sigTitle"></span>
-                  </div>
-                  <div class="sigContainer">
-                    <span class="sigName"></span><span class="sigTitle"></span>
-                  </div>
+                <!-- Export / Print trigger -->
+                <button type="button" id="printReportBtn" class="printPdfBtn" onclick="printCurrentReport()">
+                    <i class="fas fa-file-pdf"></i>
+                    <span class="printBtnLabel">Export / Print PDF</span>
+                </button>
+            </div>
+
+            <!-- Interments filter panel -->
+            <div id="filter-panel-interments" class="filterEngineContainer visible">
+                <div class="filterPanelHeader">
+                    <div class="filterGroupTitle">
+                        <i class="fas fa-filter"></i> Filter Configuration
+                    </div>
+                    <button type="button" class="clearFiltersBtn" onclick="clearAllFilters('interments')">
+                        Clear all
+                    </button>
                 </div>
-              </td>
-            </tr>
-          </tbody>
 
-          <tfoot>
-            <tr>
-              <td><div class="print-footer-spacer"></div></td>
-            </tr>
-          </tfoot>
-        </table>
+                <div class="filterPillsRow" id="interments-pills">
+                    <button type="button" class="filterPill" data-filter="address" onclick="toggleFilter('interments', 'address')">
+                        <i class="fas fa-map-marker-alt"></i> Address
+                    </button>
+                    <button type="button" class="filterPill" data-filter="gender" onclick="toggleFilter('interments', 'gender')">
+                        <i class="fas fa-venus-mars"></i> Gender
+                    </button>
+                    <button type="button" class="filterPill" data-filter="barangay" onclick="toggleFilter('interments', 'barangay')">
+                        <i class="fas fa-map-pin"></i> Barangay
+                    </button>
+                    <button type="button" class="filterPill" data-filter="date_range" onclick="toggleFilter('interments', 'date_range')">
+                        <i class="fas fa-calendar-alt"></i> Date Range
+                    </button>
+                    <button type="button" class="filterPill" data-filter="contact" onclick="toggleFilter('interments', 'contact')">
+                        <i class="fas fa-address-book"></i> Contact
+                    </button>
+                </div>
 
-        <footer class="docFooter print-fixed-footer">
-          <img
-            class="reportFooterImage"
-            src="api/images/footer.png"
-            alt="Report Footer"
-            onerror="
-              this.onerror = null;
-              this.src = 'assets/images/footer.png';
-            "
-          />
-        </footer>
-      </article>
+                <div class="filterControlsStack" id="interments-controls">
+                    <div id="interments-filter-address" class="filterControlBlock" data-filter="address">
+                        <label class="paramLabel" for="interments-input-address">
+                            Search — Barangay, Street, or Contact Person Address
+                        </label>
+                        <input id="interments-input-address" type="text" class="inlineSelect"
+                            placeholder="e.g. Tipolo, Mabini St." oninput="onFilterValueChange('interments', 'address', this.value)">
+                    </div>
+
+                    <div id="interments-filter-gender" class="filterControlBlock" data-filter="gender">
+                        <label class="paramLabel">
+                            Gender of Deceased (check any that apply)
+                        </label>
+                        <div class="checkboxGroup" id="interments-gender-checkboxes">
+                            <label class="checkboxItem">
+                                <input type="checkbox" value="Male" onchange="onIntermentsGenderChange()">
+                                <span>Male</span>
+                            </label>
+                            <label class="checkboxItem">
+                                <input type="checkbox" value="Female" onchange="onIntermentsGenderChange()">
+                                <span>Female</span>
+                            </label>
+                            <label class="checkboxItem">
+                                <input type="checkbox" value="Unknown" onchange="onIntermentsGenderChange()">
+                                <span>Unknown</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div id="interments-filter-barangay" class="filterControlBlock" data-filter="barangay">
+                        <label class="paramLabel">
+                            Barangay on Record (check any that apply)
+                        </label>
+                        <div class="checkboxGroup" id="interments-barangay-checkboxes"></div>
+                    </div>
+
+                    <div id="interments-filter-date_range" class="filterControlBlock" data-filter="date_range">
+                        <label class="paramLabel">Date Range (by burial date)</label>
+                        <div class="rangeRow">
+                            <input id="interments-input-start_date" type="date" class="inlineSelect" onchange="onFilterValueChange('interments', 'start_date', this.value)">
+                            <span class="rangeDash">—</span>
+                            <input id="interments-input-end_date" type="date" class="inlineSelect" onchange="onFilterValueChange('interments', 'end_date', this.value)">
+                        </div>
+                        <p id="interments-date-hint" style="display: none; color: #dc3545; font-size: 11.5px; margin: 4px 0 0;"></p>
+                    </div>
+
+                    <div id="interments-filter-contact" class="filterControlBlock" data-filter="contact">
+                        <label class="paramLabel" for="interments-input-contact">
+                            Contact Person on Record
+                        </label>
+                        <select id="interments-input-contact" class="inlineSelect" onchange="onFilterValueChange('interments', 'contact', this.value)">
+                            <option value="">Any record</option>
+                            <option value="has_contact">Has contact person</option>
+                            <option value="no_contact">
+                                No contact person (CSWS-handled)
+                            </option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Lease expirations filter panel -->
+            <div id="filter-panel-expirations" class="filterEngineContainer">
+                <div class="filterPanelHeader">
+                    <div class="filterGroupTitle">
+                        <i class="fas fa-filter"></i> Filter Configuration
+                    </div>
+                    <button type="button" class="clearFiltersBtn" onclick="clearAllFilters('expirations')">
+                        Clear all
+                    </button>
+                </div>
+
+                <div class="filterPillsRow" id="expirations-pills">
+                    <button type="button" class="filterPill" data-filter="date_range"
+                        onclick="toggleFilter('expirations', 'date_range')">
+                        <i class="fas fa-calendar-alt"></i> Date Range
+                    </button>
+                    <button type="button" class="filterPill" data-filter="days"
+                        onclick="toggleFilter('expirations', 'days')">
+                        <i class="fas fa-hourglass-half"></i> Window (Days)
+                    </button>
+                    <button type="button" class="filterPill" data-filter="show"
+                        onclick="toggleFilter('expirations', 'show')">
+                        <i class="fas fa-eye"></i> Status
+                    </button>
+                </div>
+
+                <div class="filterControlsStack" id="expirations-controls">
+                    <div id="expirations-filter-date_range" class="filterControlBlock" data-filter="date_range">
+                        <label class="paramLabel">Date Range (by lease expiration)</label>
+                        <div class="rangeRow">
+                            <input id="expirations-input-start_date" type="date" class="inlineSelect" onchange="onFilterValueChange('expirations', 'start_date', this.value)">
+                            <span class="rangeDash">—</span>
+                            <input id="expirations-input-end_date" type="date" class="inlineSelect" onchange="onFilterValueChange('expirations', 'end_date', this.value)">
+                        </div>
+                        <p id="expirations-date-hint" style="display: none; color: #dc3545; font-size: 11.5px; margin: 4px 0 0;"></p>
+                    </div>
+
+                    <div id="expirations-filter-days" class="filterControlBlock" data-filter="days">
+                        <label class="paramLabel" for="expirations-input-days">
+                            Expiring within N days (0 = today only, max 365). Ignored when a date range is set.
+                        </label>
+                        <input id="expirations-input-days" type="number" min="0" max="365" step="1" class="inlineSelect" placeholder="30 (default)" oninput="onFilterValueChange('expirations', 'days', this.value)">
+                        <p id="expirations-days-hint" style="display: none; color: #dc3545; font-size: 11.5px; margin: 4px 0 0;"></p>
+                    </div>
+
+                    <div id="expirations-filter-show" class="filterControlBlock" data-filter="show">
+                        <label class="paramLabel" for="expirations-input-show">
+                            Show Lease Status
+                        </label>
+                        <select id="expirations-input-show" class="inlineSelect" onchange="onFilterValueChange('expirations', 'show', this.value)">
+                            <option value="">Both (expired &amp; expiring)</option>
+                            <option value="expired">Only expired</option>
+                            <option value="expiring">Only expiring</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Graves registry filter panel -->
+            <div id="filter-panel-graves" class="filterEngineContainer">
+                <div class="filterPanelHeader">
+                    <div class="filterGroupTitle">
+                        <i class="fas fa-filter"></i> Filter Configuration
+                    </div>
+                    <button type="button" class="clearFiltersBtn" onclick="clearAllFilters('graves')">
+                        Clear all
+                    </button>
+                </div>
+
+                <div class="filterPillsRow" id="graves-pills">
+                    <button type="button" class="filterPill" data-filter="status" onclick="toggleFilter('graves', 'status')">
+                        <i class="fas fa-circle-notch"></i> Grave Category
+                    </button>
+                </div>
+
+                <div class="filterControlsStack" id="graves-controls">
+                    <div id="graves-filter-status" class="filterControlBlock" data-filter="status">
+                        <label class="paramLabel">
+                            Grave Categories (check any that apply)
+                        </label>
+                        <div class="checkboxGroup" id="graves-status-checkboxes">
+                            <label class="checkboxItem">
+                                <input type="checkbox" value="Vacant" onchange="onGravesStatusChange()">
+                                <span>Vacant</span>
+                            </label>
+                            <label class="checkboxItem">
+                                <input type="checkbox" value="Occupied" onchange="onGravesStatusChange()">
+                                <span>Occupied</span>
+                            </label>
+                            <label class="checkboxItem">
+                                <input type="checkbox" value="Expiring" onchange="onGravesStatusChange()">
+                                <span>Expiring</span>
+                            </label>
+                            <label class="checkboxItem">
+                                <input type="checkbox" value="Expired" onchange="onGravesStatusChange()">
+                                <span>Expired</span>
+                            </label>
+                            <label class="checkboxItem">
+                                <input type="checkbox" value="Reserved" onchange="onGravesStatusChange()">
+                                <span>Reserved</span>
+                            </label>
+                            <label class="checkboxItem">
+                                <input type="checkbox" value="Other" onchange="onGravesStatusChange()">
+                                <span>Other</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Payments filter panel -->
+            <div id="filter-panel-payments" class="filterEngineContainer">
+                <div class="filterPanelHeader">
+                    <div class="filterGroupTitle">
+                        <i class="fas fa-filter"></i> Filter Configuration
+                    </div>
+                    <button type="button" class="clearFiltersBtn" onclick="clearAllFilters('payments')">
+                        Clear all
+                    </button>
+                </div>
+
+                <div class="filterPillsRow" id="payments-pills">
+                    <button type="button" class="filterPill" data-filter="purpose"
+                        onclick="toggleFilter('payments', 'purpose')">
+                        <i class="fas fa-tag"></i> Purpose
+                    </button>
+                    <button type="button" class="filterPill" data-filter="channel"
+                        onclick="toggleFilter('payments', 'channel')">
+                        <i class="fas fa-money-check"></i> Channel
+                    </button>
+                    <button type="button" class="filterPill" data-filter="status"
+                        onclick="toggleFilter('payments', 'status')">
+                        <i class="fas fa-circle-check"></i> Status
+                    </button>
+                    <button type="button" class="filterPill" data-filter="date_range"
+                        onclick="toggleFilter('payments', 'date_range')">
+                        <i class="fas fa-calendar-alt"></i> Date Range
+                    </button>
+                    <button type="button" class="filterPill" data-filter="amount"
+                        onclick="toggleFilter('payments', 'amount')">
+                        <i class="fas fa-peso-sign"></i> Amount Range
+                    </button>
+                    <button type="button" class="filterPill" data-filter="search"
+                        onclick="toggleFilter('payments', 'search')">
+                        <i class="fas fa-magnifying-glass"></i> Search
+                    </button>
+                </div>
+
+                <div class="filterControlsStack" id="payments-controls">
+                    <div id="payments-filter-purpose" class="filterControlBlock" data-filter="purpose">
+                        <label class="paramLabel" for="payments-input-purpose">
+                            Payment Purpose
+                        </label>
+                        <select id="payments-input-purpose" class="inlineSelect" onchange="onFilterValueChange('payments', 'purpose', this.value)">
+                            <option value="">Any purpose</option>
+                        </select>
+                    </div>
+
+                    <div id="payments-filter-channel" class="filterControlBlock" data-filter="channel">
+                        <label class="paramLabel" for="payments-input-channel">
+                            Payment Channel
+                        </label>
+                        <select id="payments-input-channel" class="inlineSelect" onchange="onFilterValueChange('payments', 'channel', this.value)">
+                            <option value="">Any channel</option>
+                        </select>
+                    </div>
+
+                    <div id="payments-filter-status" class="filterControlBlock" data-filter="status">
+                        <label class="paramLabel" for="payments-input-status">
+                            Confirmation Status
+                        </label>
+                        <select id="payments-input-status" class="inlineSelect"
+                            onchange="onFilterValueChange('payments', 'status', this.value)">
+                            <option value="">Any status</option>
+                            <option value="pending">Pending — awaiting both offices</option>
+                            <option value="partial">Partial — one office confirmed</option>
+                            <option value="confirmed">
+                                Confirmed — both offices signed
+                            </option>
+                        </select>
+                    </div>
+
+                    <div id="payments-filter-date_range" class="filterControlBlock" data-filter="date_range">
+                        <label class="paramLabel">Date Range (by recorded date)</label>
+                        <div class="rangeRow">
+                            <input id="payments-input-start_date" type="date" class="inlineSelect" onchange="onFilterValueChange('payments', 'start_date', this.value)">
+                            <span class="rangeDash">—</span>
+                            <input id="payments-input-end_date" type="date" class="inlineSelect" onchange="onFilterValueChange('payments', 'end_date', this.value)">
+                        </div>
+                        <p id="payments-date-hint" style="display: none; color: #dc3545; font-size: 11.5px; margin: 4px 0 0;"></p>
+                    </div>
+
+                    <div id="payments-filter-amount" class="filterControlBlock" data-filter="amount">
+                        <label class="paramLabel">Amount Range (₱)</label>
+                        <div class="rangeRow">
+                            <input id="payments-input-minamount" type="number" min="0" step="0.01" class="inlineSelect" placeholder="Minimum" oninput="onFilterValueChange('payments', 'minamount', this.value)">
+                            <span class="rangeDash">—</span>
+                            <input id="payments-input-maxamount" type="number" min="0" step="0.01" class="inlineSelect" placeholder="Maximum" oninput="onFilterValueChange('payments', 'maxamount', this.value)">
+                        </div>
+                        <p id="payments-amount-hint" style="display: none; color: #dc3545; font-size: 11.5px; margin: 4px 0 0;"></p>
+                    </div>
+
+                    <div id="payments-filter-search" class="filterControlBlock" data-filter="search">
+                        <label class="paramLabel" for="payments-input-search">
+                            Search — Reference Number, Payer, or Deceased Name
+                        </label>
+                        <input id="payments-input-search" type="text" class="inlineSelect"
+                            placeholder="e.g. REF-2025-001, Juan Dela Cruz"
+                            oninput="onFilterValueChange('payments', 'search', this.value)">
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <article id="master-report-card" class="reportCard active">
+            <header class="docHeader print-fixed-header">
+                <img class="reportHeaderImage" src="api/images/header.png" alt="Report Header" onerror="this.onerror = null; this.src = 'assets/images/header.png';">
+            </header>
+
+            <table class="printPaginationTable">
+                <thead>
+                    <tr>
+                        <td>
+                            <div class="print-header-spacer"></div>
+                        </td>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    <tr>
+                        <td>
+                            <!-- Document body: title, summary, and per-report sections -->
+                            <div class="docBody">
+                                <h2 id="report-dynamic-title" class="docContentTitle">
+                                    Interment Directory
+                                </h2>
+                                <p class="docMetaSummary"></p>
+                                <p id="applied-filters" class="docAppliedFilters" style="display: none"></p>
+
+                                <!-- Capacity summary -->
+                                <section class="docSection" id="capacity-content" style="display: none"></section>
+
+                                <!-- Lease expirations -->
+                                <section class="docSection" id="expirations-content" style="display: none"></section>
+                                <div class="paginationBar" id="expirations-pagination" data-scope="expirations"
+                                    style="display: none">
+                                    <span class="paginationInfo">
+                                        Showing
+                                        <strong class="paginationRangeStart">0</strong>–<strong
+                                            class="paginationRangeEnd">0</strong>
+                                        of
+                                        <strong class="paginationTotalRecords">0</strong> records
+                                    </span>
+                                    <div class="paginationControl">
+                                        <button type="button" class="pagePrevBtn" onclick="onPageChange('expirations', 'prev')" aria-label="Previous page">
+                                            <i class="fas fa-chevron-left"></i>
+                                        </button>
+                                        <label for="expirations-page-select" class="pageSelectLabel">Page</label>
+                                        <select class="pageSelect" id="expirations-page-select" onchange="onPageChange('expirations', this.value)"></select>
+                                        <span class="pageTotalLabel">of
+                                            <strong class="paginationTotalPages">1</strong></span>
+                                        <button type="button" class="pageNextBtn" onclick="onPageChange('expirations', 'next')" aria-label="Next page">
+                                            <i class="fas fa-chevron-right"></i>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Interment directory -->
+                                <section class="docSection" id="interments-content" style="display: block"></section>
+                                <div class="paginationBar" id="interments-pagination" data-scope="interments"
+                                    style="display: none">
+                                    <span class="paginationInfo">
+                                        Showing
+                                        <strong class="paginationRangeStart">0</strong>–<strong
+                                            class="paginationRangeEnd">0</strong>
+                                        of
+                                        <strong class="paginationTotalRecords">0</strong> records
+                                    </span>
+                                    <div class="paginationControl">
+                                        <button type="button" class="pagePrevBtn" onclick="onPageChange('interments', 'prev')" aria-label="Previous page">
+                                            <i class="fas fa-chevron-left"></i>
+                                        </button>
+                                        <label for="interments-page-select" class="pageSelectLabel">Page</label>
+                                        <select class="pageSelect" id="interments-page-select" onchange="onPageChange('interments', this.value)"></select>
+                                        <span class="pageTotalLabel">of
+                                            <strong class="paginationTotalPages">1</strong></span>
+                                        <button type="button" class="pageNextBtn" onclick="onPageChange('interments', 'next')" aria-label="Next page">
+                                            <i class="fas fa-chevron-right"></i>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- All graves registry -->
+                                <section class="docSection" id="graves-content" style="display: none"></section>
+                                <div class="paginationBar" id="graves-pagination" data-scope="graves"
+                                    style="display: none">
+                                    <span class="paginationInfo">
+                                        Showing
+                                        <strong class="paginationRangeStart">0</strong>–<strong
+                                            class="paginationRangeEnd">0</strong>
+                                        of
+                                        <strong class="paginationTotalRecords">0</strong> records
+                                    </span>
+                                    <div class="paginationControl">
+                                        <button type="button" class="pagePrevBtn" onclick="onPageChange('graves', 'prev')" aria-label="Previous page">
+                                            <i class="fas fa-chevron-left"></i>
+                                        </button>
+                                        <label for="graves-page-select" class="pageSelectLabel">Page</label>
+                                        <select class="pageSelect" id="graves-page-select" onchange="onPageChange('graves', this.value)"></select>
+                                        <span class="pageTotalLabel">of
+                                            <strong class="paginationTotalPages">1</strong></span>
+                                        <button type="button" class="pageNextBtn" onclick="onPageChange('graves', 'next')" aria-label="Next page">
+                                            <i class="fas fa-chevron-right"></i>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Payment ledger -->
+                                <section class="docSection" id="payments-content" style="display: none"></section>
+                                <div class="paginationBar" id="payments-pagination" data-scope="payments" style="display: none">
+                                    <span class="paginationInfo">
+                                        Showing
+                                        <strong class="paginationRangeStart">0</strong>–<strong
+                                            class="paginationRangeEnd">0</strong>
+                                        of
+                                        <strong class="paginationTotalRecords">0</strong> records
+                                    </span>
+                                    <div class="paginationControl">
+                                        <button type="button" class="pagePrevBtn"
+                                            onclick="onPageChange('payments', 'prev')" aria-label="Previous page">
+                                            <i class="fas fa-chevron-left"></i>
+                                        </button>
+                                        <label for="payments-page-select" class="pageSelectLabel">Page</label>
+                                        <select class="pageSelect" id="payments-page-select"
+                                            onchange="onPageChange('payments', this.value)"></select>
+                                        <span class="pageTotalLabel">of
+                                            <strong class="paginationTotalPages">1</strong></span>
+                                        <button type="button" class="pageNextBtn"
+                                            onclick="onPageChange('payments', 'next')" aria-label="Next page">
+                                            <i class="fas fa-chevron-right"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Signature slots -->
+                            <div class="signatorySection">
+                                <div class="sigContainer">
+                                    <span class="sigName"></span><span class="sigTitle"></span>
+                                </div>
+                                <div class="sigContainer">
+                                    <span class="sigName"></span><span class="sigTitle"></span>
+                                </div>
+                                <div class="sigContainer">
+                                    <span class="sigName"></span><span class="sigTitle"></span>
+                                </div>
+                                <div class="sigContainer">
+                                    <span class="sigName"></span><span class="sigTitle"></span>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                </tbody>
+
+                <tfoot>
+                    <tr>
+                        <td>
+                            <div class="print-footer-spacer"></div>
+                        </td>
+                    </tr>
+                </tfoot>
+            </table>
+
+            <footer class="docFooter print-fixed-footer">
+                <img class="reportFooterImage" src="api/images/footer.png" alt="Report Footer" onerror="this.onerror = null; this.src = 'assets/images/footer.png';">
+            </footer>
+        </article>
     </main>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="assets/js/reports.js"></script>
-  </body>
+</body>
 </html>
