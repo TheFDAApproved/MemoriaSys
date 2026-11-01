@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Memoria - 404</title>
 
-    <meta name="description" content="The page you are looking for could not be found. Return to the Memoria: Mandaue City Public Cemetery Management System dashboard.">
+    <meta name="description" content="The page you are looking for could not be found. Return to the Memoria: Cemetery Management System dashboard.">
     <meta name="author" content="Team DND">
     <meta name="theme-color" content="#0f172a">
     <meta name="robots" content="noindex, follow">
@@ -15,11 +15,12 @@
 
     <meta property="og:type" content="website">
     <meta property="og:url" content="/">
-    <meta property="og:site_name" content="Memoria: Mandaue City Public Cemetery Management System">
-    <meta property="og:title" content="404 — Page Not Found | Memoria: Mandaue City Public Cemetery Management System">
-    <meta property="og:description" content="The page you are looking for could not be found. Return to the Memoria: Mandaue City Public Cemetery Management System dashboard.">
+    <meta property="og:site_name" content="Memoria: Cemetery Management System">
+    <meta property="og:title" content="404 — Page Not Found | Memoria: Cemetery Management System">
+    <meta property="og:description" content="The page you are looking for could not be found. Return to the Memoria: Cemetery Management System dashboard.">
 
     <link rel="stylesheet" href="assets/css/root.css">
+    <link rel="stylesheet" href="api/rootcolors.php" onerror="console.error('Failed to load custom colors. Using default theme.')">
 
     <style>
         *,
@@ -473,7 +474,7 @@
     <!-- Header -->
     <header class="site-header">
         <a href="/" class="brand" data-home-link
-            aria-label="Memoria: Mandaue City Public Cemetery Management System — Home">
+            aria-label="Memoria: Cemetery Management System — Home">
             <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
                 <path d="M6.5 28V14.5a9.5 9.5 0 0 1 19 0V28" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
                 <path d="M16 24.5V16" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
@@ -482,12 +483,12 @@
 
             <span class="brand-text">
                 <span class="brand-name">Memoria</span>
-                <span class="brand-sub">Mandaue City Public Cemetery</span>
+                <span class="brand-sub" id="cemetery_name">Mandaue City Public Cemetery</span>
             </span>
         </a>
 
         <p class="header-note">
-            Mandaue City Public Cemetery &middot; Records Office
+            <span id="cemetery_name_1">Mandaue City Public Cemetery</span> &middot; Records Office
         </p>
     </header>
 
@@ -576,8 +577,8 @@
             </a>
 
             <p class="note">
-                If you believe this is a mistake, please contact the Mandaue City
-                Public Cemetery office for assistance.
+                If you believe this is a mistake, please contact the <span id="cemetery_name_2">Mandaue City
+                Public Cemetery</span> office for assistance.
             </p>
 
         </section>
@@ -585,10 +586,14 @@
 
     <!-- Footer -->
     <footer class="site-footer">
-        &copy; <span id="year">2025</span> Memoria &middot; Mandaue City Public
-        Cemetery Management System
+        &copy; <span id="year">2025</span> Memoria &middot; <span id="cemetery_name_3">Mandaue City Public
+        Cemetery</span> Management System
     </footer>
 
+    <script src="assets/js/load_site_contents.js"></script>
+    <script>        
+        loadSiteContent();
+    </script>
     <script>
         (function resolveHomeLinks() {
             var links = document.querySelectorAll("[data-home-link]");
