@@ -31,7 +31,9 @@
     <link
       rel="stylesheet"
       href="api/rootcolors.php"
-      onerror="console.error('Failed to load custom colors. Using default theme.')"
+      onerror="
+        console.error('Failed to load custom colors. Using default theme.')
+      "
     />
     <link rel="stylesheet" href="assets/css/sidebar.css" />
     <link rel="stylesheet" href="assets/css/map.css" />
@@ -131,8 +133,14 @@
             <!-- ===== CEMETERY BACKGROUND IMAGE (Sits behind the canvas) ===== -->
             <img
               id="cemetery_map_image"
-              src="assets/images/cemetery_map_image.png"
-              onerror="this.onerror = null; this.src = 'api/images/cemetery_map_image.png'; console.error('Failed to load dynamic logo. Using default logo.');"
+              src="api/images/cemetery_map_image.png"
+              onerror="
+                this.onerror = null;
+                this.src = 'assets/images/cemetery_map_image.png';
+                console.error(
+                  'Failed to load dynamic logo. Using default logo.',
+                );
+              "
               alt="Cemetery Map Image"
             />
             <canvas id="mapCvs"></canvas>
@@ -181,6 +189,9 @@
     <script src="assets/js/alert.js"></script>
     <script src="assets/js/confirm_ui.js"></script>
     <script src="assets/js/map.js"></script>
-    <script src="assets/js/sidebar.js"></script>
+    <script src="assets/js/load_site_contents.js"></script>
+    <script>
+      refreshImages();
+    </script>
   </body>
 </html>
