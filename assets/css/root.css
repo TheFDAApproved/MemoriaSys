@@ -1,22 +1,17 @@
 :root {
-  --mainColor: #0f172a;
-  --backgroundImage: url(../images/MandaueBackground.png);
-  --accentColor: #3b82f6; /* Blue 500 */
-  --surfaceColor: #ffffff;
-  --backgroundColor: #f8fafc;
-  --textColor: #1e293b;
-  --textMuted: #64748b;
-  --borderColor: #e2e8f0;
+    --mainColor: #0f172a;
+    --backgroundImage: url(../images/MandaueBackground.png);
+    --accentColor: #3b82f6;
+    --surfaceColor: #ffffff;
+    --backgroundColor: #f8fafc;
+    --textColor: #1e293b;
+    --textMuted: #64748b;
+    --borderColor: #e2e8f0;
 }
 
-/* =========================================================
-   Disabled state — cursor + pointer-events
-   ========================================================= */
+/* Disabled elements
 
-/* 1. Native disabled form controls.
-   Listed explicitly (not just `:disabled`) so specificity is
-   high enough to beat framework rules like
-   `.btn:disabled { pointer-events: none !important; }`.      */
+1. Native disabled form controls */
 button:disabled,
 input:disabled,
 select:disabled,
@@ -24,25 +19,22 @@ textarea:disabled,
 optgroup:disabled,
 option:disabled,
 fieldset:disabled {
-  cursor: not-allowed !important;
-  pointer-events: auto !important;
+    cursor: not-allowed !important;
+    pointer-events: auto !important;
 }
 
-/* 2. ARIA-based disabled (works on <a>, <div>, wrappers…).
-   `cursor` and `pointer-events` both inherit, so descendants
-   automatically get the not-allowed cursor too.              */
+/* 2. ARIA disabled elements */
 [aria-disabled="true"],
 [aria-disabled="true"] * {
-  cursor: not-allowed !important;
-  pointer-events: auto !important;
+    cursor: not-allowed !important;
+    pointer-events: auto !important;
 }
 
-/* 3. Class-based disabled (common in component libraries).
-   Optional — drop this block if your codebase doesn't use it. */
+/* 3. Class-based disabled */
 .is-disabled,
 .is-disabled *,
 .disabled,
 .disabled * {
-  cursor: not-allowed !important;
-  pointer-events: auto !important;
+    cursor: not-allowed !important;
+    pointer-events: auto !important;
 }
