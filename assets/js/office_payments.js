@@ -1,322 +1,299 @@
-/**
- * Memoria – Payments page controller (OFFICE view)
- *
- * Loads payment records from api/payments.php (paginated, role-filtered server-side),
- * wires live search + status filter + pagination, performs
- * confirm_office / unconfirm_office actions, opens the shared SMS modal
- * (window.openSmsModal from sms_notification.js) from the contact link,
- * manages the Office remark via a modal, and previews payment proof images
- * in a lightbox (with broken-image detection).
- *
- * Role: OFFICE.
- *   - Can confirm / unconfirm OFFICE only.
- *   - Cannot confirm / unconfirm GROUNDS (that's grounds staff).
- *   - Cannot delete payments (admin only).
- *   - Can edit OFFICE remarks only. Payer & Grounds remarks are read-only.
- *
- * Workflow:
- *   Office verify   = confirm_office    (single tap — office step only)
- *   Office undo     = unconfirm_office  (only allowed while grounds has NOT yet confirmed)
- *
- * Once grounds staff confirms, office can no longer undo — the backend
- * returns 409 and the UI shows only the Verified pill.
- *
- * No dummy data. Idempotent event binding. XSS-safe rendering.
- *
- * Order-stability contract:
- *   - Verify/unverify actions update the row in place (no reload) so items
- *     never jump.
- *
- * Busy-state contract:
- *   - While a verify/unverify request is in flight, the whole <tr> is inert:
- *     action buttons disabled, remarks cell / SMS link / proof cell unclickable,
- *     row dimmed.
- */
 (function () {
-  "use strict";
+    "use strict";
 
-  // ------------------------------------------------------------------ config
-  const API_URL = "api/payments.php";
+    const API_URL = "api/payments.php";
 
-  const PER_PAGE = 10;
-  const SEARCH_MIN_LEN = 3;
-  const SEARCH_DEBOUNCE_MS = 350;
-  const REMARK_MAX_LEN = 2000;
+    const PER_PAGE = 10;
+    const SEARCH_MIN_LEN = 3;
+    const SEARCH_DEBOUNCE_MS = 350;
+    const REMARK_MAX_LEN = 2000;
 
-  // Requests that take longer than this are aborted so a busy / hung
-  // backend never leaves a button stuck in the loading state.
-  const REQUEST_TIMEOUT_MS = 30000;
+    const REQUEST_TIMEOUT_MS = 30000;
 
-  // ------------------------------------------------------------------ state
-  const state = {
-    page: 1,
-    totalPages: 1,
-    search: "",
-    status: "all",
-    loading: false,
-    requestId: 0,
-    remarksModal: null,
-    proofModal: null,
-    editingSection: null, // section element currently in edit mode, or null
-  };
-
-  // ------------------------------------------------------------------ DOM
-  const el = {
-    search: document.getElementById("payment_search"),
-    statusFilter: document.getElementById("status_filter"),
-    filterBtn: document.getElementById("filter_btn"),
-    tbody: document.getElementById("paymentsTableBody"),
-    noData: document.getElementById("burialNoData"),
-    currentPage: document.getElementById("current_page_num"),
-    totalPages: document.getElementById("total_pages_num"),
-    prevBtn: document.getElementById("prev_page_btn"),
-    nextBtn: document.getElementById("next_page_btn"),
-    carouselTrack: document.getElementById("carousel_track"),
-  };
-
-  // ------------------------------------------------------------------ helpers
-  const escapeHtml = (value) => {
-    if (value === null || value === undefined) return "";
-    return String(value)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  };
-
-  // ---- raw-error sanitization ----
-  const GENERIC_ERROR = "Something went wrong. Please try again.";
-
-  const looksRawMessage = (text) => {
-    if (!text) return true;
-    const t = String(text).trim();
-    if (!t) return true;
-    if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true;
-    if (/ERR_NGROK_|ngrok/i.test(t)) return true;
-    if (/^HTTP\s+\d{3}/i.test(t)) return true;
-    if (/^Request failed \(HTTP \d{3}\)$/i.test(t)) return true;
-    if (
-      /non-JSON|Unexpected token|is not valid JSON|Unexpected end of JSON/i.test(
-        t,
-      )
-    )
-      return true;
-    if (/Failed to fetch|NetworkError|Load failed/i.test(t)) return true;
-    if (
-      /^(TypeError|SyntaxError|ReferenceError|RangeError|DOMException)\b/i.test(
-        t,
-      )
-    )
-      return true;
-    if (t.length > 200) return true;
-    return false;
-  };
-
-  const friendlyMessage = (err, fallback) => {
-    if (!err) return fallback || GENERIC_ERROR;
-    const msg =
-      err && err.message ? String(err.message).trim() : String(err).trim();
-    if (!msg || looksRawMessage(msg)) return fallback || GENERIC_ERROR;
-    return msg;
-  };
-
-  const formatMoney = (value) => {
-    const n = Number(value) || 0;
-    try {
-      return n.toLocaleString("en-PH", { style: "currency", currency: "PHP" });
-    } catch (_) {
-      return "\u20B1" + n.toFixed(2);
-    }
-  };
-
-  const debounce = (fn, wait) => {
-    let timer;
-    return function (...args) {
-      clearTimeout(timer);
-      timer = setTimeout(() => fn.apply(this, args), wait);
+    const state = {
+        page: 1,
+        totalPages: 1,
+        search: "",
+        status: "all",
+        loading: false,
+        requestId: 0,
+        remarksModal: null,
+        proofModal: null,
+        editingSection: null,
     };
-  };
 
-  const notify = (message, type) => {
-    try {
-      if (typeof window.showAlertTOP === "function") {
-        window.showAlertTOP(message, type);
-        return;
-      }
-    } catch (_) {
-      /* fall through */
-    }
-    if (type === "error") console.error(message);
-    else console.log(message);
-  };
+    // DOM references
+    const el = {
+        search: document.getElementById("payment_search"),
+        statusFilter: document.getElementById("status_filter"),
+        filterBtn: document.getElementById("filter_btn"),
+        tbody: document.getElementById("paymentsTableBody"),
+        noData: document.getElementById("burialNoData"),
+        currentPage: document.getElementById("current_page_num"),
+        totalPages: document.getElementById("total_pages_num"),
+        prevBtn: document.getElementById("prev_page_btn"),
+        nextBtn: document.getElementById("next_page_btn"),
+        carouselTrack: document.getElementById("carousel_track"),
+    };
 
-  async function askConfirm(message, opts) {
-    if (typeof window.confirm_ui === "function") {
-      return !!(await window.confirm_ui(message, opts));
-    }
-    return window.confirm(message);
-  }
+    // General helpers
+    // Escape dynamic text before inserting it into HTML
+    const escapeHtml = (value) => {
+        if (value === null || value === undefined) return "";
+        return String(value)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    };
 
-  async function fetchWithTimeout(url, options, ms) {
-    const controller = new AbortController();
-    const timeout = setTimeout(
-      () => controller.abort(),
-      ms || REQUEST_TIMEOUT_MS,
-    );
-    try {
-      const opts = Object.assign({}, options || {}, {
-        signal: controller.signal,
-      });
-      return await fetch(url, opts);
-    } finally {
-      clearTimeout(timeout);
-    }
-  }
+    // Raw-error detection
+    // Some backend failures surface as HTML, HTTP codes, framework exceptions, or network errors. These helpers detect those cases and replace them with a friendly message
+    const GENERIC_ERROR = "Something went wrong. Please try again.";
 
-  const isAbortError = (err) => !!(err && err.name === "AbortError");
+    const looksRawMessage = (text) => {
+        if (!text) return true;
+        const t = String(text).trim();
+        if (!t) return true;
+        if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true;
+        if (/ERR_NGROK_|ngrok/i.test(t)) return true;
+        if (/^HTTP\s+\d{3}/i.test(t)) return true;
+        if (/^Request failed \(HTTP \d{3}\)$/i.test(t)) return true;
+        if (
+            /non-JSON|Unexpected token|is not valid JSON|Unexpected end of JSON/i.test(
+                t,
+            )
+        )
+            return true;
+        if (/Failed to fetch|NetworkError|Load failed/i.test(t)) return true;
+        if (
+            /^(TypeError|SyntaxError|ReferenceError|RangeError|DOMException)\b/i.test(
+                t,
+            )
+        )
+            return true;
+        if (t.length > 200) return true;
+        return false;
+    };
 
-  const unwrap = (json) =>
-    (json && (json.data !== undefined ? json.data : json)) || {};
+    const friendlyMessage = (err, fallback) => {
+        if (!err) return fallback || GENERIC_ERROR;
+        const msg =
+            err && err.message ? String(err.message).trim() : String(err).trim();
+        if (!msg || looksRawMessage(msg)) return fallback || GENERIC_ERROR;
+        return msg;
+    };
 
-  const classifyStatus = (p) => {
-    const office = !!p.office_confirmed;
-    const grounds = !!p.grounds_confirmed;
-    if (office && grounds) return "completed";
-    if (office) return "pending_grounds";
-    return "pending_office";
-  };
-
-  function getRow(paymentId) {
-    if (!el.tbody) return null;
-    return el.tbody.querySelector(
-      'tr[data-payment-id="' + CSS.escape(String(paymentId)) + '"]',
-    );
-  }
-
-  // ------------------------------------------------------------------ remarks helpers
-  const remarkTypes = ["payer", "office", "grounds"];
-
-  const remarkField = (type) => "remarks_" + type;
-
-  const readRemark = (payment, type) => {
-    const v = payment && payment[remarkField(type)];
-    if (v === null || v === undefined) return "";
-    return String(v);
-  };
-
-  const truncate = (text, max) => {
-    const s = String(text || "");
-    if (s.length <= max) return s;
-    return s.slice(0, max - 1) + "\u2026";
-  };
-
-  const remarkLabelFor = (type) => type.charAt(0).toUpperCase() + type.slice(1);
-
-  // Office can only edit the OFFICE remark. Payer is read-only by design;
-  // Grounds belongs to grounds staff (and admin), not office.
-  const canEditRemark = (type) => type === "office";
-
-  // ------------------------------------------------------------------ message
-  const buildVerificationMessage = (p) => {
-    const name = (p.payers_name || p.deceased_name || "valued client").trim();
-    const ref = (p.reference_number || "").trim();
-    return (
-      "Hello " +
-      name +
-      ", your payment with the reference number: " +
-      ref +
-      " is now verified."
-    );
-  };
-
-  const openSms = (phone, message) => {
-    if (typeof window.openSmsModal === "function") {
-      window.openSmsModal(phone, message);
-      return;
-    }
-    if (!phone) {
-      notify("No phone number available for this record.", "error");
-      return;
-    }
-    const url =
-      "sms:" +
-      encodeURIComponent(phone) +
-      "&body=" +
-      encodeURIComponent(message || "");
-    try {
-      window.location.href = url;
-    } catch (_) {}
-  };
-
-  // ------------------------------------------------------------------ busy state
-  function enterRowBusy(btn) {
-    if (!btn) return function noop() {};
-
-    const row = btn.closest("tr");
-    const group = btn.closest(".pmActionGroup");
-
-    if (row) {
-      row.classList.add("pmRowBusy");
-      row.setAttribute("inert", "");
-      row.setAttribute("aria-busy", "true");
-    }
-
-    if (!group) {
-      const originalHtml = btn.innerHTML;
-      const wasDisabled = btn.disabled;
-      btn.disabled = true;
-      btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-      return function restore() {
-        btn.innerHTML = originalHtml;
-        btn.disabled = wasDisabled;
-        if (row) {
-          row.classList.remove("pmRowBusy");
-          row.removeAttribute("inert");
-          row.removeAttribute("aria-busy");
+    // Format a number as Philippine pesos
+    const formatMoney = (value) => {
+        const n = Number(value) || 0;
+        try {
+            return n.toLocaleString("en-PH", { style: "currency", currency: "PHP" });
+        } catch (_) {
+            return "\u20B1" + n.toFixed(2);
         }
-      };
+    };
+
+    // Delay a function call until the user stops typing
+    const debounce = (fn, wait) => {
+        let timer;
+        return function (...args) {
+            clearTimeout(timer);
+            timer = setTimeout(() => fn.apply(this, args), wait);
+        };
+    };
+
+    // Show a toast when the page provides one; otherwise log to console
+    const notify = (message, type) => {
+        try {
+            if (typeof window.showAlertTOP === "function") {
+                window.showAlertTOP(message, type);
+                return;
+            }
+        } catch (_) {
+            // fall through
+        }
+        if (type === "error") console.error(message);
+        else console.log(message);
+    };
+
+    // Ask the user to confirm an action using the shared confirm dialog
+    async function askConfirm(message, opts) {
+        if (typeof window.confirm_ui === "function") {
+            return !!(await window.confirm_ui(message, opts));
+        }
+        return window.confirm(message);
     }
 
-    const buttons = Array.from(group.querySelectorAll("button"));
-    const snapshot = buttons.map((b) => ({
-      html: b.innerHTML,
-      disabled: b.disabled,
-    }));
+    // fetch() wrapper that aborts if the request takes too long
+    async function fetchWithTimeout(url, options, ms) {
+        const controller = new AbortController();
+        const timeout = setTimeout(
+            () => controller.abort(),
+            ms || REQUEST_TIMEOUT_MS,
+        );
+        try {
+            const opts = Object.assign({}, options || {}, {
+                signal: controller.signal,
+            });
+            return await fetch(url, opts);
+        } finally {
+            clearTimeout(timeout);
+        }
+    }
 
-    buttons.forEach((b) => {
-      b.disabled = true;
-    });
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    const isAbortError = (err) => !!(err && err.name === "AbortError");
 
-    return function restore() {
-      buttons.forEach((b, i) => {
-        const snap = snapshot[i];
-        if (!snap) return;
-        b.innerHTML = snap.html;
-        b.disabled = snap.disabled;
-      });
-      if (row) {
+    // Accept either { data: ... } or the raw payload shape
+    const unwrap = (json) =>
+        (json && (json.data !== undefined ? json.data : json)) || {};
+
+    // Decide which status badge applies based on the office/grounds flags
+    const classifyStatus = (p) => {
+        const office = !!p.office_confirmed;
+        const grounds = !!p.grounds_confirmed;
+        if (office && grounds) return "completed";
+        if (office) return "pending_grounds";
+        return "pending_office";
+    };
+
+    // Find the table row for a given payment id.
+    function getRow(paymentId) {
+        if (!el.tbody) return null;
+        return el.tbody.querySelector(
+            'tr[data-payment-id="' + CSS.escape(String(paymentId)) + '"]',
+        );
+    }
+
+    // Remarks helpers
+    const remarkTypes = ["payer", "office", "grounds"];
+
+    // Map a remark type to the field name used by the API payload
+    const remarkField = (type) => "remarks_" + type;
+
+    const readRemark = (payment, type) => {
+        const v = payment && payment[remarkField(type)];
+        if (v === null || v === undefined) return "";
+        return String(v);
+    };
+
+    // Trim text and append an ellipsis when it is longer than `max`
+    const truncate = (text, max) => {
+        const s = String(text || "");
+        if (s.length <= max) return s;
+        return s.slice(0, max - 1) + "\u2026";
+    };
+
+    const remarkLabelFor = (type) => type.charAt(0).toUpperCase() + type.slice(1);
+
+    // Office can edit only its own remark. Payer is read-only; Grounds belongs to grounds staff and admin
+    const canEditRemark = (type) => type === "office";
+
+    // SMS helpers
+    const buildVerificationMessage = (p) => {
+        const name = (p.payers_name || p.deceased_name || "valued client").trim();
+        const ref = (p.reference_number || "").trim();
+        return (
+            "Hello " +
+            name +
+            ", your payment with the reference number: " +
+            ref +
+            " is now verified."
+        );
+    };
+
+    // Prefer the shared SMS modal; fall back to a plain sms: link
+    const openSms = (phone, message) => {
+        if (typeof window.openSmsModal === "function") {
+            window.openSmsModal(phone, message);
+            return;
+        }
+        if (!phone) {
+            notify("No phone number available for this record.", "error");
+            return;
+        }
+        const url =
+            "sms:" +
+            encodeURIComponent(phone) +
+            "&body=" +
+            encodeURIComponent(message || "");
+        try {
+            window.location.href = url;
+        } catch (_) { }
+    };
+
+    // Row busy state
+    // Dim the row, disable its buttons, and show a spinner while an action request is in flight. Returns a function that restores everything back to how it was
+    function enterRowBusy(btn) {
+        if (!btn) return function noop() { };
+
+        const row = btn.closest("tr");
+        const group = btn.closest(".pmActionGroup");
+
+        if (row) {
+            row.classList.add("pmRowBusy");
+            row.setAttribute("inert", "");
+            row.setAttribute("aria-busy", "true");
+        }
+
+        // Button is not inside an action group: handle it on its own
+        if (!group) {
+            const originalHtml = btn.innerHTML;
+            const wasDisabled = btn.disabled;
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            return function restore() {
+                btn.innerHTML = originalHtml;
+                btn.disabled = wasDisabled;
+                if (row) {
+                    row.classList.remove("pmRowBusy");
+                    row.removeAttribute("inert");
+                    row.removeAttribute("aria-busy");
+                }
+            };
+        }
+
+        // Snapshot each button so both its HTML and disabled state can be restored exactly
+        const buttons = Array.from(group.querySelectorAll("button"));
+        const snapshot = buttons.map((b) => ({
+            html: b.innerHTML,
+            disabled: b.disabled,
+        }));
+
+        buttons.forEach((b) => {
+            b.disabled = true;
+        });
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+        return function restore() {
+            buttons.forEach((b, i) => {
+                const snap = snapshot[i];
+                if (!snap) return;
+                b.innerHTML = snap.html;
+                b.disabled = snap.disabled;
+            });
+            if (row) {
+                row.classList.remove("pmRowBusy");
+                row.removeAttribute("inert");
+                row.removeAttribute("aria-busy");
+            }
+        };
+    }
+
+    function clearRowBusy(row) {
+        if (!row) return;
         row.classList.remove("pmRowBusy");
         row.removeAttribute("inert");
         row.removeAttribute("aria-busy");
-      }
-    };
-  }
+    }
 
-  function clearRowBusy(row) {
-    if (!row) return;
-    row.classList.remove("pmRowBusy");
-    row.removeAttribute("inert");
-    row.removeAttribute("aria-busy");
-  }
-
-  // ------------------------------------------------------------------ styles
-  function injectStyles() {
-    if (document.getElementById("paymentsActionStyles")) return;
-    const style = document.createElement("style");
-    style.id = "paymentsActionStyles";
-    style.textContent = `
+    // Styles
+    function injectStyles() {
+        if (document.getElementById("paymentsActionStyles")) return;
+        const style = document.createElement("style");
+        style.id = "paymentsActionStyles";
+        style.textContent = `
             /* ============================================================
                Status badges
                ============================================================ */
@@ -1018,1192 +995,1202 @@
                 appearance: none;
             }
         `;
-    document.head.appendChild(style);
-  }
-
-  // ------------------------------------------------------------------ render
-  function showNoData(message) {
-    if (!el.noData) return;
-    el.noData.hidden = false;
-    el.noData.style.display = "";
-    el.noData.innerHTML =
-      '<i class="fas fa-inbox"></i> ' +
-      escapeHtml(message || "No records found");
-  }
-
-  function hideNoData() {
-    if (!el.noData) return;
-    el.noData.hidden = true;
-    el.noData.style.display = "none";
-  }
-
-  function renderLoading() {
-    hideNoData();
-    el.tbody.innerHTML =
-      '<tr><td colspan="12" style="text-align:center;padding:24px;opacity:.75;">' +
-      '<i class="fas fa-spinner fa-spin"></i> Loading payments\u2026' +
-      "</td></tr>";
-  }
-
-  function renderError(message) {
-    el.tbody.innerHTML = "";
-    showNoData(message || "Failed to load payment records.");
-  }
-
-  function buildStatusBadge(p) {
-    const key = classifyStatus(p);
-    if (key === "completed") {
-      return (
-        '<span class="pmStatusBadge pmStatus--completed">' +
-        '<i class="fas fa-circle-check"></i>Completed</span>'
-      );
+        document.head.appendChild(style);
     }
-    if (key === "pending_grounds") {
-      return (
-        '<span class="pmStatusBadge pmStatus--pendingGrounds">' +
-        '<i class="fas fa-clock"></i>Pending \u2013 Grounds</span>'
-      );
+
+    // Rendering
+    function showNoData(message) {
+        if (!el.noData) return;
+        el.noData.hidden = false;
+        el.noData.style.display = "";
+        el.noData.innerHTML =
+            '<i class="fas fa-inbox"></i> ' +
+            escapeHtml(message || "No records found");
     }
-    return (
-      '<span class="pmStatusBadge pmStatus--pendingOffice">' +
-      '<i class="fas fa-clock"></i>Pending \u2013 Office</span>'
-    );
-  }
 
-  function buildRemarksCell(p) {
-    const rows = remarkTypes
-      .map((type) => {
-        const value = readRemark(p, type);
-        const empty = value.trim() === "";
-        const preview = empty ? "-" : truncate(value, 60);
+    function hideNoData() {
+        if (!el.noData) return;
+        el.noData.hidden = true;
+        el.noData.style.display = "none";
+    }
 
-        const cls =
-          "pmRemarkRow is-" +
-          type +
-          (empty ? " is-empty" : "") +
-          (type === "payer" ? " is-readonly" : "");
+    function renderLoading() {
+        hideNoData();
+        el.tbody.innerHTML =
+            '<tr><td colspan="12" style="text-align:center;padding:24px;opacity:.75;">' +
+            '<i class="fas fa-spinner fa-spin"></i> Loading payments\u2026' +
+            "</td></tr>";
+    }
+
+    function renderError(message) {
+        el.tbody.innerHTML = "";
+        showNoData(message || "Failed to load payment records.");
+    }
+
+    // Status pill shown in the "Status" column
+    function buildStatusBadge(p) {
+        const key = classifyStatus(p);
+        if (key === "completed") {
+            return (
+                '<span class="pmStatusBadge pmStatus--completed">' +
+                '<i class="fas fa-circle-check"></i>Completed</span>'
+            );
+        }
+        if (key === "pending_grounds") {
+            return (
+                '<span class="pmStatusBadge pmStatus--pendingGrounds">' +
+                '<i class="fas fa-clock"></i>Pending \u2013 Grounds</span>'
+            );
+        }
+        return (
+            '<span class="pmStatusBadge pmStatus--pendingOffice">' +
+            '<i class="fas fa-clock"></i>Pending \u2013 Office</span>'
+        );
+    }
+
+    // Compact "Payer / Office / Grounds" preview inside the table
+    function buildRemarksCell(p) {
+        const rows = remarkTypes
+            .map((type) => {
+                const value = readRemark(p, type);
+                const empty = value.trim() === "";
+                const preview = empty ? "-" : truncate(value, 60);
+
+                const cls =
+                    "pmRemarkRow is-" +
+                    type +
+                    (empty ? " is-empty" : "") +
+                    (type === "payer" ? " is-readonly" : "");
+
+                return (
+                    "" +
+                    '<div class="' +
+                    cls +
+                    '"' +
+                    ' data-action="remark"' +
+                    ' data-type="' +
+                    type +
+                    '"' +
+                    ' role="button" tabindex="0"' +
+                    ' title="View ' +
+                    escapeHtml(remarkLabelFor(type)) +
+                    ' remark">' +
+                    '<span class="pmRemarkLabel">' +
+                    escapeHtml(remarkLabelFor(type)) +
+                    "</span>" +
+                    '<span class="pmRemarkPreview' +
+                    (empty ? " is-empty" : "") +
+                    '">' +
+                    escapeHtml(preview) +
+                    "</span>" +
+                    "</div>"
+                );
+            })
+            .join("");
 
         return (
-          "" +
-          '<div class="' +
-          cls +
-          '"' +
-          ' data-action="remark"' +
-          ' data-type="' +
-          type +
-          '"' +
-          ' role="button" tabindex="0"' +
-          ' title="View ' +
-          escapeHtml(remarkLabelFor(type)) +
-          ' remark">' +
-          '<span class="pmRemarkLabel">' +
-          escapeHtml(remarkLabelFor(type)) +
-          "</span>" +
-          '<span class="pmRemarkPreview' +
-          (empty ? " is-empty" : "") +
-          '">' +
-          escapeHtml(preview) +
-          "</span>" +
-          "</div>"
+            '<div class="pmRemarksCell" data-payment-id="' +
+            escapeHtml(p.payment_id) +
+            '">' +
+            rows +
+            "</div>"
         );
-      })
-      .join("");
-
-    return (
-      '<div class="pmRemarksCell" data-payment-id="' +
-      escapeHtml(p.payment_id) +
-      '">' +
-      rows +
-      "</div>"
-    );
-  }
-
-  function buildProofCell(p) {
-    if (!p.image_link) return '<span style="opacity:.55;">\u2014</span>';
-    const url = escapeHtml(p.image_link);
-    return (
-      "" +
-      '<div class="pmProofCell"' +
-      ' data-action="proof"' +
-      ' data-payment-id="' +
-      escapeHtml(p.payment_id) +
-      '"' +
-      ' role="button" tabindex="0"' +
-      ' title="View proof of payment">' +
-      '<img class="pmProofThumb" src="' +
-      url +
-      '" alt="Proof of payment" loading="lazy">' +
-      '<span class="pmProofBroken">' +
-      '<i class="fas fa-exclamation-triangle"></i>' +
-      "<small>Invalid</small>" +
-      "</span>" +
-      "</div>"
-    );
-  }
-
-  function buildPhoneCell(p) {
-    const phoneRaw = (p.payers_phone_number || "").trim();
-    if (!phoneRaw) return '<span style="opacity:.55;">\u2014</span>';
-
-    const phone = escapeHtml(phoneRaw);
-    return (
-      '<a href="#"' +
-      ' class="smsPhoneLink"' +
-      ' data-action="sms"' +
-      ' data-payment-id="' +
-      escapeHtml(p.payment_id) +
-      '"' +
-      ' title="Send SMS notification">' +
-      phone +
-      "</a>"
-    );
-  }
-
-  function makeIconBtn(iconClass, className, handler, title) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "pmActionBtn " + (className || "");
-    btn.title = title || "";
-    btn.setAttribute("aria-label", title || "");
-    btn.innerHTML = '<i class="' + iconClass + '"></i>';
-    btn.addEventListener("click", handler);
-    return btn;
-  }
-
-  function buildVerifiedPill(title) {
-    const pill = document.createElement("span");
-    pill.className = "pmVerifiedPill";
-    pill.title = title || "Payment fully verified";
-    pill.innerHTML = '<i class="fas fa-circle-check"></i><span>Verified</span>';
-    return pill;
-  }
-
-  /**
-   * Office action cell:
-   *
-   *   pending_office  →  ✓ confirm office       (office's turn)
-   *   pending_grounds →  ↩ undo office          (waiting for grounds; can still undo)
-   *   completed       →  [Verified pill]        (locked — backend blocks undo)
-   *
-   * No delete button: office cannot soft-delete.
-   */
-  function buildActionsCell(p) {
-    const wrap = document.createElement("div");
-    wrap.className = "pmActionGroup";
-
-    const key = classifyStatus(p);
-
-    if (key === "completed") {
-      // Fully verified. Office cannot undo — the backend returns 409
-      // because grounds already confirmed.
-      wrap.appendChild(buildVerifiedPill("Payment fully verified"));
-    } else if (key === "pending_grounds") {
-      // Office confirmed; awaiting grounds. Office can still revert
-      // their own step if needed (backend allows it while grounds
-      // has NOT confirmed).
-      wrap.appendChild(
-        makeIconBtn(
-          "fas fa-undo",
-          "pmActionBtn--unverify",
-          (ev) => runAction(p, "unconfirm_office", ev.currentTarget),
-          "Undo office verification (returns to Pending \u2013 Office)",
-        ),
-      );
-    } else {
-      // pending_office — office's turn to confirm receipt.
-      wrap.appendChild(
-        makeIconBtn(
-          "fas fa-check",
-          "pmActionBtn--verify",
-          (ev) => runAction(p, "confirm_office", ev.currentTarget),
-          "Verify \u2014 confirm payment received by office",
-        ),
-      );
     }
 
-    return wrap;
-  }
-
-  function renderRows(payments) {
-    el.tbody.innerHTML = "";
-
-    if (!Array.isArray(payments) || payments.length === 0) {
-      showNoData("No records found");
-      return;
-    }
-    hideNoData();
-
-    const frag = document.createDocumentFragment();
-    payments.forEach((p) => {
-      const tr = document.createElement("tr");
-      tr.dataset.paymentId = p.payment_id;
-
-      tr.innerHTML =
-        "<td>" +
-        escapeHtml(p.deceased_name || "\u2014") +
-        "</td>" +
-        "<td>" +
-        escapeHtml(p.payers_name || "\u2014") +
-        "</td>" +
-        "<td>" +
-        escapeHtml(p.payment_channel || "\u2014") +
-        "</td>" +
-        "<td>" +
-        escapeHtml(p.reference_number || "\u2014") +
-        "</td>" +
-        "<td>" +
-        formatMoney(p.amount) +
-        "</td>" +
-        "<td>" +
-        buildPhoneCell(p) +
-        "</td>" +
-        "<td>" +
-        escapeHtml(p.payers_email || "\u2014") +
-        "</td>" +
-        "<td>" +
-        escapeHtml(p.purpose || "\u2014") +
-        "</td>" +
-        "<td>" +
-        buildProofCell(p) +
-        "</td>" +
-        "<td>" +
-        buildRemarksCell(p) +
-        "</td>" +
-        "<td>" +
-        buildStatusBadge(p) +
-        "</td>";
-
-      const actionCell = document.createElement("td");
-      actionCell.appendChild(buildActionsCell(p));
-      tr.appendChild(actionCell);
-
-      tr.__payment = p;
-
-      frag.appendChild(tr);
-    });
-
-    el.tbody.appendChild(frag);
-  }
-
-  function renderPagination(pagination) {
-    const total = Math.max(1, Number(pagination.total_pages) || 1);
-    const current = Math.min(
-      Math.max(1, Number(pagination.current_page) || 1),
-      total,
-    );
-
-    state.totalPages = total;
-    state.page = current;
-
-    if (el.currentPage) el.currentPage.textContent = String(current);
-    if (el.totalPages) el.totalPages.textContent = String(total);
-
-    if (el.prevBtn) el.prevBtn.disabled = current <= 1;
-    if (el.nextBtn) el.nextBtn.disabled = current >= total;
-
-    if (!el.carouselTrack) return;
-    el.carouselTrack.innerHTML = "";
-
-    const WINDOW = 5;
-    let start = Math.max(1, current - Math.floor(WINDOW / 2));
-    let end = Math.min(total, start + WINDOW - 1);
-    start = Math.max(1, end - WINDOW + 1);
-
-    for (let i = start; i <= end; i++) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "pageNavBtn" + (i === current ? " active" : "");
-      btn.textContent = String(i);
-      if (i === current) btn.setAttribute("aria-current", "page");
-      btn.addEventListener("click", () => {
-        if (i === state.page) return;
-        state.page = i;
-        loadPayments();
-      });
-      el.carouselTrack.appendChild(btn);
-    }
-  }
-
-  // ------------------------------------------------------------------ in-place row updates
-  function refreshRowAfterAction(payment) {
-    const row = getRow(payment.payment_id);
-    if (!row) return;
-    row.__payment = payment;
-
-    const cells = row.querySelectorAll("td");
-    if (!cells.length) return;
-
-    const statusCell = cells[cells.length - 2];
-    if (statusCell) statusCell.innerHTML = buildStatusBadge(payment);
-
-    const actionCell = cells[cells.length - 1];
-    if (actionCell) {
-      actionCell.innerHTML = "";
-      actionCell.appendChild(buildActionsCell(payment));
-    }
-
-    clearRowBusy(row);
-  }
-
-  function refreshRowRemarks(payment) {
-    const row = getRow(payment.payment_id);
-    if (!row) return;
-    const cells = row.querySelectorAll("td");
-    const remarkCell = cells[cells.length - 3];
-    if (remarkCell) remarkCell.innerHTML = buildRemarksCell(payment);
-    row.__payment = payment;
-  }
-
-  // ------------------------------------------------------------------ remarks modal
-  function closeRemarksModal() {
-    const modal = state.remarksModal;
-    if (!modal) return;
-    modal.backdrop.classList.remove("pmVisible");
-    setTimeout(() => {
-      if (modal.backdrop.parentNode)
-        modal.backdrop.parentNode.removeChild(modal.backdrop);
-      if (state.remarksModal === modal) state.remarksModal = null;
-    }, 200);
-    document.removeEventListener("keydown", modal.onKey, false);
-    state.editingSection = null;
-  }
-
-  function closeActiveEditor() {
-    const section = state.editingSection;
-    if (!section) return;
-    if (typeof section.__endEdit === "function") section.__endEdit();
-  }
-
-  function buildRemarkSection(payment, type, options) {
-    const opts = options || {};
-    const isPayer = type === "payer";
-    const canEdit = !isPayer && canEditRemark(type);
-    const value = readRemark(payment, type);
-    const empty = value.trim() === "";
-
-    const section = document.createElement("section");
-    section.className = "pmRemarkSection is-" + type;
-    section.dataset.type = type;
-
-    const header = document.createElement("div");
-    header.className = "pmRemarkSectionHeader";
-
-    const label = document.createElement("span");
-    label.className = "pmRemarkSectionLabel";
-    label.textContent = remarkLabelFor(type);
-    header.appendChild(label);
-
-    let editBtn = null;
-    if (canEdit) {
-      editBtn = document.createElement("button");
-      editBtn.type = "button";
-      editBtn.className = "pmRemarkEditBtn";
-      editBtn.title = "Edit " + remarkLabelFor(type) + " remark";
-      editBtn.setAttribute("aria-label", editBtn.title);
-      editBtn.innerHTML = '<i class="fas fa-pen"></i>';
-      editBtn.addEventListener("click", () => beginEdit());
-      header.appendChild(editBtn);
-    }
-
-    section.appendChild(header);
-
-    const view = document.createElement("div");
-    view.className = "pmRemarkSectionValue" + (empty ? " is-empty" : "");
-    view.textContent = empty ? "-" : value;
-    section.appendChild(view);
-
-    if (!canEdit) return section;
-
-    const textarea = document.createElement("textarea");
-    textarea.className = "pmRemarkTextarea";
-    textarea.maxLength = REMARK_MAX_LEN;
-    textarea.placeholder = "Enter " + type + " remark\u2026";
-    textarea.hidden = true;
-    section.appendChild(textarea);
-
-    const actions = document.createElement("div");
-    actions.className = "pmRemarkEditActions";
-    actions.hidden = true;
-
-    const cancelBtn = document.createElement("button");
-    cancelBtn.type = "button";
-    cancelBtn.className = "pmRemarkBtn pmRemarkBtn--ghost";
-    cancelBtn.textContent = "Cancel";
-    cancelBtn.addEventListener("click", () => endEdit());
-
-    const saveBtn = document.createElement("button");
-    saveBtn.type = "button";
-    saveBtn.className = "pmRemarkBtn pmRemarkBtn--primary";
-    saveBtn.textContent = "Save";
-
-    actions.appendChild(cancelBtn);
-    actions.appendChild(saveBtn);
-    section.appendChild(actions);
-
-    let original = value;
-
-    function beginEdit() {
-      if (state.editingSection && state.editingSection !== section) {
-        closeActiveEditor();
-      }
-
-      original = readRemark(payment, type);
-      textarea.value = original;
-
-      view.hidden = true;
-      textarea.hidden = false;
-      actions.hidden = false;
-      section.classList.add("is-editing");
-      if (editBtn) editBtn.style.display = "none";
-
-      state.editingSection = section;
-      section.__endEdit = endEdit;
-
-      textarea.focus();
-      try {
-        textarea.setSelectionRange(
-          textarea.value.length,
-          textarea.value.length,
+    // Thumbnail that opens the proof lightbox. Broken images are detected via the delegated error listener bound in bindEvents()
+    function buildProofCell(p) {
+        if (!p.image_link) return '<span style="opacity:.55;">\u2014</span>';
+        const url = escapeHtml(p.image_link);
+        return (
+            "" +
+            '<div class="pmProofCell"' +
+            ' data-action="proof"' +
+            ' data-payment-id="' +
+            escapeHtml(p.payment_id) +
+            '"' +
+            ' role="button" tabindex="0"' +
+            ' title="View proof of payment">' +
+            '<img class="pmProofThumb" src="' +
+            url +
+            '" alt="Proof of payment" loading="lazy">' +
+            '<span class="pmProofBroken">' +
+            '<i class="fas fa-exclamation-triangle"></i>' +
+            "<small>Invalid</small>" +
+            "</span>" +
+            "</div>"
         );
-      } catch (_) {}
     }
 
-    function endEdit() {
-      view.hidden = false;
-      textarea.hidden = true;
-      actions.hidden = true;
-      section.classList.remove("is-editing");
-      if (editBtn) editBtn.style.display = "";
+    // Clickable phone number that opens the SMS modal
+    function buildPhoneCell(p) {
+        const phoneRaw = (p.payers_phone_number || "").trim();
+        if (!phoneRaw) return '<span style="opacity:.55;">\u2014</span>';
 
-      textarea.value = original;
-      view.textContent = original.trim() === "" ? "-" : original;
-      view.classList.toggle("is-empty", original.trim() === "");
+        const phone = escapeHtml(phoneRaw);
+        return (
+            '<a href="#"' +
+            ' class="smsPhoneLink"' +
+            ' data-action="sms"' +
+            ' data-payment-id="' +
+            escapeHtml(p.payment_id) +
+            '"' +
+            ' title="Send SMS notification">' +
+            phone +
+            "</a>"
+        );
+    }
 
-      if (state.editingSection === section) {
+    // Build a small icon-only action button
+    function makeIconBtn(iconClass, className, handler, title) {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "pmActionBtn " + (className || "");
+        btn.title = title || "";
+        btn.setAttribute("aria-label", title || "");
+        btn.innerHTML = '<i class="' + iconClass + '"></i>';
+        btn.addEventListener("click", handler);
+        return btn;
+    }
+
+    // Green "Verified" pill shown once a payment is fully confirmed
+    function buildVerifiedPill(title) {
+        const pill = document.createElement("span");
+        pill.className = "pmVerifiedPill";
+        pill.title = title || "Payment fully verified";
+        pill.innerHTML = '<i class="fas fa-circle-check"></i><span>Verified</span>';
+        return pill;
+    }
+
+    function buildActionsCell(p) {
+        const wrap = document.createElement("div");
+        wrap.className = "pmActionGroup";
+
+        const key = classifyStatus(p);
+
+        if (key === "completed") {
+            // Fully verified. Undo is blocked because grounds already confirmed; the backend returns 409
+            wrap.appendChild(buildVerifiedPill("Payment fully verified"));
+        } else if (key === "pending_grounds") {
+            // Office confirmed; awaiting grounds. Office can still revert its own step while grounds has not confirmed
+            wrap.appendChild(
+                makeIconBtn(
+                    "fas fa-undo",
+                    "pmActionBtn--unverify",
+                    (ev) => runAction(p, "unconfirm_office", ev.currentTarget),
+                    "Undo office verification (returns to Pending \u2013 Office)",
+                ),
+            );
+        } else {
+            // pending_office - office's turn to confirm receipt
+            wrap.appendChild(
+                makeIconBtn(
+                    "fas fa-check",
+                    "pmActionBtn--verify",
+                    (ev) => runAction(p, "confirm_office", ev.currentTarget),
+                    "Verify \u2014 confirm payment received by office",
+                ),
+            );
+        }
+
+        return wrap;
+    }
+
+    // Build all table rows in one pass using a DocumentFragment
+    function renderRows(payments) {
+        el.tbody.innerHTML = "";
+
+        if (!Array.isArray(payments) || payments.length === 0) {
+            showNoData("No records found");
+            return;
+        }
+        hideNoData();
+
+        const frag = document.createDocumentFragment();
+        payments.forEach((p) => {
+            const tr = document.createElement("tr");
+            tr.dataset.paymentId = p.payment_id;
+
+            tr.innerHTML =
+                "<td>" +
+                escapeHtml(p.deceased_name || "\u2014") +
+                "</td>" +
+                "<td>" +
+                escapeHtml(p.payers_name || "\u2014") +
+                "</td>" +
+                "<td>" +
+                escapeHtml(p.payment_channel || "\u2014") +
+                "</td>" +
+                "<td>" +
+                escapeHtml(p.reference_number || "\u2014") +
+                "</td>" +
+                "<td>" +
+                formatMoney(p.amount) +
+                "</td>" +
+                "<td>" +
+                buildPhoneCell(p) +
+                "</td>" +
+                "<td>" +
+                escapeHtml(p.payers_email || "\u2014") +
+                "</td>" +
+                "<td>" +
+                escapeHtml(p.purpose || "\u2014") +
+                "</td>" +
+                "<td>" +
+                buildProofCell(p) +
+                "</td>" +
+                "<td>" +
+                buildRemarksCell(p) +
+                "</td>" +
+                "<td>" +
+                buildStatusBadge(p) +
+                "</td>";
+
+            const actionCell = document.createElement("td");
+            actionCell.appendChild(buildActionsCell(p));
+            tr.appendChild(actionCell);
+
+            tr.__payment = p;
+
+            frag.appendChild(tr);
+        });
+
+        el.tbody.appendChild(frag);
+    }
+
+    // Render prev / next state and the numbered page buttons. Only a small window of page numbers is shown at a time
+    function renderPagination(pagination) {
+        const total = Math.max(1, Number(pagination.total_pages) || 1);
+        const current = Math.min(
+            Math.max(1, Number(pagination.current_page) || 1),
+            total,
+        );
+
+        state.totalPages = total;
+        state.page = current;
+
+        if (el.currentPage) el.currentPage.textContent = String(current);
+        if (el.totalPages) el.totalPages.textContent = String(total);
+
+        if (el.prevBtn) el.prevBtn.disabled = current <= 1;
+        if (el.nextBtn) el.nextBtn.disabled = current >= total;
+
+        if (!el.carouselTrack) return;
+        el.carouselTrack.innerHTML = "";
+
+        const WINDOW = 5;
+        let start = Math.max(1, current - Math.floor(WINDOW / 2));
+        let end = Math.min(total, start + WINDOW - 1);
+        start = Math.max(1, end - WINDOW + 1);
+
+        for (let i = start; i <= end; i++) {
+            const btn = document.createElement("button");
+            btn.type = "button";
+            btn.className = "pageNavBtn" + (i === current ? " active" : "");
+            btn.textContent = String(i);
+            if (i === current) btn.setAttribute("aria-current", "page");
+            btn.addEventListener("click", () => {
+                if (i === state.page) return;
+                state.page = i;
+                loadPayments();
+            });
+            el.carouselTrack.appendChild(btn);
+        }
+    }
+
+    // In-place row updates
+    // After verify / unverify, rebuild only the status and action cells so the row order never changes
+    function refreshRowAfterAction(payment) {
+        const row = getRow(payment.payment_id);
+        if (!row) return;
+        row.__payment = payment;
+
+        const cells = row.querySelectorAll("td");
+        if (!cells.length) return;
+
+        const statusCell = cells[cells.length - 2];
+        if (statusCell) statusCell.innerHTML = buildStatusBadge(payment);
+
+        const actionCell = cells[cells.length - 1];
+        if (actionCell) {
+            actionCell.innerHTML = "";
+            actionCell.appendChild(buildActionsCell(payment));
+        }
+
+        clearRowBusy(row);
+    }
+
+    // Rebuild only the remarks cell after a remark is saved
+    function refreshRowRemarks(payment) {
+        const row = getRow(payment.payment_id);
+        if (!row) return;
+        const cells = row.querySelectorAll("td");
+        const remarkCell = cells[cells.length - 3];
+        if (remarkCell) remarkCell.innerHTML = buildRemarksCell(payment);
+        row.__payment = payment;
+    }
+
+    // Remarks modal
+    function closeRemarksModal() {
+        const modal = state.remarksModal;
+        if (!modal) return;
+        modal.backdrop.classList.remove("pmVisible");
+        setTimeout(() => {
+            if (modal.backdrop.parentNode)
+                modal.backdrop.parentNode.removeChild(modal.backdrop);
+            if (state.remarksModal === modal) state.remarksModal = null;
+        }, 200);
+        document.removeEventListener("keydown", modal.onKey, false);
         state.editingSection = null;
-        delete section.__endEdit;
-      }
     }
 
-    saveBtn.addEventListener("click", async () => {
-      const newValue = textarea.value;
-
-      if (newValue === original) {
-        endEdit();
-        return;
-      }
-
-      if (newValue.length > REMARK_MAX_LEN) {
-        notify(
-          "Remark is too long (max " + REMARK_MAX_LEN + " characters).",
-          "error",
-        );
-        textarea.focus();
-        return;
-      }
-
-      saveBtn.disabled = true;
-      cancelBtn.disabled = true;
-      const prevLabel = saveBtn.textContent;
-      saveBtn.textContent = "Saving\u2026";
-
-      const ok = await saveRemark(payment, type, newValue);
-
-      saveBtn.disabled = false;
-      cancelBtn.disabled = false;
-      saveBtn.textContent = prevLabel;
-
-      if (!ok) return;
-
-      const current = readRemark(payment, type);
-      const isNowEmpty = current.trim() === "";
-      view.textContent = isNowEmpty ? "-" : current;
-      view.classList.toggle("is-empty", isNowEmpty);
-      original = current;
-
-      refreshRowRemarks(payment);
-      endEdit();
-    });
-
-    if (opts.focus) {
-      setTimeout(() => {
-        try {
-          beginEdit();
-        } catch (_) {}
-      }, 80);
+    // Close whatever remark section is currently in edit mode
+    function closeActiveEditor() {
+        const section = state.editingSection;
+        if (!section) return;
+        if (typeof section.__endEdit === "function") section.__endEdit();
     }
 
-    return section;
-  }
-
-  function openRemarksModal(payment, focusType) {
-    if (!payment) return;
-    closeRemarksModal();
-
-    const backdrop = document.createElement("div");
-    backdrop.className = "pmRemarksBackdrop";
-    backdrop.setAttribute("role", "dialog");
-    backdrop.setAttribute("aria-modal", "true");
-    backdrop.setAttribute("aria-labelledby", "pmRemarksTitle");
-
-    const card = document.createElement("div");
-    card.className = "pmRemarksCard";
-    backdrop.appendChild(card);
-
-    const header = document.createElement("div");
-    header.className = "pmRemarksHeader";
-    header.innerHTML =
-      '<h3 class="pmRemarksTitle" id="pmRemarksTitle">' +
-      "<span>Payment Remarks</span>" +
-      "</h3>";
-    const closeBtn = document.createElement("button");
-    closeBtn.type = "button";
-    closeBtn.className = "pmRemarksClose";
-    closeBtn.setAttribute("aria-label", "Close");
-    closeBtn.innerHTML = '<i class="fas fa-times"></i>';
-    closeBtn.addEventListener("click", closeRemarksModal);
-    header.appendChild(closeBtn);
-    card.appendChild(header);
-
-    const body = document.createElement("div");
-    body.className = "pmRemarksBody";
-
-    remarkTypes.forEach((type) => {
-      body.appendChild(
-        buildRemarkSection(payment, type, {
-          focus: type === focusType,
-        }),
-      );
-    });
-
-    card.appendChild(body);
-
-    backdrop.addEventListener("click", (e) => {
-      if (e.target === backdrop) closeRemarksModal();
-    });
-
-    const onKey = (e) => {
-      if (e.key === "Escape") {
-        if (state.editingSection) {
-          e.preventDefault();
-          closeActiveEditor();
-          return;
-        }
-        e.preventDefault();
-        closeRemarksModal();
-      }
-    };
-
-    document.body.appendChild(backdrop);
-    requestAnimationFrame(() => backdrop.classList.add("pmVisible"));
-
-    state.remarksModal = { backdrop, card, onKey };
-    document.addEventListener("keydown", onKey, false);
-
-    setTimeout(() => {
-      try {
-        closeBtn.focus({ preventScroll: true });
-      } catch (_) {
-        closeBtn.focus();
-      }
-    }, 60);
-  }
-
-  // ------------------------------------------------------------------ proof (image preview) modal
-  function closeProofModal() {
-    const modal = state.proofModal;
-    if (!modal) return;
-    modal.backdrop.classList.remove("pmVisible");
-    setTimeout(() => {
-      if (modal.backdrop.parentNode)
-        modal.backdrop.parentNode.removeChild(modal.backdrop);
-      if (state.proofModal === modal) state.proofModal = null;
-    }, 200);
-    document.removeEventListener("keydown", modal.onKey, false);
-  }
-
-  function openProofModal(payment) {
-    if (!payment) return;
-    closeProofModal();
-
-    const url = String(payment.image_link || "").trim();
-    if (!url) {
-      notify("No proof image attached to this payment.", "error");
-      return;
-    }
-
-    const backdrop = document.createElement("div");
-    backdrop.className = "pmProofBackdrop";
-    backdrop.setAttribute("role", "dialog");
-    backdrop.setAttribute("aria-modal", "true");
-    backdrop.setAttribute("aria-labelledby", "pmProofTitle");
-
-    const card = document.createElement("div");
-    card.className = "pmProofCard";
-    backdrop.appendChild(card);
-
-    // Header
-    const header = document.createElement("div");
-    header.className = "pmProofHeader";
-    const title = document.createElement("h3");
-    title.className = "pmProofTitle";
-    title.id = "pmProofTitle";
-    title.innerHTML =
-      '<i class="fas fa-image"></i><span>Proof of Payment</span>';
-    header.appendChild(title);
-
-    const closeBtn = document.createElement("button");
-    closeBtn.type = "button";
-    closeBtn.className = "pmRemarksClose";
-    closeBtn.setAttribute("aria-label", "Close");
-    closeBtn.innerHTML = '<i class="fas fa-times"></i>';
-    closeBtn.addEventListener("click", closeProofModal);
-    header.appendChild(closeBtn);
-    card.appendChild(header);
-
-    // Image area
-    const imgWrap = document.createElement("div");
-    imgWrap.className = "pmProofImageWrap";
-
-    const spinner = document.createElement("div");
-    spinner.className = "pmProofSpinner";
-    spinner.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-    imgWrap.appendChild(spinner);
-
-    const img = document.createElement("img");
-    img.alt = "Proof of payment";
-    img.style.display = "none";
-
-    img.addEventListener(
-      "load",
-      () => {
-        spinner.remove();
-        img.style.display = "";
-      },
-      { once: true },
-    );
-
-    img.addEventListener(
-      "error",
-      () => {
-        spinner.remove();
-        img.remove();
-        const broken = document.createElement("div");
-        broken.className = "pmProofBrokenBig";
-        broken.innerHTML =
-          '<i class="fas fa-exclamation-triangle"></i>' +
-          "<strong>Image failed to load</strong>" +
-          "<span>The image at this URL could not be loaded. Check the URL below or open it in a new tab.</span>";
-        imgWrap.appendChild(broken);
-      },
-      { once: true },
-    );
-
-    img.src = url;
-    imgWrap.appendChild(img);
-    card.appendChild(imgWrap);
-
-    // URL row
-    const urlRow = document.createElement("div");
-    urlRow.className = "pmProofUrlRow";
-
-    const urlLabel = document.createElement("span");
-    urlLabel.className = "pmProofUrlLabel";
-    urlLabel.textContent = "URL";
-
-    const urlLink = document.createElement("a");
-    urlLink.className = "pmProofUrlLink";
-    urlLink.href = url;
-    urlLink.target = "_blank";
-    urlLink.rel = "noopener noreferrer";
-    urlLink.textContent = url;
-    urlLink.title = url;
-
-    const copyBtn = document.createElement("button");
-    copyBtn.type = "button";
-    copyBtn.className = "pmProofCopyBtn";
-    copyBtn.title = "Copy URL";
-    copyBtn.setAttribute("aria-label", "Copy URL");
-    copyBtn.innerHTML = '<i class="fas fa-copy"></i>';
-
-    const flashCopied = () => {
-      copyBtn.classList.add("is-copied");
-      copyBtn.innerHTML = '<i class="fas fa-check"></i>';
-      setTimeout(() => {
-        copyBtn.classList.remove("is-copied");
-        copyBtn.innerHTML = '<i class="fas fa-copy"></i>';
-      }, 1400);
-    };
-
-    copyBtn.addEventListener("click", async () => {
-      try {
-        if (navigator.clipboard && navigator.clipboard.writeText) {
-          await navigator.clipboard.writeText(url);
-          flashCopied();
-          return;
-        }
-      } catch (_) {
-        /* fall through */
-      }
-
-      try {
-        const ta = document.createElement("textarea");
-        ta.value = url;
-        ta.setAttribute("readonly", "");
-        ta.style.position = "fixed";
-        ta.style.top = "-1000px";
-        ta.style.opacity = "0";
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        document.body.removeChild(ta);
-        flashCopied();
-      } catch (_) {
-        notify("Could not copy URL.", "error");
-      }
-    });
-
-    urlRow.appendChild(urlLabel);
-    urlRow.appendChild(urlLink);
-    urlRow.appendChild(copyBtn);
-    card.appendChild(urlRow);
-
-    // Close handlers
-    const onKey = (e) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        closeProofModal();
-      }
-    };
-
-    backdrop.addEventListener("click", (e) => {
-      if (e.target === backdrop) closeProofModal();
-    });
-
-    document.body.appendChild(backdrop);
-    requestAnimationFrame(() => backdrop.classList.add("pmVisible"));
-
-    state.proofModal = { backdrop, card, onKey };
-    document.addEventListener("keydown", onKey, false);
-
-    setTimeout(() => {
-      try {
-        closeBtn.focus({ preventScroll: true });
-      } catch (_) {
-        closeBtn.focus();
-      }
-    }, 60);
-  }
-
-  // ------------------------------------------------------------------ network
-  function buildQuery() {
-    const params = new URLSearchParams();
-    params.set("page", String(state.page));
-    params.set("limit", String(PER_PAGE));
-
-    if (state.search && state.search.length >= SEARCH_MIN_LEN) {
-      params.set("search_term", state.search);
-    }
-    if (state.status && state.status !== "all") {
-      params.set("status", state.status);
-    }
-    return params.toString();
-  }
-
-  async function loadPayments() {
-    const reqId = ++state.requestId;
-    state.loading = true;
-    renderLoading();
-
-    try {
-      const res = await fetchWithTimeout(API_URL + "?" + buildQuery(), {
-        method: "GET",
-        credentials: "same-origin",
-        headers: { Accept: "application/json" },
-      });
-
-      const json = await res.json().catch(() => null);
-
-      if (!res.ok || (json && json.success === false)) {
-        const msg =
-          (json && (json.message || json.error)) ||
-          "Request failed (HTTP " + res.status + ")";
-        throw new Error(msg);
-      }
-      if (reqId !== state.requestId) return;
-
-      const payload = unwrap(json);
-      renderRows(payload.payments);
-      renderPagination(
-        payload.pagination || { total_pages: 1, current_page: 1 },
-      );
-    } catch (err) {
-      if (reqId !== state.requestId) return;
-      console.error("[office payments] load error:", err);
-      const msg = isAbortError(err)
-        ? "Loading payments timed out. Please try again."
-        : friendlyMessage(err, "Unable to load payment records.");
-      renderError(msg);
-    } finally {
-      if (reqId === state.requestId) state.loading = false;
-    }
-  }
-
-  async function saveRemark(payment, type, value) {
-    try {
-      const res = await fetchWithTimeout(
-        API_URL + "?path_info=" + encodeURIComponent(payment.payment_id),
-        {
-          method: "PUT",
-          credentials: "same-origin",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          body: JSON.stringify({
-            action: "edit_remark",
-            remark_type: type,
-            remark_value: value,
-          }),
-        },
-      );
-
-      const json = await res.json().catch(() => null);
-      if (!res.ok || (json && json.success === false)) {
-        throw new Error(
-          (json && (json.message || json.error)) ||
-            "Request failed (HTTP " + res.status + ")",
-        );
-      }
-
-      const key = remarkField(type);
-      const v = (value || "").trim();
-      payment[key] = v === "" ? null : v;
-
-      notify(
-        (json && json.message) || remarkLabelFor(type) + " remark saved.",
-        "success",
-      );
-      return true;
-    } catch (err) {
-      console.error("[office payments] save remark error:", err);
-      const msg = isAbortError(err)
-        ? "Saving remark timed out. Please try again."
-        : friendlyMessage(err, "Failed to save remark.");
-      notify(msg, "error");
-      return false;
-    }
-  }
-
-  async function runAction(payment, action, btn) {
-    if (btn && btn.dataset.confirming === "1") return;
-
-    const prompts = {
-      confirm_office: {
-        message: "Confirm this payment was received by the office?",
-        title: "Confirm office receipt?",
-        confirmText: "Confirm",
-      },
-      unconfirm_office: {
-        message:
-          "Undo the office verification for this payment? It will return to \u201CPending \u2013 Office\u201D.",
-        title: "Undo office verification?",
-        confirmText: "Undo",
-        danger: true,
-      },
-    };
-
-    const cfg = prompts[action] || {
-      message: "Proceed?",
-      title: "Confirm action?",
-      confirmText: "Confirm",
-    };
-
-    if (btn) btn.dataset.confirming = "1";
-    let ok = false;
-    try {
-      ok = await askConfirm(cfg.message, {
-        title: cfg.title,
-        confirmText: cfg.confirmText,
-        cancelText: "Cancel",
-        danger: cfg.danger || false,
-      });
-    } finally {
-      if (btn) delete btn.dataset.confirming;
-    }
-    if (!ok) return;
-
-    const restore = enterRowBusy(btn);
-
-    let succeeded = false;
-    try {
-      const res = await fetchWithTimeout(
-        API_URL + "?path_info=" + encodeURIComponent(payment.payment_id),
-        {
-          method: "PUT",
-          credentials: "same-origin",
-          headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-          },
-          body: JSON.stringify({ action: action }),
-        },
-      );
-
-      const json = await res.json().catch(() => null);
-      if (!res.ok || (json && json.success === false)) {
-        throw new Error(
-          (json && (json.message || json.error)) ||
-            "Request failed (HTTP " + res.status + ")",
-        );
-      }
-      notify((json && json.message) || "Action completed.", "success");
-
-      // Update local state optimistically, then refresh this row in
-      // place. Office only toggles office_confirmed.
-      if (action === "confirm_office") payment.office_confirmed = 1;
-      if (action === "unconfirm_office") payment.office_confirmed = 0;
-
-      refreshRowAfterAction(payment);
-      succeeded = true;
-    } catch (err) {
-      console.error("[office payments] action error:", err);
-      const msg = isAbortError(err)
-        ? "Request timed out. The server may be busy \u2014 please try again."
-        : friendlyMessage(err, "Action failed.");
-      notify(msg, "error");
-    } finally {
-      if (!succeeded) restore();
-    }
-  }
-
-  // ------------------------------------------------------------------ search clear button
-  function setupSearchClearButton() {
-    const input = el.search;
-    if (!input) return;
-
-    const parent = input.parentElement;
-    if (!parent) return;
-
-    // The button is positioned absolutely inside the input's wrapper,
-    // so the wrapper must establish a positioning context.
-    if (window.getComputedStyle(parent).position === "static") {
-      parent.style.position = "relative";
-    }
-
-    // Reserve room so typed text never slides under the clear button.
-    input.style.paddingRight = "30px";
-    input.classList.add("pmSearchInputWithClear");
-
-    const clearBtn = document.createElement("button");
-    clearBtn.type = "button";
-    clearBtn.className = "pmSearchClearBtn";
-    clearBtn.setAttribute("aria-label", "Clear search");
-    clearBtn.title = "Clear search";
-    clearBtn.innerHTML = '<i class="fas fa-times"></i>';
-
-    const updateVisibility = () => {
-      if (input.value.length > 0) {
-        clearBtn.classList.add("is-visible");
-      } else {
-        clearBtn.classList.remove("is-visible");
-      }
-    };
-
-    clearBtn.addEventListener("click", () => {
-      input.value = "";
-      updateVisibility();
-
-      const hadSearch = state.search !== "";
-      state.search = "";
-      state.page = 1;
-      if (hadSearch) loadPayments();
-
-      input.focus();
-    });
-
-    input.addEventListener("input", updateVisibility);
-
-    parent.appendChild(clearBtn);
-    updateVisibility();
-  }
-
-  // ------------------------------------------------------------------ events
-  let eventsBound = false;
-
-  function bindEvents() {
-    if (eventsBound) return;
-    eventsBound = true;
-
-    if (el.search) {
-      el.search.addEventListener(
-        "input",
-        debounce((e) => {
-          const v = e.target.value.trim();
-          // Live typing never triggers the "too short" warning — that
-          // only fires on Enter / Filter. Here we just skip short input.
-          if (v.length > 0 && v.length < SEARCH_MIN_LEN) return;
-          if (v === state.search) return;
-          state.search = v;
-          state.page = 1;
-          loadPayments();
-        }, SEARCH_DEBOUNCE_MS),
-      );
-
-      el.search.addEventListener("keydown", (e) => {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          const v = el.search.value.trim();
-          if (v.length > 0 && v.length < SEARCH_MIN_LEN) {
-            notify("Too short to search", "warning");
-            return;
-          }
-          state.search = v;
-          state.page = 1;
-          loadPayments();
-        }
-      });
-    }
-
-    if (el.statusFilter) {
-      el.statusFilter.addEventListener("change", () => {
-        state.status = el.statusFilter.value || "all";
-        state.page = 1;
-        loadPayments();
-      });
-    }
-
-    if (el.filterBtn) {
-      el.filterBtn.addEventListener("click", () => {
-        if (el.search) {
-          const v = el.search.value.trim();
-          if (v.length > 0 && v.length < SEARCH_MIN_LEN) {
-            notify("Too short to search", "warning");
-            return;
-          }
-          state.search = v;
-        }
-        if (el.statusFilter) state.status = el.statusFilter.value || "all";
-        state.page = 1;
-        loadPayments();
-      });
-    }
-
-    if (el.prevBtn) {
-      el.prevBtn.addEventListener("click", () => {
-        if (state.page <= 1) return;
-        state.page -= 1;
-        loadPayments();
-      });
-    }
-
-    if (el.nextBtn) {
-      el.nextBtn.addEventListener("click", () => {
-        if (state.page >= state.totalPages) return;
-        state.page += 1;
-        loadPayments();
-      });
-    }
-
-    if (el.tbody) {
-      // Broken-image detection (capture phase — `error` doesn't bubble).
-      el.tbody.addEventListener(
-        "error",
-        (e) => {
-          const img = e.target;
-          if (!img || img.tagName !== "IMG") return;
-          if (!img.classList.contains("pmProofThumb")) return;
-          const cell = img.closest(".pmProofCell");
-          if (cell) cell.classList.add("is-broken");
-        },
-        true,
-      );
-
-      el.tbody.addEventListener("click", (e) => {
-        // --- proof preview ---
-        const proofCell = e.target.closest('[data-action="proof"]');
-        if (proofCell && el.tbody.contains(proofCell)) {
-          e.preventDefault();
-          const row = proofCell.closest("tr");
-          if (!row || row.classList.contains("pmRowBusy")) return;
-          const payment = row.__payment;
-          if (!payment) return;
-          openProofModal(payment);
-          return;
+    // Build one remark block (Payer / Office / Grounds). Only the Office block gets the inline edit controls
+    function buildRemarkSection(payment, type, options) {
+        const opts = options || {};
+        const isPayer = type === "payer";
+        const canEdit = !isPayer && canEditRemark(type);
+        const value = readRemark(payment, type);
+        const empty = value.trim() === "";
+
+        const section = document.createElement("section");
+        section.className = "pmRemarkSection is-" + type;
+        section.dataset.type = type;
+
+        const header = document.createElement("div");
+        header.className = "pmRemarkSectionHeader";
+
+        const label = document.createElement("span");
+        label.className = "pmRemarkSectionLabel";
+        label.textContent = remarkLabelFor(type);
+        header.appendChild(label);
+
+        let editBtn = null;
+        if (canEdit) {
+            editBtn = document.createElement("button");
+            editBtn.type = "button";
+            editBtn.className = "pmRemarkEditBtn";
+            editBtn.title = "Edit " + remarkLabelFor(type) + " remark";
+            editBtn.setAttribute("aria-label", editBtn.title);
+            editBtn.innerHTML = '<i class="fas fa-pen"></i>';
+            editBtn.addEventListener("click", () => beginEdit());
+            header.appendChild(editBtn);
         }
 
-        // --- SMS ---
-        const smsLink = e.target.closest('[data-action="sms"]');
-        if (smsLink && el.tbody.contains(smsLink)) {
-          e.preventDefault();
-          const row = smsLink.closest("tr");
-          if (!row || row.classList.contains("pmRowBusy")) return;
-          const payment = row.__payment;
-          if (!payment) return;
+        section.appendChild(header);
 
-          const phone = (payment.payers_phone_number || "").trim();
-          if (!phone) {
-            notify("This record has no phone number.", "error");
-            return;
-          }
-          openSms(phone, buildVerificationMessage(payment));
-          return;
+        const view = document.createElement("div");
+        view.className = "pmRemarkSectionValue" + (empty ? " is-empty" : "");
+        view.textContent = empty ? "-" : value;
+        section.appendChild(view);
+
+        if (!canEdit) return section;
+
+        const textarea = document.createElement("textarea");
+        textarea.className = "pmRemarkTextarea";
+        textarea.maxLength = REMARK_MAX_LEN;
+        textarea.placeholder = "Enter " + type + " remark\u2026";
+        textarea.hidden = true;
+        section.appendChild(textarea);
+
+        const actions = document.createElement("div");
+        actions.className = "pmRemarkEditActions";
+        actions.hidden = true;
+
+        const cancelBtn = document.createElement("button");
+        cancelBtn.type = "button";
+        cancelBtn.className = "pmRemarkBtn pmRemarkBtn--ghost";
+        cancelBtn.textContent = "Cancel";
+        cancelBtn.addEventListener("click", () => endEdit());
+
+        const saveBtn = document.createElement("button");
+        saveBtn.type = "button";
+        saveBtn.className = "pmRemarkBtn pmRemarkBtn--primary";
+        saveBtn.textContent = "Save";
+
+        actions.appendChild(cancelBtn);
+        actions.appendChild(saveBtn);
+        section.appendChild(actions);
+
+        let original = value;
+
+        // Switch this section into inline edit mode
+        function beginEdit() {
+            if (state.editingSection && state.editingSection !== section) {
+                closeActiveEditor();
+            }
+
+            original = readRemark(payment, type);
+            textarea.value = original;
+
+            view.hidden = true;
+            textarea.hidden = false;
+            actions.hidden = false;
+            section.classList.add("is-editing");
+            if (editBtn) editBtn.style.display = "none";
+
+            state.editingSection = section;
+            section.__endEdit = endEdit;
+
+            textarea.focus();
+            try {
+                textarea.setSelectionRange(
+                    textarea.value.length,
+                    textarea.value.length,
+                );
+            } catch (_) { }
         }
 
-        // --- remarks ---
-        const remarkRow = e.target.closest('[data-action="remark"]');
-        if (remarkRow && el.tbody.contains(remarkRow)) {
-          e.preventDefault();
-          const row = remarkRow.closest("tr");
-          if (!row || row.classList.contains("pmRowBusy")) return;
-          const payment = row.__payment;
-          if (!payment) return;
-          openRemarksModal(payment, remarkRow.dataset.type || "");
-        }
-      });
+        // Leave edit mode without saving
+        function endEdit() {
+            view.hidden = false;
+            textarea.hidden = true;
+            actions.hidden = true;
+            section.classList.remove("is-editing");
+            if (editBtn) editBtn.style.display = "";
 
-      el.tbody.addEventListener("keydown", (e) => {
-        if (e.key !== "Enter" && e.key !== " ") return;
+            textarea.value = original;
+            view.textContent = original.trim() === "" ? "-" : original;
+            view.classList.toggle("is-empty", original.trim() === "");
 
-        const proofCell = e.target.closest('[data-action="proof"]');
-        if (proofCell && el.tbody.contains(proofCell)) {
-          e.preventDefault();
-          const row = proofCell.closest("tr");
-          if (!row || row.classList.contains("pmRowBusy")) return;
-          const payment = row.__payment;
-          if (!payment) return;
-          openProofModal(payment);
-          return;
+            if (state.editingSection === section) {
+                state.editingSection = null;
+                delete section.__endEdit;
+            }
         }
 
-        const remarkRow = e.target.closest('[data-action="remark"]');
-        if (!remarkRow || !el.tbody.contains(remarkRow)) return;
-        e.preventDefault();
-        const row = remarkRow.closest("tr");
-        if (!row || row.classList.contains("pmRowBusy")) return;
-        const payment = row.__payment;
+        saveBtn.addEventListener("click", async () => {
+            const newValue = textarea.value;
+
+            if (newValue === original) {
+                endEdit();
+                return;
+            }
+
+            if (newValue.length > REMARK_MAX_LEN) {
+                notify(
+                    "Remark is too long (max " + REMARK_MAX_LEN + " characters).",
+                    "error",
+                );
+                textarea.focus();
+                return;
+            }
+
+            saveBtn.disabled = true;
+            cancelBtn.disabled = true;
+            const prevLabel = saveBtn.textContent;
+            saveBtn.textContent = "Saving\u2026";
+
+            const ok = await saveRemark(payment, type, newValue);
+
+            saveBtn.disabled = false;
+            cancelBtn.disabled = false;
+            saveBtn.textContent = prevLabel;
+
+            if (!ok) return;
+
+            const current = readRemark(payment, type);
+            const isNowEmpty = current.trim() === "";
+            view.textContent = isNowEmpty ? "-" : current;
+            view.classList.toggle("is-empty", isNowEmpty);
+            original = current;
+
+            refreshRowRemarks(payment);
+            endEdit();
+        });
+
+        // Auto-open the editor when the user clicked the row preview that matches this remark type
+        if (opts.focus) {
+            setTimeout(() => {
+                try {
+                    beginEdit();
+                } catch (_) { }
+            }, 80);
+        }
+
+        return section;
+    }
+
+    // Open the remarks modal for a payment. `focusType` decides which section (if any) starts in edit mode
+    function openRemarksModal(payment, focusType) {
         if (!payment) return;
-        openRemarksModal(payment, remarkRow.dataset.type || "");
-      });
-    }
-  }
+        closeRemarksModal();
 
-  // ------------------------------------------------------------------ init
-  function init() {
-    if (!el.tbody) {
-      console.warn("[office payments] table body not found; aborting.");
-      return;
-    }
-    injectStyles();
-    hideNoData();
-    setupSearchClearButton();
-    bindEvents();
-    loadPayments();
-  }
+        const backdrop = document.createElement("div");
+        backdrop.className = "pmRemarksBackdrop";
+        backdrop.setAttribute("role", "dialog");
+        backdrop.setAttribute("aria-modal", "true");
+        backdrop.setAttribute("aria-labelledby", "pmRemarksTitle");
 
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", init);
-  } else {
-    init();
-  }
+        const card = document.createElement("div");
+        card.className = "pmRemarksCard";
+        backdrop.appendChild(card);
+
+        const header = document.createElement("div");
+        header.className = "pmRemarksHeader";
+        header.innerHTML =
+            '<h3 class="pmRemarksTitle" id="pmRemarksTitle">' +
+            "<span>Payment Remarks</span>" +
+            "</h3>";
+        const closeBtn = document.createElement("button");
+        closeBtn.type = "button";
+        closeBtn.className = "pmRemarksClose";
+        closeBtn.setAttribute("aria-label", "Close");
+        closeBtn.innerHTML = '<i class="fas fa-times"></i>';
+        closeBtn.addEventListener("click", closeRemarksModal);
+        header.appendChild(closeBtn);
+        card.appendChild(header);
+
+        const body = document.createElement("div");
+        body.className = "pmRemarksBody";
+
+        remarkTypes.forEach((type) => {
+            body.appendChild(
+                buildRemarkSection(payment, type, {
+                    focus: type === focusType,
+                }),
+            );
+        });
+
+        card.appendChild(body);
+
+        backdrop.addEventListener("click", (e) => {
+            if (e.target === backdrop) closeRemarksModal();
+        });
+
+        // Escape first cancels an active edit, then closes the modal
+        const onKey = (e) => {
+            if (e.key === "Escape") {
+                if (state.editingSection) {
+                    e.preventDefault();
+                    closeActiveEditor();
+                    return;
+                }
+                e.preventDefault();
+                closeRemarksModal();
+            }
+        };
+
+        document.body.appendChild(backdrop);
+        requestAnimationFrame(() => backdrop.classList.add("pmVisible"));
+
+        state.remarksModal = { backdrop, card, onKey };
+        document.addEventListener("keydown", onKey, false);
+
+        setTimeout(() => {
+            try {
+                closeBtn.focus({ preventScroll: true });
+            } catch (_) {
+                closeBtn.focus();
+            }
+        }, 60);
+    }
+
+    // Proof (image preview) modal
+    function closeProofModal() {
+        const modal = state.proofModal;
+        if (!modal) return;
+        modal.backdrop.classList.remove("pmVisible");
+        setTimeout(() => {
+            if (modal.backdrop.parentNode)
+                modal.backdrop.parentNode.removeChild(modal.backdrop);
+            if (state.proofModal === modal) state.proofModal = null;
+        }, 200);
+        document.removeEventListener("keydown", modal.onKey, false);
+    }
+
+    // Open the payment proof image in a lightbox. A spinner is shown while loading; a fallback message is shown if the image fails
+    function openProofModal(payment) {
+        if (!payment) return;
+        closeProofModal();
+
+        const url = String(payment.image_link || "").trim();
+        if (!url) {
+            notify("No proof image attached to this payment.", "error");
+            return;
+        }
+
+        const backdrop = document.createElement("div");
+        backdrop.className = "pmProofBackdrop";
+        backdrop.setAttribute("role", "dialog");
+        backdrop.setAttribute("aria-modal", "true");
+        backdrop.setAttribute("aria-labelledby", "pmProofTitle");
+
+        const card = document.createElement("div");
+        card.className = "pmProofCard";
+        backdrop.appendChild(card);
+
+        // Header
+        const header = document.createElement("div");
+        header.className = "pmProofHeader";
+        const title = document.createElement("h3");
+        title.className = "pmProofTitle";
+        title.id = "pmProofTitle";
+        title.innerHTML =
+            '<i class="fas fa-image"></i><span>Proof of Payment</span>';
+        header.appendChild(title);
+
+        const closeBtn = document.createElement("button");
+        closeBtn.type = "button";
+        closeBtn.className = "pmRemarksClose";
+        closeBtn.setAttribute("aria-label", "Close");
+        closeBtn.innerHTML = '<i class="fas fa-times"></i>';
+        closeBtn.addEventListener("click", closeProofModal);
+        header.appendChild(closeBtn);
+        card.appendChild(header);
+
+        // Image area [with loading spinner and broken-image fallback]
+        const imgWrap = document.createElement("div");
+        imgWrap.className = "pmProofImageWrap";
+
+        const spinner = document.createElement("div");
+        spinner.className = "pmProofSpinner";
+        spinner.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        imgWrap.appendChild(spinner);
+
+        const img = document.createElement("img");
+        img.alt = "Proof of payment";
+        img.style.display = "none";
+
+        img.addEventListener(
+            "load",
+            () => {
+                spinner.remove();
+                img.style.display = "";
+            },
+            { once: true },
+        );
+
+        img.addEventListener(
+            "error",
+            () => {
+                spinner.remove();
+                img.remove();
+                const broken = document.createElement("div");
+                broken.className = "pmProofBrokenBig";
+                broken.innerHTML =
+                    '<i class="fas fa-exclamation-triangle"></i>' +
+                    "<strong>Image failed to load</strong>" +
+                    "<span>The image at this URL could not be loaded. Check the URL below or open it in a new tab.</span>";
+                imgWrap.appendChild(broken);
+            },
+            { once: true },
+        );
+
+        img.src = url;
+        imgWrap.appendChild(img);
+        card.appendChild(imgWrap);
+
+        // URL row with copy button
+        const urlRow = document.createElement("div");
+        urlRow.className = "pmProofUrlRow";
+
+        const urlLabel = document.createElement("span");
+        urlLabel.className = "pmProofUrlLabel";
+        urlLabel.textContent = "URL";
+
+        const urlLink = document.createElement("a");
+        urlLink.className = "pmProofUrlLink";
+        urlLink.href = url;
+        urlLink.target = "_blank";
+        urlLink.rel = "noopener noreferrer";
+        urlLink.textContent = url;
+        urlLink.title = url;
+
+        const copyBtn = document.createElement("button");
+        copyBtn.type = "button";
+        copyBtn.className = "pmProofCopyBtn";
+        copyBtn.title = "Copy URL";
+        copyBtn.setAttribute("aria-label", "Copy URL");
+        copyBtn.innerHTML = '<i class="fas fa-copy"></i>';
+
+        const flashCopied = () => {
+            copyBtn.classList.add("is-copied");
+            copyBtn.innerHTML = '<i class="fas fa-check"></i>';
+            setTimeout(() => {
+                copyBtn.classList.remove("is-copied");
+                copyBtn.innerHTML = '<i class="fas fa-copy"></i>';
+            }, 1400);
+        };
+
+        copyBtn.addEventListener("click", async () => {
+            try {
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    await navigator.clipboard.writeText(url);
+                    flashCopied();
+                    return;
+                }
+            } catch (_) {
+                // Fall through
+            }
+
+            // Legacy fallback for browsers without the Clipboard API
+            try {
+                const ta = document.createElement("textarea");
+                ta.value = url;
+                ta.setAttribute("readonly", "");
+                ta.style.position = "fixed";
+                ta.style.top = "-1000px";
+                ta.style.opacity = "0";
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand("copy");
+                document.body.removeChild(ta);
+                flashCopied();
+            } catch (_) {
+                notify("Could not copy URL.", "error");
+            }
+        });
+
+        urlRow.appendChild(urlLabel);
+        urlRow.appendChild(urlLink);
+        urlRow.appendChild(copyBtn);
+        card.appendChild(urlRow);
+
+        // Close handlers
+        const onKey = (e) => {
+            if (e.key === "Escape") {
+                e.preventDefault();
+                closeProofModal();
+            }
+        };
+
+        backdrop.addEventListener("click", (e) => {
+            if (e.target === backdrop) closeProofModal();
+        });
+
+        document.body.appendChild(backdrop);
+        requestAnimationFrame(() => backdrop.classList.add("pmVisible"));
+
+        state.proofModal = { backdrop, card, onKey };
+        document.addEventListener("keydown", onKey, false);
+
+        setTimeout(() => {
+            try {
+                closeBtn.focus({ preventScroll: true });
+            } catch (_) {
+                closeBtn.focus();
+            }
+        }, 60);
+    }
+
+    // Network
+    // Build the query string sent to the API [page, limit, search, status]
+    function buildQuery() {
+        const params = new URLSearchParams();
+        params.set("page", String(state.page));
+        params.set("limit", String(PER_PAGE));
+
+        if (state.search && state.search.length >= SEARCH_MIN_LEN) {
+            params.set("search_term", state.search);
+        }
+        if (state.status && state.status !== "all") {
+            params.set("status", state.status);
+        }
+        return params.toString();
+    }
+
+    // Fetch the current page of payments. `requestId` guards against stale responses overwriting newer ones when searches change fast
+    async function loadPayments() {
+        const reqId = ++state.requestId;
+        state.loading = true;
+        renderLoading();
+
+        try {
+            const res = await fetchWithTimeout(API_URL + "?" + buildQuery(), {
+                method: "GET",
+                credentials: "same-origin",
+                headers: { Accept: "application/json" },
+            });
+
+            const json = await res.json().catch(() => null);
+
+            if (!res.ok || (json && json.success === false)) {
+                const msg =
+                    (json && (json.message || json.error)) ||
+                    "Request failed (HTTP " + res.status + ")";
+                throw new Error(msg);
+            }
+            if (reqId !== state.requestId) return;
+
+            const payload = unwrap(json);
+            renderRows(payload.payments);
+            renderPagination(
+                payload.pagination || { total_pages: 1, current_page: 1 },
+            );
+        } catch (err) {
+            if (reqId !== state.requestId) return;
+            console.error("[office payments] load error:", err);
+            const msg = isAbortError(err)
+                ? "Loading payments timed out. Please try again."
+                : friendlyMessage(err, "Unable to load payment records.");
+            renderError(msg);
+        } finally {
+            if (reqId === state.requestId) state.loading = false;
+        }
+    }
+
+    // Persist a remark edit for the given payment. On success, also updates the local payment object so the UI reflects the change
+    async function saveRemark(payment, type, value) {
+        try {
+            const res = await fetchWithTimeout(
+                API_URL + "?path_info=" + encodeURIComponent(payment.payment_id),
+                {
+                    method: "PUT",
+                    credentials: "same-origin",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Accept: "application/json",
+                    },
+                    body: JSON.stringify({
+                        action: "edit_remark",
+                        remark_type: type,
+                        remark_value: value,
+                    }),
+                },
+            );
+
+            const json = await res.json().catch(() => null);
+            if (!res.ok || (json && json.success === false)) {
+                throw new Error(
+                    (json && (json.message || json.error)) ||
+                    "Request failed (HTTP " + res.status + ")",
+                );
+            }
+
+            const key = remarkField(type);
+            const v = (value || "").trim();
+            payment[key] = v === "" ? null : v;
+
+            notify(
+                (json && json.message) || remarkLabelFor(type) + " remark saved.",
+                "success",
+            );
+            return true;
+        } catch (err) {
+            console.error("[office payments] save remark error:", err);
+            const msg = isAbortError(err)
+                ? "Saving remark timed out. Please try again."
+                : friendlyMessage(err, "Failed to save remark.");
+            notify(msg, "error");
+            return false;
+        }
+    }
+
+    // Run a confirm / unconfirm action. Asks for confirmation first, then dims the row while the request is in flight, and updates the row in place on success
+    async function runAction(payment, action, btn) {
+        if (btn && btn.dataset.confirming === "1") return;
+
+        const prompts = {
+            confirm_office: {
+                message: "Confirm this payment was received by the office?",
+                title: "Confirm office receipt?",
+                confirmText: "Confirm",
+            },
+            unconfirm_office: {
+                message:
+                    "Undo the office verification for this payment? It will return to \u201CPending \u2013 Office\u201D.",
+                title: "Undo office verification?",
+                confirmText: "Undo",
+                danger: true,
+            },
+        };
+
+        const cfg = prompts[action] || {
+            message: "Proceed?",
+            title: "Confirm action?",
+            confirmText: "Confirm",
+        };
+
+        if (btn) btn.dataset.confirming = "1";
+        let ok = false;
+        try {
+            ok = await askConfirm(cfg.message, {
+                title: cfg.title,
+                confirmText: cfg.confirmText,
+                cancelText: "Cancel",
+                danger: cfg.danger || false,
+            });
+        } finally {
+            if (btn) delete btn.dataset.confirming;
+        }
+        if (!ok) return;
+
+        const restore = enterRowBusy(btn);
+
+        let succeeded = false;
+        try {
+            const res = await fetchWithTimeout(
+                API_URL + "?path_info=" + encodeURIComponent(payment.payment_id),
+                {
+                    method: "PUT",
+                    credentials: "same-origin",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Accept: "application/json",
+                    },
+                    body: JSON.stringify({ action: action }),
+                },
+            );
+
+            const json = await res.json().catch(() => null);
+            if (!res.ok || (json && json.success === false)) {
+                throw new Error(
+                    (json && (json.message || json.error)) ||
+                    "Request failed (HTTP " + res.status + ")",
+                );
+            }
+            notify((json && json.message) || "Action completed.", "success");
+
+            // Optimistic local update — office only toggles office_confirmed
+            if (action === "confirm_office") payment.office_confirmed = 1;
+            if (action === "unconfirm_office") payment.office_confirmed = 0;
+
+            refreshRowAfterAction(payment);
+            succeeded = true;
+        } catch (err) {
+            console.error("[office payments] action error:", err);
+            const msg = isAbortError(err)
+                ? "Request timed out. The server may be busy \u2014 please try again."
+                : friendlyMessage(err, "Action failed.");
+            notify(msg, "error");
+        } finally {
+            if (!succeeded) restore();
+        }
+    }
+
+    // Search clear button
+    // Attach a small "x" button inside the search field. It only becomes visible when the field has content
+    function setupSearchClearButton() {
+        const input = el.search;
+        if (!input) return;
+
+        const parent = input.parentElement;
+        if (!parent) return;
+
+        // The button is absolutely positioned inside the input's wrapper, so the wrapper needs a positioning context
+        if (window.getComputedStyle(parent).position === "static") {
+            parent.style.position = "relative";
+        }
+
+        // Reserve room so typed text never slides under the clear button
+        input.style.paddingRight = "30px";
+        input.classList.add("pmSearchInputWithClear");
+
+        const clearBtn = document.createElement("button");
+        clearBtn.type = "button";
+        clearBtn.className = "pmSearchClearBtn";
+        clearBtn.setAttribute("aria-label", "Clear search");
+        clearBtn.title = "Clear search";
+        clearBtn.innerHTML = '<i class="fas fa-times"></i>';
+
+        const updateVisibility = () => {
+            if (input.value.length > 0) {
+                clearBtn.classList.add("is-visible");
+            } else {
+                clearBtn.classList.remove("is-visible");
+            }
+        };
+
+        clearBtn.addEventListener("click", () => {
+            input.value = "";
+            updateVisibility();
+
+            const hadSearch = state.search !== "";
+            state.search = "";
+            state.page = 1;
+            if (hadSearch) loadPayments();
+
+            input.focus();
+        });
+
+        input.addEventListener("input", updateVisibility);
+
+        parent.appendChild(clearBtn);
+        updateVisibility();
+    }
+
+    // Event bindings
+    let eventsBound = false;
+
+    function bindEvents() {
+        if (eventsBound) return;
+        eventsBound = true;
+
+        // Live search (debounced). Typing fewer than SEARCH_MIN_LEN characters is simply ignored here — the "too short" warning only fires on Enter / Filter
+        if (el.search) {
+            el.search.addEventListener(
+                "input",
+                debounce((e) => {
+                    const v = e.target.value.trim();
+                    if (v.length > 0 && v.length < SEARCH_MIN_LEN) return;
+                    if (v === state.search) return;
+                    state.search = v;
+                    state.page = 1;
+                    loadPayments();
+                }, SEARCH_DEBOUNCE_MS),
+            );
+
+            el.search.addEventListener("keydown", (e) => {
+                if (e.key === "Enter") {
+                    e.preventDefault();
+                    const v = el.search.value.trim();
+                    if (v.length > 0 && v.length < SEARCH_MIN_LEN) {
+                        notify("Too short to search", "warning");
+                        return;
+                    }
+                    state.search = v;
+                    state.page = 1;
+                    loadPayments();
+                }
+            });
+        }
+
+        if (el.statusFilter) {
+            el.statusFilter.addEventListener("change", () => {
+                state.status = el.statusFilter.value || "all";
+                state.page = 1;
+                loadPayments();
+            });
+        }
+
+        if (el.filterBtn) {
+            el.filterBtn.addEventListener("click", () => {
+                if (el.search) {
+                    const v = el.search.value.trim();
+                    if (v.length > 0 && v.length < SEARCH_MIN_LEN) {
+                        notify("Too short to search", "warning");
+                        return;
+                    }
+                    state.search = v;
+                }
+                if (el.statusFilter) state.status = el.statusFilter.value || "all";
+                state.page = 1;
+                loadPayments();
+            });
+        }
+
+        if (el.prevBtn) {
+            el.prevBtn.addEventListener("click", () => {
+                if (state.page <= 1) return;
+                state.page -= 1;
+                loadPayments();
+            });
+        }
+
+        if (el.nextBtn) {
+            el.nextBtn.addEventListener("click", () => {
+                if (state.page >= state.totalPages) return;
+                state.page += 1;
+                loadPayments();
+            });
+        }
+
+        // Delegated listeners on the table body. Using delegation keeps these handlers working after rows are re-rendered
+        if (el.tbody) {
+            // Broken-image detection [capture phase - `error` doesn't bubble]
+            el.tbody.addEventListener(
+                "error",
+                (e) => {
+                    const img = e.target;
+                    if (!img || img.tagName !== "IMG") return;
+                    if (!img.classList.contains("pmProofThumb")) return;
+                    const cell = img.closest(".pmProofCell");
+                    if (cell) cell.classList.add("is-broken");
+                },
+                true,
+            );
+
+            el.tbody.addEventListener("click", (e) => {
+                // proof preview
+                const proofCell = e.target.closest('[data-action="proof"]');
+                if (proofCell && el.tbody.contains(proofCell)) {
+                    e.preventDefault();
+                    const row = proofCell.closest("tr");
+                    if (!row || row.classList.contains("pmRowBusy")) return;
+                    const payment = row.__payment;
+                    if (!payment) return;
+                    openProofModal(payment);
+                    return;
+                }
+
+                // SMS
+                const smsLink = e.target.closest('[data-action="sms"]');
+                if (smsLink && el.tbody.contains(smsLink)) {
+                    e.preventDefault();
+                    const row = smsLink.closest("tr");
+                    if (!row || row.classList.contains("pmRowBusy")) return;
+                    const payment = row.__payment;
+                    if (!payment) return;
+
+                    const phone = (payment.payers_phone_number || "").trim();
+                    if (!phone) {
+                        notify("This record has no phone number.", "error");
+                        return;
+                    }
+                    openSms(phone, buildVerificationMessage(payment));
+                    return;
+                }
+
+                // remarks
+                const remarkRow = e.target.closest('[data-action="remark"]');
+                if (remarkRow && el.tbody.contains(remarkRow)) {
+                    e.preventDefault();
+                    const row = remarkRow.closest("tr");
+                    if (!row || row.classList.contains("pmRowBusy")) return;
+                    const payment = row.__payment;
+                    if (!payment) return;
+                    openRemarksModal(payment, remarkRow.dataset.type || "");
+                }
+            });
+
+            // Keyboard support for the proof and remarks triggers
+            el.tbody.addEventListener("keydown", (e) => {
+                if (e.key !== "Enter" && e.key !== " ") return;
+
+                const proofCell = e.target.closest('[data-action="proof"]');
+                if (proofCell && el.tbody.contains(proofCell)) {
+                    e.preventDefault();
+                    const row = proofCell.closest("tr");
+                    if (!row || row.classList.contains("pmRowBusy")) return;
+                    const payment = row.__payment;
+                    if (!payment) return;
+                    openProofModal(payment);
+                    return;
+                }
+
+                const remarkRow = e.target.closest('[data-action="remark"]');
+                if (!remarkRow || !el.tbody.contains(remarkRow)) return;
+                e.preventDefault();
+                const row = remarkRow.closest("tr");
+                if (!row || row.classList.contains("pmRowBusy")) return;
+                const payment = row.__payment;
+                if (!payment) return;
+                openRemarksModal(payment, remarkRow.dataset.type || "");
+            });
+        }
+    }
+
+    function init() {
+        if (!el.tbody) {
+            console.warn("[office payments] table body not found; aborting.");
+            return;
+        }
+        injectStyles();
+        hideNoData();
+        setupSearchClearButton();
+        bindEvents();
+        loadPayments();
+    }
+
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", init);
+    } else {
+        init();
+    }
 })();
