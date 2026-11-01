@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Memoria - 500</title>
 
-    <meta name="description" content="An unexpected server error has occurred. Return to the Memoria: Mandaue City Public Cemetery Management System dashboard.">
+    <meta name="description" content="An unexpected server error has occurred. Return to the Memoria: Cemetery Management System dashboard.">
     <meta name="author" content="Team DND">
     <meta name="theme-color" content="#0f172a">
     <meta name="robots" content="noindex, follow">
@@ -16,10 +16,11 @@
     <meta property="og:type" content="website">
     <meta property="og:url" content="/">
     <meta property="og:site_name" content="Memoria: Mandaue City Public Cemetery Management System">
-    <meta property="og:title" content="500 — Server Error | Memoria: Mandaue City Public Cemetery Management System">
-    <meta property="og:description" content="An unexpected server error has occurred. Return to the Memoria: Mandaue City Public Cemetery Management System dashboard.">
+    <meta property="og:title" content="500 — Server Error | Memoria: Cemetery Management System">
+    <meta property="og:description" content="An unexpected server error has occurred. Return to the Memoria: Cemetery Management System dashboard.">
 
     <link rel="stylesheet" href="assets/css/root.css">
+    <link rel="stylesheet" href="api/rootcolors.php" onerror="console.error('Failed to load custom colors. Using default theme.')">
 
     <style>
         *,
@@ -344,7 +345,7 @@
     <!-- Header -->
     <header class="site-header">
         <a href="/" class="brand" data-home-link
-            aria-label="Memoria: Mandaue City Public Cemetery Management System — Home">
+            aria-label="Memoria: Cemetery Management System — Home">
             <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
                 <path d="M6.5 28V14.5a9.5 9.5 0 0 1 19 0V28" fill="none" stroke="currentColor" stroke-width="2"
                     stroke-linejoin="round" stroke-linecap="round">
@@ -354,12 +355,12 @@
 
             <span class="brand-text">
                 <span class="brand-name">Memoria</span>
-                <span class="brand-sub">Mandaue City Public Cemetery</span>
+                <span class="brand-sub" id="cemetery_name">Mandaue City Public Cemetery</span>
             </span>
         </a>
 
         <p class="header-note">
-            Mandaue City Public Cemetery &middot; Records Office
+            <span id="cemetery_name_1">Mandaue City Public Cemetery</span> &middot; Records Office
         </p>
     </header>
 
@@ -440,10 +441,14 @@
 
     <!-- Footer -->
     <footer class="site-footer">
-        &copy; <span id="year">2025</span> Memoria &middot; Mandaue City Public
-        Cemetery Management System
+        &copy; <span id="year">2025</span> Memoria &middot; <span id="cemetery_name_3">Mandaue City Public
+        Cemetery</span> Management System
     </footer>
 
+    <script src="assets/js/load_site_contents.js"></script>
+    <script>        
+        loadSiteContent();
+    </script>
     <script>
         (function resolveHomeLinks() {
             var links = document.querySelectorAll("[data-home-link]");
