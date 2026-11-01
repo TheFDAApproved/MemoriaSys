@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Memoria - 505</title>
+
+    <meta name="description" content="An unexpected server error has occurred. Return to the Memoria: Mandaue City Public Cemetery Management System dashboard." />
+    <meta name="author" content="Team DND" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="robots" content="noindex, follow" />
+
+    <meta name="geo.region" content="PH-CEB" />
+    <meta name="geo.placename" content="Mandaue City" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="/" />
+    <meta property="og:site_name" content="Memoria: Mandaue City Public Cemetery Management System" />
+    <meta property="og:title" content="505 — Server Error | Memoria: Mandaue City Public Cemetery Management System" />
+    <meta property="og:description" content="An unexpected server error has occurred. Return to the Memoria: Mandaue City Public Cemetery Management System dashboard." />
+
+    <link rel="stylesheet" href="assets/css/root.css">
+
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
+
+        html {
+            height: 100%;
+            -webkit-text-size-adjust: 100%;
+            text-size-adjust: 100%;
+        }
+
+        body {
+            margin: 0;
+            height: 100vh;
+            height: 100dvh;
+            min-height: 0;
+            max-height: 100vh;
+            max-height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            color: #475467;
+            background-color: #ffffff;
+            background-image: radial-gradient(60rem 30rem at 50% -12%,
+                    #ffffff 0%,
+                    rgba(255, 255, 255, 0) 70%);
+            background-repeat: no-repeat;
+            -webkit-font-smoothing: antialiased;
+            text-rendering: optimizeLegibility;
+        }
+
+        /* Header */
+        .site-header {
+            flex: 0 0 auto;
+            width: 100%;
+            max-width: 1180px;
+            min-width: 0;
+            margin: 0 auto;
+            padding: clamp(6px, 1.8vh, 20px) clamp(12px, 4vw, 40px);
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 14px;
+        }
+
+        .brand {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            min-width: 0;
+            text-decoration: none;
+            color: var(--mainColor);
+            border-radius: 8px;
+            transition: opacity 0.18s ease;
+        }
+
+        .brand:hover {
+            opacity: 0.75;
+        }
+
+        .brand:focus-visible {
+            outline: 2px solid var(--mainColor);
+            outline-offset: 4px;
+        }
+
+        .brand-mark {
+            width: 30px;
+            height: 30px;
+            flex: none;
+            color: var(--mainColor);
+        }
+
+        .brand-text {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+        }
+
+        .brand-name {
+            font-family: "Iowan Old Style", "Palatino Linotype", Palatino,
+                "Book Antiqua", Georgia, "Times New Roman", serif;
+            font-size: 1.1rem;
+            font-weight: 600;
+            line-height: 1.05;
+            letter-spacing: 0.01em;
+        }
+
+        .brand-sub {
+            margin-top: 3px;
+            font-size: 0.56rem;
+            font-weight: 600;
+            letter-spacing: 0.14em;
+            text-transform: uppercase;
+            color: #98a2b3;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .header-note {
+            margin: 0;
+            font-size: 0.75rem;
+            font-weight: 500;
+            letter-spacing: 0.04em;
+            color: #98a2b3;
+            text-align: right;
+        }
+
+        /* Main / Card */
+        .page {
+            flex: 1 1 auto;
+            min-height: 0;
+            z-index: 10;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+            padding: clamp(4px, 1.6vh, 24px) clamp(12px, 4vw, 32px);
+            overflow-x: hidden;
+            overflow-y: auto;
+        }
+
+        .card {
+            width: 100%;
+            max-width: 560px;
+            min-width: 0;
+            margin-block: auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: clamp(12px, 2.6vh, 34px) clamp(16px, 4vw, 40px);
+            text-align: center;
+            animation: cardIn 0.5s ease-out both;
+        }
+
+        @keyframes cardIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* illustration */
+        .illustration {
+            display: block;
+            width: min(100%, 420px);
+            max-width: 100%;
+            height: auto;
+            max-height: 220px;
+            max-height: min(35dvh, 220px);
+            flex: 0 1 auto;
+            margin: 0 auto clamp(10px, 2vh, 24px);
+        }
+
+        /* Outlined 505 Text */
+        .error-code {
+            font-family: system-ui, -apple-system, sans-serif;
+            font-size: clamp(4.5rem, 12vw, 7rem);
+            font-weight: 800;
+            line-height: 1;
+            letter-spacing: 0.04em;
+            color: transparent;
+            -webkit-text-stroke: 2px var(--mainColor);
+            margin: 0 0 clamp(10px, 2vh, 16px);
+        }
+
+        /* Fallback for browsers that don't support -webkit-text-stroke */
+        @supports not (-webkit-text-stroke: 1px black) {
+            .error-code {
+                color: var(--mainColor);
+            }
+        }
+
+        /* Heading & Subheading */
+        .error-title {
+            font-size: clamp(0.95rem, 0.9rem + 0.2vw, 1.1rem);
+            font-weight: 600;
+            color: #667085;
+            margin: 0 0 6px;
+        }
+
+        .error-subtitle {
+            font-size: clamp(0.8rem, 0.76rem + 0.2vw, 0.9rem);
+            font-weight: 500;
+            color: #98a2b3;
+            margin: 0;
+        }
+
+        /* Footer */
+        .site-footer {
+            flex: 0 0 auto;
+            padding: clamp(6px, 1.6vh, 18px) clamp(12px, 4vw, 40px);
+            z-index: 10;
+
+            text-align: center;
+            font-size: clamp(0.64rem, 0.62rem + 0.1vw, 0.72rem);
+            letter-spacing: 0.03em;
+            color: #98a2b3;
+            overflow-wrap: break-word;
+        }
+
+        @media (max-width: 720px) {
+            .header-note {
+                display: none;
+            }
+        }
+
+        @media (max-width: 520px) {
+            .brand-sub {
+                display: none;
+            }
+        }
+
+        @media (max-width: 400px) {
+            .site-header {
+                padding-inline: 12px;
+            }
+
+            .page {
+                padding-inline: 10px;
+            }
+        }
+
+        @media (max-height: 700px) {
+            .illustration {
+                max-height: min(28dvh, 160px);
+            }
+        }
+
+        @media (max-height: 600px) {
+            .illustration {
+                max-height: min(24dvh, 120px);
+            }
+
+            .error-code {
+                font-size: clamp(3.5rem, 10vw, 5rem);
+            }
+
+            .site-header {
+                padding-block: clamp(6px, 1.4vh, 14px);
+            }
+        }
+
+        @media (max-height: 460px) {
+
+            .brand-sub,
+            .header-note {
+                display: none;
+            }
+
+            .illustration {
+                max-height: min(20dvh, 80px);
+            }
+
+            .error-code {
+                font-size: 3rem;
+            }
+
+            .error-title {
+                font-size: 0.85rem;
+            }
+
+            .site-footer {
+                padding-block: 6px;
+                font-size: 0.68rem;
+            }
+        }
+
+        @media (max-height: 380px) {
+            .site-header {
+                padding-block: 4px;
+            }
+
+            .page {
+                padding-block: 2px;
+            }
+
+            .illustration {
+                max-height: min(18dvh, 60px);
+                margin-bottom: 4px;
+            }
+
+            .error-code {
+                font-size: 2.5rem;
+                margin-bottom: 6px;
+            }
+
+            .site-footer {
+                padding-block: 4px;
+                font-size: 0.62rem;
+            }
+        }
+
+        @media (min-width: 1400px) {
+            .card {
+                max-width: 600px;
+            }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+
+            *,
+            *::before,
+            *::after {
+                animation-duration: 0.001ms !important;
+                animation-iteration-count: 1 !important;
+                transition-duration: 0.001ms !important;
+            }
+        }
+    </style>
+</head>
+<body data-app-root="">
+    <!-- Header -->
+    <header class="site-header">
+        <a href="/" class="brand" data-home-link
+            aria-label="Memoria: Mandaue City Public Cemetery Management System — Home">
+            <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
+                <path d="M6.5 28V14.5a9.5 9.5 0 0 1 19 0V28" fill="none" stroke="currentColor" stroke-width="2"
+                    stroke-linejoin="round" stroke-linecap="round" />
+                <path d="M16 24.5V16" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                <path d="M16 19.5c-3.4 0-5.8-2.3-5.8-5.4 3.4-.3 5.8 2 5.8 5.4Z" fill="currentColor" />
+            </svg>
+
+            <span class="brand-text">
+                <span class="brand-name">Memoria</span>
+                <span class="brand-sub">Mandaue City Public Cemetery</span>
+            </span>
+        </a>
+
+        <p class="header-note">
+            Mandaue City Public Cemetery &middot; Records Office
+        </p>
+    </header>
+
+    <!-- Main -->
+    <main class="page">
+        <section class="card" aria-labelledby="error-title">
+
+            <!-- Recreated Custom Cemetery SVG Illustration (Ground Removed) -->
+            <svg class="illustration" viewBox="0 0 500 230" preserveAspectRatio="xMidYMid meet" role="img"
+                aria-label="Minimalist line art illustration of a cemetery with tombstones, a fence, and a tree">
+                <g stroke="var(--mainColor)" fill="none" stroke-width="2.5" stroke-linecap="round"
+                    stroke-linejoin="round">
+                    <!-- Clouds -->
+                    <!-- Left Cloud -->
+                    <path d="M 80 90 Q 100 75 120 80 Q 140 70 160 85 H 70" />
+                    <!-- Right Cloud (overlapping moon) -->
+                    <path d="M 310 80 Q 330 65 350 75 Q 370 65 390 85 H 300" />
+
+                    <!-- Moon Outline (behind right cloud) -->
+                    <path d="M 385 50 A 20 20 0 1 1 365 80" stroke-width="1.5" opacity="0.6" />
+
+                    <!-- Stars/Dots -->
+                    <circle cx="130" cy="45" r="2.5" fill="var(--mainColor)" stroke="none" />
+                    <circle cx="305" cy="40" r="2.5" fill="var(--mainColor)" stroke="none" />
+                    <circle cx="400" cy="115" r="2.5" fill="var(--mainColor)" stroke="none" />
+                    <circle cx="95" cy="140" r="2.5" fill="var(--mainColor)" stroke="none" />
+
+                    <!-- Fence (Left) -->
+                    <path
+                        d="M 65 190 V 160 M 80 190 V 160 M 95 190 V 160 M 110 190 V 160 M 125 190 V 160 M 140 190 V 160"
+                        stroke-width="1.5" />
+                    <!-- Fence Rails -->
+                    <path d="M 60 170 H 145 M 60 182 H 145" stroke-width="1.5" />
+
+                    <!-- Tombstone 1 (Obelisk, Left) -->
+                    <path d="M 165 195 V 140 L 175 115 L 185 140 V 195 Z" />
+                    <path d="M 160 195 H 190 V 200 H 160 Z" />
+                    <path d="M 155 200 H 195 V 205 H 155 Z" />
+                    <circle cx="175" cy="105" r="2.5" fill="var(--mainColor)" stroke="none" />
+
+                    <!-- Tombstone 2 (Center, Rounded with Cross) -->
+                    <path d="M 210 195 V 135 A 25 25 0 0 1 260 135 V 195 Z" />
+                    <path d="M 235 150 V 175" stroke-width="3" />
+                    <path d="M 222 160 H 248" stroke-width="3" />
+                    <path d="M 205 195 H 265 V 200 H 205 Z" />
+
+                    <!-- Center Path / Tripod -->
+                    <path d="M 235 200 V 225" />
+                    <path d="M 235 200 L 215 225" />
+                    <path d="M 235 200 L 255 225" />
+
+                    <!-- Tombstone 3 (Right, Smaller Rounded) -->
+                    <path d="M 290 195 V 160 A 18 18 0 0 1 326 160 V 195 Z" />
+                    <!-- Inscription Line -->
+                    <path d="M 300 175 H 316" stroke-width="2.5" />
+                    <path d="M 285 195 H 331 V 200 H 285 Z" />
+
+                    <!-- Tree (Far Right) -->
+                    <path d="M 355 195 V 155" />
+                    <!-- Palm/Willow Leaves -->
+                    <path d="M 355 155 Q 340 145 335 135 Q 350 140 355 150" />
+                    <path d="M 355 155 Q 370 145 375 135 Q 360 140 355 150" />
+                    <path d="M 355 155 Q 345 160 335 165 Q 350 165 355 160" />
+                    <path d="M 355 155 Q 365 160 375 165 Q 360 165 355 160" />
+                    <path d="M 355 150 Q 355 130 365 125 Q 360 140 355 150" />
+                </g>
+            </svg>
+
+            <!-- Outlined 505 Text -->
+            <h1 class="error-code" id="error-title">505</h1>
+
+            <!-- Text below -->
+            <p class="error-title">Sorry, something went technically wrong</p>
+            <p class="error-subtitle">Server Error</p>
+
+        </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="site-footer">
+        &copy; <span id="year">2025</span> Memoria &middot; Mandaue City Public
+        Cemetery Management System
+    </footer>
+
+    <script>
+        (function resolveHomeLinks() {
+            var links = document.querySelectorAll("[data-home-link]");
+            if (!links.length) return;
+
+            var href = "/";
+            var override = document.body.getAttribute("data-app-root");
+
+            if (override) {
+                href = override;
+            } else if (location.protocol === "file:") {
+                href = "index.html";
+            } else {
+                var segments = location.pathname.split("/").filter(Boolean);
+
+                if (segments.length === 0) {
+                    href = "/";
+                } else {
+                    var first = segments[0];
+                    var firstLooksLikeFile = /\.[a-z0-9]{1,8}$/i.test(first);
+
+                    if (segments.length === 1 && firstLooksLikeFile) {
+                        href = "/";
+                    } else {
+                        var host = location.hostname;
+                        var isLocal =
+                            host === "localhost" ||
+                            host === "127.0.0.1" ||
+                            host === "[::1]" ||
+                            host === "0.0.0.0" ||
+                            /^192\.168\.\d{1,3}\.\d{1,3}$/.test(host) ||
+                            /^10\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host) ||
+                            /^172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}$/.test(host);
+
+                        href = isLocal ? "/" + first + "/" : "/";
+                    }
+                }
+            }
+
+            for (var i = 0; i < links.length; i++) {
+                links[i].setAttribute("href", href);
+            }
+        })();
+
+        (function setYear() {
+            var year = document.getElementById("year");
+            if (year) {
+                year.textContent = String(new Date().getFullYear());
+            }
+        })();
+    </script>
+</body>
+</html>
