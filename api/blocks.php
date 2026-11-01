@@ -33,7 +33,7 @@ $rawData = array_merge(
 
 const BLOCK_NAME_MAX = 42;
 
-const MAX_GRAVES_PER_BLOCK = 15000;
+const MAX_GRAVES_PER_BLOCK = 676;
 
 const GRAVE_INSERT_CHUNK = 1000;
 
@@ -141,9 +141,12 @@ WHERE $where
 
 function buildGraveCode(string $blockName, int $row, int $col): string
 {
+    // Convert 1 to 'A', 2 to 'B', etc.
+    $rowLetter = ($row >= 1 && $row <= 26) ? chr(64 + $row) : $row;
+    
     return $blockName
-        . '-' . str_pad((string) $row, 2, '0', STR_PAD_LEFT)
-        . '-' . str_pad((string) $col, 2, '0', STR_PAD_LEFT);
+        . '-' . $rowLetter
+        . '-' . $col;
 }
 
 function summariseUnsafe(array $unsafe, int $max = 8): string
@@ -165,9 +168,7 @@ function normalizeBlockRow(array $row, bool $withCounts = false): array
     if (array_key_exists('cols', $row) && $row['cols'] !== null) {
         $row['cols'] = (int) $row['cols'];
     }
-    if (array_key_exists('custom', $row)) {
-        $row['custom'] = (bool) $row['custom'];
-    }
+
     if ($withCounts) {
         foreach (['total_graves', 'vacant', 'occupied', 'other'] as $k) {
             if (array_key_exists($k, $row)) {
@@ -252,7 +253,7 @@ WHERE block_id = ? AND deleted_at IS NULL
             // Public / Grounds: rendering fields. No remarks, no audit columns
             $blockStmt = $pdo->prepare("
 SELECT block_id, block_name, block_type, coordinates,
-image_link, `rows`, `cols`, custom
+image_link, `rows`, `cols`, rotation
 FROM blocks
 WHERE block_id = ? AND deleted_at IS NULL
 ");
@@ -426,7 +427,7 @@ ORDER BY b.block_id
         $sql = "
 SELECT
 b.block_id, b.block_name, b.block_type, b.coordinates,
-b.image_link, b.`rows`, b.`cols`, b.custom, b.rotation
+b.image_link, b.`rows`, b.`cols`, b.rotation
 FROM blocks b
 WHERE b.deleted_at IS NULL
 $searchSQL
@@ -472,7 +473,6 @@ if ($method === 'POST') {
     $coordinates = $rawData['coordinates'] ?? null;
     $remarks     = trim($rawData['remarks']    ?? '');
     $image_link  = trim($rawData['image_link'] ?? '');
-    $custom      = !empty($rawData['custom']) ? 1 : 0;
 
     // Enforce the length cap so grave_code never overflows VARCHAR(50).
     if (mb_strlen($blockName) > BLOCK_NAME_MAX) {
@@ -502,8 +502,8 @@ WHERE block_name = ? AND deleted_at IS NULL
     if ($rows < 0 || $cols < 0) {
         Response::error("rows and cols must be non-negative integers.", 400);
     }
-    if ($rows > 500 || $cols > 500) {
-        Response::error("rows and cols cannot exceed 500.", 400);
+    if ($rows > 26 || $cols > 26) {
+        Response::error("rows and cols cannot exceed 26 (A-Z).", 400);
     }
 
     $totalGraves = $rows * $cols;
@@ -521,8 +521,8 @@ WHERE block_name = ? AND deleted_at IS NULL
         $stmt = $pdo->prepare("
 INSERT INTO blocks
 (block_name, block_type, coordinates, remarks, image_link,
-`rows`, `cols`, custom, rotation, created_by, updated_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+`rows`, `cols`, rotation, created_by, updated_by)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ");
         $stmt->execute([
             $blockName,
@@ -532,7 +532,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             $image_link,
             $rows,
             $cols,
-            $custom,
             $rawData['rotation'] ?? 0,
             $userData['user_id'],
             $userData['user_id'],
@@ -574,12 +573,12 @@ if ($method === 'PUT') {
     if ($newRows !== null && $newRows < 0) Response::error("rows cannot be negative.", 400);
     if ($newCols !== null && $newCols < 0) Response::error("cols cannot be negative.", 400);
 
-    $maxAllowed = 500;
+    $maxAllowed = 26;
     if (($newRows !== null && $newRows > $maxAllowed) || ($newCols !== null && $newCols > $maxAllowed)) {
         Response::error("rows and cols cannot exceed $maxAllowed.", 400);
     }
 
-    $scalarFields = ['block_type', 'coordinates', 'remarks', 'image_link', 'custom', 'rotation'];
+    $scalarFields = ['block_type', 'coordinates', 'remarks', 'image_link', 'rotation'];
     $hasFieldUpdate = false;
     foreach ($scalarFields as $f) {
         if (array_key_exists($f, $rawData)) {

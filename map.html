@@ -129,24 +129,17 @@
             <div class="mapStatus" id="mapStatus"></div>
           </div>
 
-          <div class="mapCanvas" id="mapCanvas">
-            <!-- ===== CEMETERY BACKGROUND IMAGE (Sits behind the canvas) ===== -->
-            <img
-              id="cemetery_map_image"
-              src="api/images/cemetery_map_image.png"
-              onerror="
-                this.onerror = null;
-                this.src = 'assets/images/cemetery_map_image.png';
-                console.error(
-                  'Failed to load dynamic logo. Using default logo.',
-                );
-              "
-              alt="Cemetery Map Image"
-            />
-            <canvas id="mapCvs"></canvas>
-            <div class="mapHint" id="mapHint"></div>
-            <div class="mapLoading" id="mapLoading">Loading map&hellip;</div>
-          </div>
+        <div class="mapCanvas" id="mapCanvas">
+          <img
+            id="cemetery_map_image"
+            src="api/images/cemetery_map_image.png"
+            onerror="this.onerror = null; this.src = 'assets/images/cemetery_map_image.png';"
+            alt="Cemetery Map Image"
+          />
+          <canvas id="mapCvs"></canvas>
+          <div class="mapHint" id="mapHint"></div>
+          <div class="mapLoading" id="mapLoading">Loading map&hellip;</div>
+        </div>
 
           <div class="mapLegend">
             <div class="legendItem">

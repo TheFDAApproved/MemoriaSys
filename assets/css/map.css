@@ -2,23 +2,32 @@
 .main {
   width: 100%;
   min-width: 0;
-  min-height: 100vh;
+  height: 100%; /* Let it fill the iframe */
   background: #f1f5f9;
+  display: flex;
+  flex-direction: column;
 }
+
 .mapCard {
   width: 100%;
   min-width: 0;
   background-color: #ffffff;
   border-radius: 15px;
   padding-bottom: 24px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
 }
+
 .mapContainer {
-  flex: 1 1 0;
+  flex: 1; /* Fills the remaining space */
   width: 100%;
   min-width: 0;
   padding: 24px;
-  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
+
 .mapHeader {
   display: flex;
   align-items: flex-start;
@@ -43,7 +52,8 @@
 }
 
 /* ── BUTTONS ─────────────────────────────────────────────── */
-.editBtn, .plotBtn {
+.editBtn,
+.plotBtn {
   background: #3b82f6;
   color: white;
   border: none;
@@ -55,7 +65,10 @@
   margin-top: 10px;
   font-family: "Inter", sans-serif;
 }
-.editBtn:hover, .plotBtn:hover { background: #2563eb; }
+.editBtn:hover,
+.plotBtn:hover {
+  background: #2563eb;
+}
 
 .saveBtn {
   background: #22c55e;
@@ -69,7 +82,9 @@
   margin-top: 10px;
   font-family: "Inter", sans-serif;
 }
-.saveBtn:hover { background: #16a34a; }
+.saveBtn:hover {
+  background: #16a34a;
+}
 
 .cancelBtn {
   background: #f1f5f9;
@@ -83,7 +98,9 @@
   margin-top: 10px;
   font-family: "Inter", sans-serif;
 }
-.cancelBtn:hover { background: #e2e8f0; }
+.cancelBtn:hover {
+  background: #e2e8f0;
+}
 
 .reshapeSubBtn {
   background: #fff;
@@ -97,9 +114,17 @@
   margin-top: 10px;
   font-family: "Inter", sans-serif;
 }
-.reshapeSubBtn:hover { background: #fffbeb; }
-.reshapeSubBtn.done { background: #22c55e; color: #fff; border-color: #22c55e; }
-.reshapeSubBtn.done:hover { background: #16a34a; }
+.reshapeSubBtn:hover {
+  background: #fffbeb;
+}
+.reshapeSubBtn.done {
+  background: #22c55e;
+  color: #fff;
+  border-color: #22c55e;
+}
+.reshapeSubBtn.done:hover {
+  background: #16a34a;
+}
 
 /* ── META ROW ────────────────────────────────────────────── */
 .mapMeta {
@@ -111,19 +136,26 @@
   gap: 4px;
   min-height: 20px;
 }
-.mapStatus { font-size: 12px; color: #94a3b8; }
+.mapStatus {
+  font-size: 12px;
+  color: #94a3b8;
+}
 
 /* ── CANVAS & BACKGROUND IMAGE ─────────────────────────── */
 .mapCanvas {
   width: calc(100% - 48px) !important;
   margin: 0 auto !important;
-  height: 440px;
+  height: 100%;
+  min-height: 450px;
+  flex: 1;
   background-color: #e2e8f0;
   position: relative !important;
-  overflow: hidden !important;
+  overflow: hidden !important; 
   isolation: isolate !important;
   border-radius: 12px;
+  touch-action: pan-y; 
 }
+
 
 /* Background Image */
 #cemetery_map_image {
@@ -132,19 +164,19 @@
   left: 0 !important;
   width: 100% !important;
   height: 100% !important;
-  object-fit: fill !important; 
+  object-fit: fill !important;
   object-position: center center !important;
   z-index: 0 !important;
   pointer-events: none !important;
   user-select: none !important;
   -webkit-user-drag: none;
-  
+
   /* ADD THIS LINE: Stops the browser from blurring the image */
-  image-rendering: pixelated; 
+  image-rendering: pixelated;
 }
 
 /* Canvas */
-.mapCanvas canvas, 
+.mapCanvas canvas,
 #mapCvs {
   position: absolute !important;
   top: 0 !important;
@@ -157,67 +189,325 @@
 }
 
 .mapHint {
-  position: absolute; bottom: 12px; left: 50%;
-  transform: translateX(-50%); font-size: 12px; color: #475569;
-  pointer-events: none; white-space: nowrap;
-  background: rgba(255, 255, 255, 0.88); padding: 3px 12px;
-  border-radius: 20px; backdrop-filter: blur(2px);
-  max-width: 90%; text-align: center; z-index: 5;
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 12px;
+  color: #475569;
+  pointer-events: none;
+  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.88);
+  padding: 3px 12px;
+  border-radius: 20px;
+  backdrop-filter: blur(2px);
+  max-width: 90%;
+  text-align: center;
+  z-index: 5;
 }
 .mapLoading {
-  position: absolute; inset: 0; display: flex; align-items: center;
-  justify-content: center; font-size: 13px; color: #64748b;
-  background: rgba(226, 232, 240, 0.7); border-radius: 12px;
-  pointer-events: none; z-index: 10;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: #64748b;
+  background: rgba(226, 232, 240, 0.7);
+  border-radius: 12px;
+  pointer-events: none;
+  z-index: 10;
 }
 
 /* ── MODAL ───────────────────────────────────────────────── */
-.modalOverlay { display: none; position: fixed; inset: 0; background: rgba(15, 23, 42, 0.45); z-index: 1000; align-items: center; justify-content: center; }
-.modalOverlay.open { display: flex; }
-.modalBox { background: #fff; border-radius: 12px; border: 1px solid #e2e8f0; padding: 1.5rem; width: 720px; max-width: 92vw; max-height: 88vh; overflow-y: auto; box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12); }
-.modalBox h3 { font-size: 15px; font-weight: 600; color: #0f172a; margin-bottom: 1rem; }
-.modalBox label { font-size: 12px; color: #64748b; display: block; margin-bottom: 4px; margin-top: 10px; }
-.modalBox input, .modalBox select { width: 100%; padding: 8px 10px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; color: #0f172a; font-family: "Inter", sans-serif; outline: none; box-sizing: border-box; }
-.modalBox input:focus, .modalBox select:focus { border-color: #93c5fd; }
-.modalRowPair { display: flex; gap: 8px; }
-.modalRowPair > div { flex: 1; }
-.modalActions { display: flex; gap: 8px; margin-top: 1.25rem; }
-.modalActions button { flex: 1; padding: 8px 14px; border-radius: 6px; font-size: 13px; cursor: pointer; font-family: "Inter", sans-serif; transition: background 0.15s; border: 1px solid #e2e8f0; background: #f8fafc; color: #475569; }
-.modalActions button:hover { background: #f1f5f9; }
-.modalActions .btnPrimary { background: #3b82f6; color: #fff; border-color: #3b82f6; }
-.modalActions .btnPrimary:hover { background: #2563eb; }
-.modalDivider { border: none; border-top: 1px solid #f1f5f9; margin: 14px 0 0; }
-.warnBtn { width: 100%; padding: 7px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; font-family: "Inter", sans-serif; background: #fffbeb; color: #b45309; border: 1px solid #fcd34d; transition: background 0.15s; margin-top: 0; }
-.warnBtn:hover { background: #fef3c7; }
-.reshapeModalBtn { width: 100%; padding: 7px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; font-family: "Inter", sans-serif; background: #fffbeb; color: #f59e0b; border: 1px solid #fcd34d; transition: background 0.15s; margin-bottom: 8px; }
-.reshapeModalBtn:hover { background: #fef3c7; }
-.viewInfoBox { background: #f8fafc; border-radius: 8px; padding: 12px 14px; font-size: 13px; margin-top: 6px; border: 1px solid #e2e8f0; }
-.viewInfoBox p { margin: 3px 0; color: #64748b; }
-.viewInfoBox strong { font-weight: 600; color: #0f172a; font-size: 14px; }
-.modalNote { font-size: 11px; color: #94a3b8; margin-top: 10px; }
-.modalNote a { color: #3b82f6; text-decoration: none; }
-.modalNote a:hover { text-decoration: underline; }
+.modalOverlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+}
+.modalOverlay.open {
+  display: flex;
+}
+.modalBox {
+  background: #fff;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  padding: 1.5rem;
+  width: 400px;
+  max-width: 92vw;
+  max-height: 88vh;
+  overflow-y: auto;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12);
+}
+.modalBox h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 1rem;
+}
+.modalBox label {
+  font-size: 12px;
+  color: #64748b;
+  display: block;
+  margin-bottom: 4px;
+  margin-top: 10px;
+}
+.modalBox input,
+.modalBox select {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #0f172a;
+  font-family: "Inter", sans-serif;
+  outline: none;
+  box-sizing: border-box;
+}
+.modalBox input:focus,
+.modalBox select:focus {
+  border-color: #93c5fd;
+}
+.modalRowPair {
+  display: flex;
+  gap: 8px;
+}
+.modalRowPair > div {
+  flex: 1;
+}
+.modalActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 1.25rem;
+}
+.modalActions button {
+  flex: 1;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: "Inter", sans-serif;
+  transition: background 0.15s;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+}
+.modalActions button:hover {
+  background: #f1f5f9;
+}
+.modalActions .btnPrimary {
+  background: #3b82f6;
+  color: #fff;
+  border-color: #3b82f6;
+}
+.modalActions .btnPrimary:hover {
+  background: #2563eb;
+}
+.modalDivider {
+  border: none;
+  border-top: 1px solid #f1f5f9;
+  margin: 14px 0 0;
+}
+.warnBtn {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: "Inter", sans-serif;
+  background: #fffbeb;
+  color: #b45309;
+  border: 1px solid #fcd34d;
+  transition: background 0.15s;
+  margin-top: 0;
+}
+.warnBtn:hover {
+  background: #fef3c7;
+}
+.reshapeModalBtn {
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: "Inter", sans-serif;
+  background: #fffbeb;
+  color: #f59e0b;
+  border: 1px solid #fcd34d;
+  transition: background 0.15s;
+  margin-bottom: 8px;
+}
+.reshapeModalBtn:hover {
+  background: #fef3c7;
+}
+.viewInfoBox {
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+  margin-top: 6px;
+  border: 1px solid #e2e8f0;
+}
+.viewInfoBox p {
+  margin: 3px 0;
+  color: #64748b;
+}
+.viewInfoBox strong {
+  font-weight: 600;
+  color: #0f172a;
+  font-size: 14px;
+}
+.modalNote {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 10px;
+}
+.modalNote a {
+  color: #3b82f6;
+  text-decoration: none;
+}
+.modalNote a:hover {
+  text-decoration: underline;
+}
 
 /* ── VIEW BLOCK MODAL: GRAVE GRID ── */
-.grave-grid-container { margin-top: 16px; border-top: 1px solid #e2e8f0; padding-top: 12px; max-height: 340px; overflow-y: auto; padding-right: 4px; }
-.grave-grid-header { font-size: 13px; font-weight: 600; color: #0f172a; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
-.grave-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
-.grave-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
-.grave-card-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #cbd5e1; padding-bottom: 6px; margin-bottom: 2px; }
-.grave-code { font-size: 12px; font-weight: 700; color: #1e3a5f; }
-.grave-status { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; }
-.grave-status.vacant { background: #dcfce7; color: #166534; }
-.grave-status.occupied { background: #fee2e2; color: #991b1b; }
-.grave-status.other { background: #f1f5f9; color: #475569; }
-.grave-occupant { font-size: 12px; color: #0f172a; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.grave-meta { font-size: 11px; color: #64748b; }
-.grave-remarks-input { width: 100%; font-size: 11px; padding: 5px 8px; border: 1px solid #e2e8f0; border-radius: 4px; margin-top: 2px; outline: none; color: #334155; transition: 0.2s; box-sizing: border-box; }
-.grave-remarks-input:focus { border-color: #3b82f6; background: #fff; }
+.grave-grid-container {
+  margin-top: 16px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 12px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.grave-grid-header {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.grave-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+.grave-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.grave-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px dashed #cbd5e1;
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+}
+.grave-code {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e3a5f;
+}
+.grave-status {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+.grave-status.vacant {
+  background: #dcfce7;
+  color: #166534;
+}
+.grave-status.occupied {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.grave-status.other {
+  background: #f1f5f9;
+  color: #475569;
+}
+.grave-occupant {
+  font-size: 12px;
+  color: #0f172a;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.grave-meta {
+  font-size: 11px;
+  color: #64748b;
+}
+.grave-remarks-input {
+  width: 100%;
+  font-size: 11px;
+  padding: 5px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  margin-top: 2px;
+  outline: none;
+  color: #334155;
+  transition: 0.2s;
+  box-sizing: border-box;
+}
+.grave-remarks-input:focus {
+  border-color: #3b82f6;
+  background: #fff;
+}
 
 @media (max-width: 600px) {
-  .mapCanvas { width: calc(100% - 48px) !important; margin: 0 24px !important; }
-  .grave-grid { grid-template-columns: 1fr; }
+  .mapCanvas {
+    width: calc (100%-48px) !important;
+    margin: 0 24px!important;
+    border-radius: 12 !important;
+    touch-action: pan-y; /* Allows vertical scrolling */
+  }
+  .grave-grid {
+    grid-template-columns: 1fr;
+  }
 }
-.mapLegend { display: flex; gap: 14px; padding: 10px 1.5rem 0; flex-wrap: wrap; }
-.legendItem { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #64748b; }
-.legendDot { width: 12px; height: 12px; border-radius: 3px; border: 1px solid; flex-shrink: 0; pointer-events: none; z-index: 10; }
+
+.mapLegend {
+  display: flex;
+  gap: 14px;
+  padding: 10px 1.5rem 0;
+  flex-wrap: wrap;
+}
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #64748b;
+}
+.legendDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid;
+  flex-shrink: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* Mobile Auto-Zoom for Public Map */
+@media (max-width: 600px) {
+  #publicMapCanvas {
+    width: 100% !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    height: 60vh !important; 
+  }
+}

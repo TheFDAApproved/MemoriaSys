@@ -15,7 +15,15 @@ const MAP = (() => {
   const API_BLOCKS = "api/blocks.php";
   const MAP_W = 1000; // Fixed virtual map width
   const MAP_H = 500;  // Fixed virtual map height
-  
+
+  // Helper to convert 1 -> A, 2 -> B, etc.
+  function getRowLetter(rowNum) {
+    if (rowNum >= 1 && rowNum <= 26) {
+      return String.fromCharCode(64 + rowNum);
+    }
+    return rowNum; // Fallback just in case
+  }
+
   // ── STATE VARIABLES ──────────────────────────────────────────────────────
   let mapEditMode = false;
   let hasUnsavedChanges = false;
@@ -63,6 +71,7 @@ const MAP = (() => {
     origRotation: 0,
   };
 
+
   const $ = (id) => document.getElementById(id);
   let canvasWrap, cv, ctx;
 
@@ -71,13 +80,13 @@ const MAP = (() => {
     // 1. Move mouse to be relative to the block's center
     const dx = mx - cx;
     const dy = my - cy;
-    
+
     // 2. Rotate the mouse backwards by the block's rotation
     const cos = Math.cos(-rotation);
     const sin = Math.sin(-rotation);
     const rotatedX = cx + (dx * cos - dy * sin);
     const rotatedY = cy + (dx * sin + dy * cos);
-    
+
     // 3. Now check distance to the unrotated corner
     return Math.sqrt((rotatedX - px) ** 2 + (rotatedY - py) ** 2);
   }
@@ -301,7 +310,38 @@ const MAP = (() => {
   }
 
   function isCustomShape(b) {
-    return b.custom === true;
+    const pts = ensurePolygon(b);
+    return pts.length > 4; // 4 = rectangle, >4 = custom shape
+  }
+
+  // Helper to remove redundant collinear points (points on a straight line)
+  function cleanPolygon(pts) {
+    if (pts.length <= 4) return pts;
+
+    // 1. Round to 2 decimal places to kill microscopic float errors
+    let rounded = pts.map(p => ({
+      x: Math.round(p.x * 100) / 100,
+      y: Math.round(p.y * 100) / 100
+    }));
+
+    let cleaned = [];
+    for (let i = 0; i < rounded.length; i++) {
+      const prev = rounded[(i - 1 + rounded.length) % rounded.length];
+      const curr = rounded[i];
+      const next = rounded[(i + 1) % rounded.length];
+
+      // Calculate slopes (delta Y / delta X)
+      const slope1 = Math.abs(curr.x - prev.x) < 0.01 ? 9999 : (curr.y - prev.y) / (curr.x - prev.x);
+      const slope2 = Math.abs(next.x - curr.x) < 0.01 ? 9999 : (next.y - curr.y) / (next.x - curr.x);
+
+      // If the slope is the same (or the lines are exactly vertical), it's a straight line!
+      // We use a tolerance of 0.01 to account for minor floating-point drift.
+      if (Math.abs(slope1 - slope2) > 0.01) {
+        cleaned.push(curr);
+      }
+    }
+
+    return cleaned.length >= 3 ? cleaned : pts;
   }
 
   function syncBounds(b) {
@@ -375,7 +415,7 @@ const MAP = (() => {
     const containerH = canvasWrap.clientHeight;
     if (!containerW || !containerH) return;
 
-    // Fill the entire container (stretches the map)
+    // Prevent infinite loop on mobile if height is 0
     const displayW = containerW;
     const displayH = containerH;
 
@@ -385,32 +425,31 @@ const MAP = (() => {
 
     const bw = Math.round(displayW * dpr);
     const bh = Math.round(displayH * dpr);
+    
+    // Only resize if it actually changed
     if (cv.width !== bw || cv.height !== bh) {
       cv.width = bw;
       cv.height = bh;
+      cv.style.width = `${displayW}px`;
+      cv.style.height = `${displayH}px`;
+      cv.style.left = `0px`;
+      cv.style.top = `0px`;
     }
 
-    // Set canvas to fill the container
-    cv.style.width = `${displayW}px`;
-    cv.style.height = `${displayH}px`;
-    cv.style.left = `0px`;
-    cv.style.top = `0px`;
-
-    // Set image to fill the container exactly the same way
     const bg = document.getElementById("cemetery_map_image");
     if (bg) {
       bg.style.width = `${displayW}px`;
       bg.style.height = `${displayH}px`;
       bg.style.left = `0px`;
       bg.style.top = `0px`;
-      bg.style.objectFit = "fill";
+      bg.style.objectFit = "fill"; 
     }
   }
 
   function screenToMap(sx, sy) {
     const rect = cv.getBoundingClientRect();
     // Because the canvas is scaled and cropped, we calculate the ratio dynamically
-    const scaleX = MAP_W / cvW; 
+    const scaleX = MAP_W / cvW;
     const scaleY = MAP_H / cvH;
     return {
       x: (sx - rect.left) * scaleX,
@@ -426,7 +465,6 @@ const MAP = (() => {
       block_type: b.block_type,
       image_link: b.image_link,
       coordinates: JSON.stringify(b.coordinates),
-      custom: b.custom ? 1 : 0,
       remarks: b.remarks || null,
       rotation: b.rotation || 0,
     };
@@ -447,13 +485,13 @@ const MAP = (() => {
         if (r && r.success && r.data && r.data.block_id && !b.block_id) {
           b.block_id = r.data.block_id;
         }
-        
+
         if (r && r.success) {
           // Clear the local dirty state instantly so it doesn't save again
           b._dirty = false;
           b.needsPlacement = false;
         }
-        
+
         return r;
       });
   }
@@ -481,7 +519,6 @@ const MAP = (() => {
   }
 
   function persistLoad() {
-
     const loader = $("mapLoading");
     if (loader) loader.style.display = "block";
     fetch(API_BLOCKS)
@@ -508,6 +545,11 @@ const MAP = (() => {
             }
           }
 
+          // ── ADDED: Clean up any straight-line points from the database ──
+          if (pts && Array.isArray(pts)) {
+            pts = cleanPolygon(pts);
+          }
+
           let placedOnGrid = false;
           if (!Array.isArray(pts) || pts.length < 3) {
             const side = 4 * CELL,
@@ -531,7 +573,6 @@ const MAP = (() => {
             coordinates: pts,
             rows: parseInt(row.rows, 10) || 0,
             cols: parseInt(row.cols, 10) || 0,
-            custom: row.custom == 1,
             remarks: row.remarks || null,
             needsPlacement: placedOnGrid,
             total_graves: parseInt(row.total_graves, 10) || 0,
@@ -573,7 +614,7 @@ const MAP = (() => {
   }
 
   // ── CANVAS RENDER ENGINE ─────────────────────────────────────────────────
-    let rafPending = false;
+  let rafPending = false;
   function scheduleDraw() {
     if (rafPending) return;
     rafPending = true;
@@ -615,7 +656,7 @@ const MAP = (() => {
       const isResize = resizeDrag.active && resizeDrag.bid === bid;
       const isRotate = rotateDrag.active && rotateDrag.bid === bid;
       const { total, occ } = blockStats(b);
-      
+
       const bounds = polyBounds(pts);
       const cx = bounds.x + bounds.w / 2;
       const cy = bounds.y + bounds.h / 2;
@@ -664,16 +705,16 @@ const MAP = (() => {
 
         // Bottom-Right: Resize handle (Blue)
         ctx.beginPath();
-        ctx.arc(maxX, maxY, 5, 0, Math.PI * 2); 
+        ctx.arc(maxX, maxY, 6, 0, Math.PI * 2);
         ctx.fillStyle = "#3b82f6"; ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
         ctx.fill(); ctx.stroke();
 
         // Top-Left: Rotate handle (Orange)
         ctx.beginPath();
-        ctx.arc(minX, minY, 5, 0, Math.PI * 2); 
+        ctx.arc(minX, minY, 6, 0, Math.PI * 2);
         ctx.fillStyle = "#f59e0b"; ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
         ctx.fill(); ctx.stroke();
-        
+
         // Dashed line to center
         ctx.beginPath();
         ctx.moveTo(minX, minY);
@@ -732,16 +773,23 @@ const MAP = (() => {
       // 5. DRAW TEXT
       const label = labelAnchor(pts);
       const roomy = bounds.h >= 56;
-      const fontScale = cvW / MAP_W;
+      
+      const isMobile = canvasWrap.clientWidth < 600;
+      
+      // Fixed sizes on mobile
+      const titleSize = isMobile ? 10 : 13;
+      const subSize = isMobile ? 8 : 10;
 
+      ctx.imageSmoothingEnabled = false; 
+      
       ctx.fillStyle = "#1e3a5f";
-      ctx.font = `500 ${13 / fontScale}px Inter, sans-serif`;
+      ctx.font = `500 ${titleSize}px Inter, sans-serif`;
       ctx.textAlign = "center";
       ctx.fillText(b.block_name, label.x, roomy ? label.y - 14 : label.y + 4);
 
       if (roomy) {
         ctx.fillStyle = "#475569";
-        ctx.font = `${10 / fontScale}px Inter, sans-serif`;
+        ctx.font = `${subSize}px Inter, sans-serif`;
         ctx.fillText(`${b.rows}\u00d7${b.cols}`, label.x, label.y + 2);
         ctx.fillText(`${occ} occupied \u00b7 ${total - occ} vacant`, label.x, label.y + 16);
       }
@@ -750,9 +798,11 @@ const MAP = (() => {
         const footY = bounds.y + bounds.h - 8;
         const hintY = pointInPoly(label.x, footY, pts) ? footY : label.y + 30;
         ctx.fillStyle = mapEditMode ? "#3b82f6" : "#2563eb";
-        ctx.font = `${10 / fontScale}px Inter, sans-serif`;
+        ctx.font = `${subSize}px Inter, sans-serif`;
         ctx.fillText(mapEditMode ? "click to reshape \u00b7 drag to move" : "click to view", label.x, hintY);
       }
+      
+      ctx.imageSmoothingEnabled = true; 
 
       // 6. DRAW DRAG GHOST
       if (isDrag) {
@@ -766,9 +816,9 @@ const MAP = (() => {
           ctx.stroke(); ctx.setLineDash([]);
         }
       }
-      
+
       // 7. RESTORE CANVAS
-      ctx.restore(); 
+      ctx.restore();
       ctx.globalAlpha = 1;
     });
   }
@@ -776,7 +826,7 @@ const MAP = (() => {
   function drawSplitPreview() {
     const keep = pendingSplit.keep === "a" ? pendingSplit.a : pendingSplit.b;
     const drop = pendingSplit.keep === "a" ? pendingSplit.b : pendingSplit.a;
-    
+
     const trace = (poly) => {
       ctx.beginPath();
       poly.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
@@ -802,11 +852,11 @@ const MAP = (() => {
     const fontScale = cvW / MAP_W;
     ctx.font = `600 ${11 / fontScale}px Inter, sans-serif`;
     ctx.textAlign = "center";
-    
+
     const kc = polyCentroid(keep);
     ctx.fillStyle = "#15803d";
     ctx.fillText("KEEP", kc.x, kc.y - 20);
-    
+
     const dc = polyCentroid(drop);
     ctx.fillStyle = "#64748b";
     ctx.fillText("REMOVE", dc.x, dc.y - 20);
@@ -831,7 +881,7 @@ const MAP = (() => {
   function handleDrawClick(mx, my) {
     const blk = blocks[reshapeBid];
     const pts = ensurePolygon(blk);
-    
+
     // 1. Check if the block is rotated
     const bounds = polyBounds(pts);
     const cx = bounds.x + bounds.w / 2;
@@ -840,7 +890,7 @@ const MAP = (() => {
 
     // 2. Un-rotate the mouse click so we can check the real edges
     const clickPoint = screenToUnrotated(mx, my, cx, cy, rotation);
-    
+
     // 3. Find the closest edge using the un-rotated click point
     const edge = closestEdge(pts, clickPoint.x, clickPoint.y);
     const onEdge = edge && edge.dist < 24;
@@ -970,8 +1020,13 @@ const MAP = (() => {
       coordinates: blk.coordinates.map((p) => ({ ...p })),
       custom: !!blk.custom,
     });
-    blk.coordinates =
-      pendingSplit.keep === "a" ? pendingSplit.a : pendingSplit.b;
+
+    // Get the new shape
+    const newShape = pendingSplit.keep === "a" ? pendingSplit.a : pendingSplit.b;
+
+    // Clean up any redundant points on straight lines
+    blk.coordinates = cleanPolygon(newShape);
+
     blk.custom = true;
     syncBounds(blk);
     pendingSplit = null;
@@ -1019,6 +1074,7 @@ const MAP = (() => {
       ) {
         if (e.cancelable) e.preventDefault();
       }
+      
       const { x, y } = getXY(e);
       mousePos = { x, y };
 
@@ -1089,7 +1145,6 @@ const MAP = (() => {
           const cy = bounds.y + bounds.h / 2;
           const rotation = blk.rotation || 0;
           
-          // Save the mouse position as UN-ROTATED coordinates
           mousePos = screenToUnrotated(x, y, cx, cy, rotation);
         } else {
           mousePos = { x, y };
@@ -1115,9 +1170,9 @@ const MAP = (() => {
         const distRotate = getDistToRotatedPoint(x, y, bounds.x, bounds.y, cx, cy, rotation);
         const distResize = getDistToRotatedPoint(x, y, bounds.x + bounds.w, bounds.y + bounds.h, cx, cy, rotation);
 
-        if (distRotate < 20) {
+        if (distRotate < 10) {
           canvasWrap.style.cursor = "crosshair";
-        } else if (distResize < 20) {
+        } else if (distResize < 10) {
           canvasWrap.style.cursor = "nwse-resize";
         } else {
           canvasWrap.style.cursor = "grab";
@@ -1141,16 +1196,14 @@ const MAP = (() => {
           const bid = blockOrder[i], b = blocks[bid];
           if (b.needsPlacement) continue;
           
-          // 1. Define pts and bounds right at the start of the loop
           const pts = ensurePolygon(b);
           const bounds = polyBounds(pts);
           const rotation = b.rotation || 0;
           const cx = bounds.x + bounds.w / 2;
           const cy = bounds.y + bounds.h / 2;
 
-          // 2. Check the rotation handle (Top-Left of bounds)
           const distRotate = getDistToRotatedPoint(x, y, bounds.x, bounds.y, cx, cy, rotation);
-          if (distRotate < 20) {
+          if (distRotate < 10) {
             rotateDrag = {
               active: true, bid, centerX: cx, centerY: cy,
               startAngle: Math.atan2(y - cy, x - cx), origRotation: rotation,
@@ -1158,9 +1211,8 @@ const MAP = (() => {
             return;
           }
 
-          // 3. Check the resize handle (Bottom-Right of bounds)
           const distResize = getDistToRotatedPoint(x, y, bounds.x + bounds.w, bounds.y + bounds.h, cx, cy, rotation);
-          if (distResize < 20) {
+          if (distResize < 10) {
             resizeDrag = {
               active: true, bid, startX: x, startY: y,
               origX: bounds.x, origY: bounds.y, origW: bounds.w, origH: bounds.h,
@@ -1171,7 +1223,6 @@ const MAP = (() => {
           }
         }
 
-        // 4. Check for dragging anywhere in the middle
         const bid = hitBlock(x, y);
         if (!bid) return;
         blockDrag = {
@@ -1236,6 +1287,25 @@ const MAP = (() => {
       }
     };
 
+    // ── MOBILE TOUCH HANDLING ──
+    cv.addEventListener("touchstart", (e) => {
+      // If NOT in Edit mode, let the page scroll normally!
+      if (!mapEditMode && !reshapeMode) return;
+      handleDown(e);
+    }, { passive: false });
+
+    cv.addEventListener("touchmove", (e) => {
+      // If NOT in Edit mode, let the page scroll normally!
+      if (!mapEditMode && !reshapeMode) return;
+      handleMove(e);
+    }, { passive: false });
+
+    cv.addEventListener("touchend", (e) => {
+      if (!mapEditMode && !reshapeMode) return;
+      handleUp(e);
+    });
+
+    // ── DESKTOP MOUSE ──
     cv.addEventListener("mousemove", handleMove);
     cv.addEventListener("mouseleave", () => {
       if (blockDrag.active || resizeDrag.active || reshapeMode) return;
@@ -1249,9 +1319,6 @@ const MAP = (() => {
     });
     window.addEventListener("mousedown", handleDown);
     cv.addEventListener("mouseup", handleUp);
-    cv.addEventListener("touchmove", handleMove, { passive: false });
-    cv.addEventListener("touchstart", handleDown, { passive: false });
-    cv.addEventListener("touchend", handleUp);
 
     cv.addEventListener("dblclick", (e) => {
       if (!reshapeMode || pendingSplit || drawPoints.length < 2) return;
@@ -1268,13 +1335,13 @@ const MAP = (() => {
     if (typeof ResizeObserver !== "undefined") {
       new ResizeObserver(() => {
         syncCanvasSize();
-        draw(); // <--- ADDED: Instantly redraw so blocks don't disappear
+        draw(); 
         scheduleDraw();
       }).observe(canvasWrap);
     } else {
       window.addEventListener("resize", () => {
         syncCanvasSize();
-        draw(); // <--- ADDED: Instantly redraw
+        draw(); 
         scheduleDraw();
       });
     }
@@ -1297,7 +1364,7 @@ const MAP = (() => {
 
     $("btnSaveMap").addEventListener("click", async () => {
       const btn = $("btnSaveMap");
-      
+
       // If there are no changes, just exit immediately
       if (!hasUnsavedChanges) {
         exitEditMap();
@@ -1325,13 +1392,13 @@ const MAP = (() => {
         // 1. Clear all local flags
         blockOrder.forEach((bid) => {
           blocks[bid]._dirty = false;
-          blocks[bid].needsPlacement = false; 
+          blocks[bid].needsPlacement = false;
         });
-        hasUnsavedChanges = false; 
+        hasUnsavedChanges = false;
 
         // 2. Restore the buttons to normal (this is handled by exitEditMap)
         // 3. Force a redraw so colors update instantly
-        draw(); 
+        draw();
         updateStatus();
 
         // 4. Exit edit mode immediately! (This hides Save/Cancel and shows Edit Layout/Add Block)
@@ -1559,7 +1626,6 @@ const MAP = (() => {
         block_type: blockType,
         image_link: imageUrl,
         coordinates: JSON.stringify(points),
-        custom: 0,
         rows,
         cols,
       };
@@ -1594,7 +1660,6 @@ const MAP = (() => {
           coordinates: points,
           rows,
           cols,
-          custom: false,
           remarks: null,
           x: bx,
           y: by,
@@ -1764,14 +1829,13 @@ const MAP = (() => {
               
               <div class="grave-card-header" style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:1px dashed #cbd5e1; padding-bottom:6px; margin-bottom:2px;">
                 <div>
-                  <div class="grave-code">${escHtml(g.grave_code)}</div>
-                  <div class="grave-meta">Row ${g.row_num} &middot; Col ${g.col_num}</div>
+                  <div class="grave-code">${escHtml(b.block_name)}-${getRowLetter(g.row_num)}-${g.col_num}</div>
+                  <div class="grave-meta">Row ${getRowLetter(g.row_num)} &middot; Col ${g.col_num}</div>
                 </div>
                 
                 <div style="text-align:right;">
-                  ${
-                    isEditable
-                      ? `
+                  ${isEditable
+              ? `
                     <div style="display:flex; align-items:center; gap:6px;">
                       <span id="badge-${g.grave_id}" class="grave-status ${statusClass}" style="${statusColor}">${escHtml(g.status)}</span>
                       
@@ -1787,9 +1851,9 @@ const MAP = (() => {
                       <button id="btn-edit-${g.grave_id}" onclick="MAP.enableGraveEdit(${g.grave_id})" class="btn" style="background:#eff6ff; color:#3b82f6; border:1px solid #bfdbfe; padding:2px 6px; border-radius:4px; cursor:pointer; font-size:10px;" title="Edit"><i class="fas fa-pen"></i></button>
                       <button id="btn-save-${g.grave_id}" onclick="MAP.saveGraveEdits(${g.grave_id}, '${bid}')" class="btn" style="display:none; background:#f0fdf4; color:#16a34a; border:1px solid #bbf7d0; padding:2px 6px; border-radius:4px; cursor:pointer; font-size:10px;" title="Save"><i class="fas fa-save"></i></button>
                     </div>`
-                      : `
+              : `
                     <span class="grave-status ${statusClass}" style="${statusColor}">${escHtml(g.status)}</span>`
-                  }
+            }
                 </div>
               </div>
               
@@ -2092,7 +2156,6 @@ const MAP = (() => {
         // Include geometry so _dirty = false is accurate even if the block
         // had a pending drag when the modal was opened. Mirrors saveOneBlock().
         coordinates: JSON.stringify(blk.coordinates),
-        custom: blk.custom ? 1 : 0,
       };
 
       setModalBusy(true);
@@ -2121,10 +2184,17 @@ const MAP = (() => {
         blk.rows = payload.rows;
         blk.cols = payload.cols;
         blk._dirty = false;
+
+        // ── INSTANT STATS UPDATE ──
         if (res.data) {
+          // Trust the server's new numbers
           blk.total_graves = res.data.total_graves;
           blk.vacant_count = res.data.vacant;
           blk.occupied_count = res.data.occupied;
+        } else {
+          // Fallback calculation if API doesn't return counts
+          blk.total_graves = payload.rows * payload.cols;
+          blk.vacant_count = blk.total_graves - (blk.occupied_count || 0);
         }
 
         // ── Keep the modal open; refresh only the parts that changed. ──
@@ -2144,6 +2214,8 @@ const MAP = (() => {
         setModalBusy(false);
         draw();
         updateStatus();
+        updateModalStats(bid);
+        closeModal();
         if (window.showAlertTOP) showAlertTOP("Block updated.", "success");
       } catch (err) {
         console.error("Block edit failed:", err);
