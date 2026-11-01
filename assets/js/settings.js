@@ -230,7 +230,7 @@ document.addEventListener("DOMContentLoaded", () => {
             )
         )
             return true;
-        if (/Failed to fetch|NetworkError|Load failed/i.test(t)) return true;
+        if (/\bFailed to fetch\b|\bNetworkError\b|\bLoad failed\b/i.test(t)) return true;
         if (
             /^(TypeError|SyntaxError|ReferenceError|RangeError|DOMException)\b/i.test(
                 t,
@@ -699,6 +699,9 @@ document.addEventListener("DOMContentLoaded", () => {
             re: /for\s+['"]?footer['"]?/i,
             fields: ["footer"],
         },
+        {   re: /for\s+['"]?cemetery_map_image['"]?/i, 
+            fields: ["cemetery_map_image"] 
+        },
     ];
 
     function findSystemErrorFields(message) {
@@ -866,7 +869,7 @@ document.addEventListener("DOMContentLoaded", () => {
             errorFields.forEach((fieldId, index) => {
                 // Image errors highlight the preview instead of the hidden input
                 let target = fieldId;
-                if (fieldId === "header" || fieldId === "footer") {
+                if (fieldId === "header" || fieldId === "footer" || fieldId === "cemetery_map_image") {
                     const preview = document.getElementById(`preview_${fieldId}`);
                     if (preview) target = preview;
                 }
@@ -880,6 +883,7 @@ document.addEventListener("DOMContentLoaded", () => {
             // Refresh image previews and re-enable the submit button
             document.getElementById("preview_footer").src = "api/images/footer.png";
             document.getElementById("preview_header").src = "api/images/header.png";
+            document.getElementById("preview_cemetery_map_image").src = "api/images/cemetery_map_image.png";
             refreshImages();
             submitBtn.disabled = false;
             submitBtn.innerHTML = originalHTML;
