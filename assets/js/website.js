@@ -8,11 +8,10 @@ const row_letter = true;
 // this is named getrowletter but it can be used to anything lol
 function getRowLetter(rowNum) {
     if (rowNum >= 1 && rowNum <= 26) {
-      return String.fromCharCode(64 + rowNum);
+        return String.fromCharCode(64 + rowNum);
     }
     return rowNum; // Fallback just in case
 }
-
 
 // Used to ignore older search responses when the user searches again quickly
 let searchRequestId = 0;
