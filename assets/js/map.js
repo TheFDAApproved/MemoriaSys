@@ -2,18 +2,15 @@
    MEMORIA - CEMETERY MAP ENGINE (map.js)
    ========================================================================== */
 
-// Easy options for displaying the graves name schema
 const col_letter = false;
 const row_letter = true;
 
 const MAP = (() => {
-  // ── CONSTANTS ────────────────────────────────────────────────────────────
   const CELL = 22;
   const API_BLOCKS = "api/blocks.php";
   const MAP_W = 1000;
   const MAP_H = 500;
 
-  // ── CAMERA STATE ──
   let mapScale = 1;
   let mapX = 0;
   let mapY = 0;
@@ -23,17 +20,14 @@ const MAP = (() => {
   let initialPinchDistance = 0;
   let initialScale = 1;
 
-  // Applies the camera transform and clamps panning to map bounds
   function applyCameraTransform() {
     const camera = document.getElementById("mapCamera");
     if (camera) {
       const containerW = canvasWrap.clientWidth;
       const containerH = canvasWrap.clientHeight;
 
-      // The image is physically MAP_W x MAP_H (1000x500)
-      // We clamp the panning so you can never drag past the image edges
       const maxX = 0;
-      const minX = containerW - (MAP_W * mapScale); 
+      const minX = containerW - (MAP_W * mapScale);
       const maxY = 0;
       const minY = containerH - (MAP_H * mapScale);
 
@@ -44,7 +38,6 @@ const MAP = (() => {
     }
   }
 
-  // Converts a numeric row index to a letter
   function getRowLetter(rowNum) {
     if (rowNum >= 1 && rowNum <= 26) {
       return String.fromCharCode(64 + rowNum);
@@ -52,7 +45,6 @@ const MAP = (() => {
     return rowNum;
   }
 
-  // ── STATE VARIABLES ──────────────────────────────────────────────────────
   let mapEditMode = false;
   let hasUnsavedChanges = false;
   let reshapeMode = false;
@@ -102,7 +94,6 @@ const MAP = (() => {
   const $ = (id) => document.getElementById(id);
   let canvasWrap, cv, ctx;
 
-  // Calculates the distance to a rotated point
   function getDistToRotatedPoint(mx, my, px, py, cx, cy, rotation) {
     const dx = mx - cx;
     const dy = my - cy;
@@ -113,7 +104,6 @@ const MAP = (() => {
     return Math.sqrt((rotatedX - px) ** 2 + (rotatedY - py) ** 2);
   }
 
-  // Converts screen coordinates to unrotated local coordinates
   function screenToUnrotated(sx, sy, cx, cy, rotation) {
     const dx = sx - cx;
     const dy = sy - cy;
@@ -125,13 +115,10 @@ const MAP = (() => {
     };
   }
 
-  // ── UI HELPERS ───────────────────────────────────────────────────────────
-  // Sets the helper hint text displayed to the user
   function setHint(t) {
     if ($("mapHint")) $("mapHint").textContent = t;
   }
 
-  // Marks the save button as dirty with unsaved changes styling
   function setSaveBtnDirty() {
     const btn = $("btnSaveMap");
     if (!btn) return;
@@ -141,7 +128,6 @@ const MAP = (() => {
     btn.style.border = "none";
   }
 
-  // Disables or enables modal elements during busy operations
   function setModalBusy(busy) {
     const cb = $("modalConfirm"),
       cc = $("modalCancel"),
@@ -171,18 +157,14 @@ const MAP = (() => {
     }
   }
 
-  // ── GEOMETRY HELPERS ─────────────────────────────────────────────────────
-  // Generates a short random unique identifier
   function uid() {
     return Math.random().toString(36).slice(2, 8);
   }
 
-  // Snaps a coordinate value
   function snap(v) {
     return v;
   }
 
-  // Converts a rectangle into an array of four corner points
   function rectToPoints(x, y, w, h) {
     return [
       { x, y },
@@ -192,7 +174,6 @@ const MAP = (() => {
     ];
   }
 
-  // Ensures a block has a valid polygon coordinate array
   function ensurePolygon(b) {
     if (!b.coordinates || b.coordinates.length < 3) {
       b.coordinates = rectToPoints(b.x, b.y, b.w, b.h);
@@ -200,7 +181,6 @@ const MAP = (() => {
     return b.coordinates;
   }
 
-  // Calculates the bounding box of a polygon
   function polyBounds(pts) {
     const xs = pts.map((p) => p.x),
       ys = pts.map((p) => p.y);
@@ -209,7 +189,6 @@ const MAP = (() => {
     return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
   }
 
-  // Checks if a point lies inside a polygon using ray casting
   function pointInPoly(px, py, pts) {
     let inside = false;
     for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
@@ -227,12 +206,10 @@ const MAP = (() => {
     return inside;
   }
 
-  // Calculates the Euclidean distance between two points
   function dist(a, b) {
     return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
   }
 
-  // Calculates the distance from a point to a line segment
   function distToSegment(p, a, b) {
     const dx = b.x - a.x,
       dy = b.y - a.y,
@@ -243,7 +220,6 @@ const MAP = (() => {
     return dist(p, { x: a.x + t * dx, y: a.y + t * dy });
   }
 
-  // Projects a point onto a line segment
   function projectOntoSegment(p, a, b) {
     const dx = b.x - a.x,
       dy = b.y - a.y,
@@ -256,7 +232,6 @@ const MAP = (() => {
     return { point: { x: snap(a.x + t * dx), y: snap(a.y + t * dy) }, t };
   }
 
-  // Finds the closest polygon edge to a given point
   function closestEdge(pts, px, py) {
     let best = null,
       bestDist = Infinity;
@@ -273,7 +248,6 @@ const MAP = (() => {
     return best;
   }
 
-  // Calculates the area of a polygon
   function polyArea(pts) {
     let a = 0;
     for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
@@ -282,7 +256,6 @@ const MAP = (() => {
     return Math.abs(a) / 2;
   }
 
-  // Calculates the centroid of a polygon
   function polyCentroid(pts) {
     let a = 0,
       cx = 0,
@@ -300,7 +273,6 @@ const MAP = (() => {
     return { x: cx / (3 * a), y: cy / (3 * a) };
   }
 
-  // Computes the best anchor point for displaying block labels
   function computeLabelAnchor(pts) {
     const c = polyCentroid(pts);
     if (pointInPoly(c.x, c.y, pts)) return c;
@@ -329,7 +301,6 @@ const MAP = (() => {
   }
 
   const labelAnchors = new WeakMap();
-  // Gets or caches the label anchor point for polygon points
   function labelAnchor(pts) {
     let at = labelAnchors.get(pts);
     if (!at) {
@@ -339,7 +310,6 @@ const MAP = (() => {
     return at;
   }
 
-  // Scales a polygon to fit a new rectangle bounding box
   function scalePolyTo(pts, rx, ry, rw, rh) {
     const b = polyBounds(pts);
     const sx = b.w === 0 ? 1 : rw / b.w;
@@ -350,13 +320,11 @@ const MAP = (() => {
     }));
   }
 
-  // Checks if a block has a custom polygon shape with more than 4 points
   function isCustomShape(b) {
     const pts = ensurePolygon(b);
     return pts.length > 4;
   }
 
-  // Cleans up a polygon by removing redundant collinear points
   function cleanPolygon(pts) {
     if (pts.length <= 4) return pts;
     let rounded = pts.map(p => ({
@@ -377,7 +345,6 @@ const MAP = (() => {
     return cleaned.length >= 3 ? cleaned : pts;
   }
 
-  // Synchronizes a block's bounding box coordinates from its polygon points
   function syncBounds(b) {
     const bn = polyBounds(ensurePolygon(b));
     b.x = bn.x;
@@ -386,7 +353,6 @@ const MAP = (() => {
     b.h = bn.h;
   }
 
-  // Computes the total, occupied, and vacant grave statistics for a block
   function blockStats(b) {
     const total = b.total_graves || b.rows * b.cols;
     const occ = b.occupied_count || 0;
@@ -395,7 +361,6 @@ const MAP = (() => {
     return { total, occ, res: other, avail: vac };
   }
 
-  // Escapes special characters in a string for safe HTML insertion
   function escHtml(str) {
     return String(str)
       .replace(/&/g, "&amp;")
@@ -404,7 +369,6 @@ const MAP = (() => {
       .replace(/"/g, "&quot;");
   }
 
-  // Normalizes and validates an image URL
   function normalizeImageUrl(u) {
     u = (u || "").trim();
     if (!u) return null;
@@ -412,7 +376,6 @@ const MAP = (() => {
     return "https://" + u;
   }
 
-  // Formats a date string into a readable short date format
   function formatDate(d) {
     if (!d) return "--";
     const date = new Date(d);
@@ -424,7 +387,6 @@ const MAP = (() => {
     });
   }
 
-  // Clamps translation movement to stay within map boundaries
   function clampTranslate(b, dx, dy) {
     const minX = Math.min(0, MAP_W - b.w);
     const maxX = Math.max(0, MAP_W - b.w);
@@ -435,7 +397,6 @@ const MAP = (() => {
     return { dx: newX - b.x, dy: newY - b.y };
   }
 
-  // Clamps resize dimensions to stay within map boundaries
   function clampResize(origX, origY, origW, origH, dx, dy) {
     const maxNewW = Math.max(1, MAP_W - origX);
     const maxNewH = Math.max(1, MAP_H - origY);
@@ -444,46 +405,39 @@ const MAP = (() => {
     return { newW, newH };
   }
 
-  // ── CANVAS MANAGEMENT ────────────────────────────────────────────────────
-  // Synchronizes the canvas logical and physical display sizes
   function syncCanvasSize() {
     const containerW = canvasWrap.clientWidth;
     const containerH = canvasWrap.clientHeight;
     if (!containerW || !containerH) return;
 
-    // Lock the logical size to the true map dimensions
     cvW = MAP_W;
     cvH = MAP_H;
 
     const dpr = window.devicePixelRatio || 1;
     const bw = Math.round(cvW * dpr);
     const bh = Math.round(cvH * dpr);
-    
+
     if (cv.width !== bw || cv.height !== bh) {
       cv.width = bw;
       cv.height = bh;
     }
 
-    // Lock the CSS physical size of the canvas to exactly 1000x500
     cv.style.width = `${cvW}px`;
     cv.style.height = `${cvH}px`;
     cv.style.left = `0px`;
     cv.style.top = `0px`;
 
-    // Lock the background image size to exactly 1000x500
     const bg = document.getElementById("cemetery_map_image");
     if (bg) {
       bg.style.width = `${cvW}px`;
       bg.style.height = `${cvH}px`;
       bg.style.left = `0px`;
       bg.style.top = `0px`;
-      bg.style.objectFit = "fill"; 
+      bg.style.objectFit = "fill";
     }
   }
 
-  // Gets the correct logical map coordinates from a mouse or touch event
   function getXY(e) {
-    // This is the magic fix for accurate clicking!
     if (e.offsetX !== undefined) {
       return {
         x: e.offsetX * (MAP_W / cvW),
@@ -501,8 +455,6 @@ const MAP = (() => {
     };
   }
 
-  // ── API & DATA PERSISTENCE ───────────────────────────────────────────────
-  // Saves a single block's data to the server API
   function saveOneBlock(bid) {
     const b = blocks[bid];
     const payload = {
@@ -538,7 +490,6 @@ const MAP = (() => {
       });
   }
 
-  // Persists all dirty blocks to the server asynchronously
   async function persistSaveAsync() {
     const toSave = blockOrder.filter(
       (bid) => !blocks[bid].block_id || blocks[bid]._dirty,
@@ -561,7 +512,6 @@ const MAP = (() => {
     return { ok: true };
   }
 
-  // Loads all blocks and grave data from the server API
   function persistLoad() {
     const loader = $("mapLoading");
     if (loader) loader.style.display = "block";
@@ -650,9 +600,7 @@ const MAP = (() => {
       });
   }
 
-  // ── CANVAS RENDER ENGINE ─────────────────────────────────────────────────
   let rafPending = false;
-  // Schedules a canvas redraw using requestAnimationFrame
   function scheduleDraw() {
     if (rafPending) return;
     rafPending = true;
@@ -662,7 +610,6 @@ const MAP = (() => {
     });
   }
 
-  // Renders the cemetery map, blocks, grid, and edit controls on the canvas
   function draw() {
     if (!cvW || !cvH) syncCanvasSize();
     if (!cvW || !cvH) return;
@@ -848,7 +795,6 @@ const MAP = (() => {
     });
   }
 
-  // Draws a preview of the split polygon halves during reshaping
   function drawSplitPreview() {
     const keep = pendingSplit.keep === "a" ? pendingSplit.a : pendingSplit.b;
     const drop = pendingSplit.keep === "a" ? pendingSplit.b : pendingSplit.a;
@@ -888,7 +834,6 @@ const MAP = (() => {
     ctx.fillText("REMOVE", dc.x, dc.y - 20);
   }
 
-  // Finds the topmost block hit by mouse or touch coordinates
   function hitBlock(mx, my) {
     return blockOrder
       .slice()
@@ -896,8 +841,6 @@ const MAP = (() => {
       .find((bid) => pointInPoly(mx, my, ensurePolygon(blocks[bid])));
   }
 
-  // ── RESHAPE MODE LOGIC ───────────────────────────────────────────────────
-  // Handles clicks during block reshape drawing mode
   function handleDrawClick(mx, my) {
     const blk = blocks[reshapeBid];
     const pts = ensurePolygon(blk);
@@ -951,7 +894,6 @@ const MAP = (() => {
     draw();
   }
 
-  // Splits a polygon into two parts along a drawn line
   function splitPolygon(pts, start, end, mid) {
     let idx1 = start.edgeIndex,
       idx2 = end.edgeIndex;
@@ -995,7 +937,6 @@ const MAP = (() => {
     return { a, b };
   }
 
-  // Picks which side of a split polygon to keep
   function pickSplitSide(mx, my) {
     const inA = pointInPoly(mx, my, pendingSplit.a);
     const inB = pointInPoly(mx, my, pendingSplit.b);
@@ -1005,14 +946,12 @@ const MAP = (() => {
     draw();
   }
 
-  // Swaps the selected split side to keep
   function swapSplitSide() {
     if (!pendingSplit) return;
     pendingSplit.keep = pendingSplit.keep === "a" ? "b" : "a";
     draw();
   }
 
-  // Confirms and applies the selected split side to the block shape
   function keepSplitSide() {
     if (!pendingSplit) return;
     const blk = blocks[reshapeBid];
@@ -1030,7 +969,6 @@ const MAP = (() => {
     draw();
   }
 
-  // Cancels the pending polygon split operation
   function cancelSplit() {
     if (!pendingSplit) return;
     pendingSplit = null;
@@ -1039,7 +977,6 @@ const MAP = (() => {
     draw();
   }
 
-  // Undoes the last reshape operation on a block
   function undoReshape() {
     if (!reshapeHistory.length) return;
     const prev = reshapeHistory.pop();
@@ -1057,18 +994,14 @@ const MAP = (() => {
     draw();
   }
 
-  // ── EVENT LISTENERS ──────────────────────────────────────────────────────
-  // Initializes all mouse, touch, wheel, and resize event listeners
   function initCanvasEvents() {
     let pointerStartX = 0;
     let pointerStartY = 0;
     let hasDragged = false;
 
-    // Helper to check if we are in Mobile/Responsive mode
     const isMobile = () => window.innerWidth <= 768;
 
     const handleMove = (e) => {
-      // ── PANNING (Takes priority over everything else) ──
       if (isPanning && isMobile()) {
         mapX = e.clientX - startPanX;
         mapY = e.clientY - startPanY;
@@ -1194,8 +1127,6 @@ const MAP = (() => {
       if (e.target !== cv) return;
       const { x, y } = getXY(e);
 
-      // ── START PANNING (Works in both View Mode and Edit Mode) ──
-      // If we are on mobile AND we didn't click a block, start panning!
       if (isMobile() && !hitBlock(x, y)) {
         isPanning = true;
         startPanX = e.clientX - mapX;
@@ -1310,25 +1241,21 @@ const MAP = (() => {
       }
     };
 
-    // ── MOBILE TOUCH EVENTS (Only active on Mobile) ──
     cv.addEventListener("touchstart", (e) => {
       if (!isMobile()) return;
-      
+
       if (e.touches.length === 2) {
-        // Pinch to zoom (always works)
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         initialPinchDistance = Math.hypot(dx, dy);
         initialScale = mapScale;
       } else if (e.touches.length === 1) {
         const { x, y } = getXY(e);
-        // If we didn't hit a block, pan the map (works in Edit Mode too)
         if (!hitBlock(x, y)) {
           isPanning = true;
           startPanX = e.touches[0].clientX - mapX;
           startPanY = e.touches[0].clientY - mapY;
         } else if (mapEditMode) {
-          // If we DID hit a block, let the block drag logic take over
           handleDown(e);
         }
       }
@@ -1336,13 +1263,16 @@ const MAP = (() => {
 
     cv.addEventListener("touchmove", (e) => {
       if (!isMobile()) return;
-      
+
       if (e.touches.length === 2) {
         if (e.cancelable) e.preventDefault();
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         const distance = Math.hypot(dx, dy);
-        mapScale = Math.max(1, Math.min(4, initialScale * (distance / initialPinchDistance)));
+
+        const minFitScale = Math.max(canvasWrap.clientWidth / MAP_W, canvasWrap.clientHeight / MAP_H);
+
+        mapScale = Math.max(minFitScale, Math.min(4, initialScale * (distance / initialPinchDistance)));
         applyCameraTransform();
       } else if (e.touches.length === 1 && isPanning) {
         if (e.cancelable) e.preventDefault();
@@ -1361,18 +1291,19 @@ const MAP = (() => {
       if (mapEditMode) handleUp(e);
     });
 
-    // ── DESKTOP MOUSE EVENTS ──
     window.addEventListener("mousemove", handleMove);
     window.addEventListener("mousedown", handleDown);
     window.addEventListener("mouseup", handleUp);
 
-    // ── DESKTOP WHEEL ZOOM (Only active on Mobile) ──
     cv.addEventListener("wheel", (e) => {
-      if (!isMobile()) return; // Disable on PC
-      if (mapEditMode) return;  // Disable while editing
+      if (!isMobile()) return;
+      if (mapEditMode) return;
       if (e.cancelable) e.preventDefault();
       const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
-      mapScale = Math.max(1, Math.min(4, mapScale * zoomFactor));
+
+      const minFitScale = Math.max(canvasWrap.clientWidth / MAP_W, canvasWrap.clientHeight / MAP_H);
+
+      mapScale = Math.max(minFitScale, Math.min(4, mapScale * zoomFactor));
       applyCameraTransform();
     }, { passive: false });
 
@@ -1388,11 +1319,12 @@ const MAP = (() => {
       new ResizeObserver(() => {
         syncCanvasSize();
 
-        // Reset to cover screen on resize
         if (window.innerWidth > 768) {
           const cW = canvasWrap.clientWidth;
           const cH = canvasWrap.clientHeight;
+
           mapScale = Math.max(cW / MAP_W, cH / MAP_H);
+
           mapX = (cW - (MAP_W * mapScale)) / 2;
           mapY = (cH - (MAP_H * mapScale)) / 2;
           applyCameraTransform();
@@ -1408,7 +1340,9 @@ const MAP = (() => {
         if (window.innerWidth > 768) {
           const cW = canvasWrap.clientWidth;
           const cH = canvasWrap.clientHeight;
+
           mapScale = Math.max(cW / MAP_W, cH / MAP_H);
+
           mapX = (cW - (MAP_W * mapScale)) / 2;
           mapY = (cH - (MAP_H * mapScale)) / 2;
           applyCameraTransform();
@@ -1431,8 +1365,6 @@ const MAP = (() => {
     });
   }
 
-  // ── UI BUTTONS ───────────────────────────────────────────────────────────
-  // Initializes UI button click event listeners
   function initButtons() {
     $("btnEditMap").addEventListener("click", enterEditMap);
 
@@ -1482,7 +1414,6 @@ const MAP = (() => {
     $("modalOverlay").addEventListener("click", function (e) { if (e.target === this) closeModal(); });
   }
 
-  // Enters map layout edit mode
   function enterEditMap() {
     mapEditMode = true;
     hasUnsavedChanges = false;
@@ -1501,7 +1432,6 @@ const MAP = (() => {
     draw();
   }
 
-  // Exits map layout edit mode
   function exitEditMap() {
     if (reshapeMode) _clearReshape();
     blockDrag.active = false;
@@ -1529,7 +1459,6 @@ const MAP = (() => {
 
   const RESHAPE_HINT = "DRAW LINE: click an edge, add waypoints, then click another edge to divide the block.";
 
-  // Enters block reshape mode for a given block
   function enterReshapeMode(bid) {
     reshapeMode = true;
     reshapeBid = bid;
@@ -1545,7 +1474,6 @@ const MAP = (() => {
     draw();
   }
 
-  // Exits block reshape mode
   function exitReshapeMode() {
     _clearReshape();
     if (mapEditMode) $("btnSaveMap").style.display = "";
@@ -1554,7 +1482,6 @@ const MAP = (() => {
     draw();
   }
 
-  // Updates the visibility of buttons in the reshape toolbar
   function updateReshapeToolbar() {
     const choosing = reshapeMode && !!pendingSplit;
     const show = (id, on) => {
@@ -1566,7 +1493,6 @@ const MAP = (() => {
     show("btnUndoReshape", reshapeMode && !choosing && reshapeHistory.length > 0);
   }
 
-  // Clears all reshape state variables
   function _clearReshape() {
     reshapeMode = false;
     reshapeBid = null;
@@ -1578,12 +1504,10 @@ const MAP = (() => {
 
   const BLOCK_TYPES = ["Niche", "Bone Chamber", "Lawn/Grounds", "Unmapped Area", "Private", "Mausoleum", "Mass Grave", "Cluster", "Block"];
 
-  // Checks if a block name is already taken
   function nameTaken(name, exceptBid) {
     return blockOrder.some((bid) => bid !== exceptBid && blocks[bid].block_name === name);
   }
 
-  // Sets or clears an error message on a form field
   function setFieldError(id, msg) {
     const el = $(id);
     if (!el) return;
@@ -1591,7 +1515,6 @@ const MAP = (() => {
     el.style.display = msg ? "block" : "none";
   }
 
-  // Validates a block name input field
   function validatedName(inputId, errId, exceptBid) {
     const name = $(inputId).value.trim();
     if (!name) {
@@ -1608,13 +1531,11 @@ const MAP = (() => {
     return name;
   }
 
-  // Wires input event to clear validation errors on typing
   function wireNameField(inputId, errId) {
     const el = $(inputId);
     if (el) el.addEventListener("input", () => setFieldError(errId, ""));
   }
 
-  // Calculates the next available position for a new block
   function nextBlockPosition(bw, bh) {
     const step = CELL * 2, perRow = 6, i = blockOrder.length;
     let bx = 60 + (i % perRow) * step;
@@ -1626,7 +1547,6 @@ const MAP = (() => {
     return { bx, by };
   }
 
-  // Opens the modal dialog to create a new block
   function openAddBlockModal() {
     $("modalTitle").textContent = "Add New Block";
     $("modalBody").innerHTML = `
@@ -1700,7 +1620,6 @@ const MAP = (() => {
     wireNameField("fBn", "fBnErr");
   }
 
-  // Opens the action selection modal for a block
   function openBlockSelectModal(bid) {
     curBlock = bid;
     const b = blocks[bid];
@@ -1715,7 +1634,6 @@ const MAP = (() => {
     showModal();
   }
 
-  // Opens the detailed view modal for a block and loads its graves
   function openBlockDetailsModal(bid) {
     const b = blocks[bid];
     const { occ, res, avail, total } = blockStats(b);
@@ -1837,7 +1755,6 @@ const MAP = (() => {
       });
   }
 
-  // Updates the statistics displayed in the block details modal
   function updateModalStats(bid) {
     const b = blocks[bid];
     if (!b) return;
@@ -1853,7 +1770,6 @@ const MAP = (() => {
   }
 
   const graveDrafts = {};
-  // Updates the local draft status of a grave
   function updateDraftStatus(id, val) {
     if (!graveDrafts[id]) graveDrafts[id] = {};
     graveDrafts[id].status = val;
@@ -1865,7 +1781,6 @@ const MAP = (() => {
     }
   }
 
-  // Enables inline editing mode for a grave card
   function enableGraveEdit(id) {
     const badge = document.getElementById(`badge-${id}`);
     const editWrap = document.getElementById(`edit-wrap-${id}`);
@@ -1881,7 +1796,6 @@ const MAP = (() => {
     if (inputRemarks) { inputRemarks.style.display = "block"; inputRemarks.focus(); }
   }
 
-  // Saves grave status and remarks updates to the server
   async function saveGraveEdits(id, bid) {
     const select = document.getElementById(`select-${id}`);
     const inputRemarks = document.getElementById(`remarks-input-${id}`);
@@ -1971,13 +1885,11 @@ const MAP = (() => {
     }
   }
 
-  // Shows or hides the search clear button based on input length
   function toggleClearBtn(val) {
     const btn = document.getElementById("clearSearchBtn");
     if (btn) btn.style.display = val.length > 0 ? "block" : "none";
   }
 
-  // Clears the grave search input and resets the filter
   function clearSearch() {
     const input = document.getElementById("graveSearchInput");
     if (input) {
@@ -1988,7 +1900,6 @@ const MAP = (() => {
     }
   }
 
-  // Filters displayed grave cards based on a search term
   function filterGraves(query) {
     const term = query.toLowerCase().trim();
     const cards = document.querySelectorAll(".grave-card");
@@ -1998,7 +1909,6 @@ const MAP = (() => {
     });
   }
 
-  // Opens the block edit modal to update block details
   function openBlockEditModal(bid) {
     curBlock = bid;
     const b = blocks[bid];
@@ -2096,7 +2006,6 @@ const MAP = (() => {
     wireNameField("fEn", "fEnErr");
   }
 
-  // Opens the block layout options modal
   function openBlockLayoutModal(bid) {
     curBlock = bid;
     const b = blocks[bid];
@@ -2111,7 +2020,6 @@ const MAP = (() => {
     showModal();
   }
 
-  // Deletes a block and its associated graves from the server
   async function deleteBlock(bid) {
     const b = blocks[bid];
     if (!b) return;
@@ -2159,16 +2067,14 @@ const MAP = (() => {
     } catch (err) {
       console.error("Delete failed:", err);
       if (deleteBtn) { deleteBtn.disabled = false; deleteBtn.textContent = "Delete block"; }
-      if (cb) cb.disabled = false; if (cc) cb.disabled = false;
+      if (cb) cb.disabled = false; if (cc) cc.disabled = false;
       setHint("Delete failed — check your connection.");
       if (window.showAlertTOP) showAlertTOP("Delete failed — check your connection.", "error");
     }
   }
 
-  // Shows the modal overlay dialog
   function showModal() { $("modalOverlay").classList.add("open"); }
 
-  // Closes the modal overlay dialog
   function closeModal() {
     const overlay = $("modalOverlay");
     if (!overlay) return;
@@ -2182,7 +2088,6 @@ const MAP = (() => {
     pendingNavHref = null;
   }
 
-  // Opens the confirmation modal when leaving with unsaved changes
   function openUnsavedChangesModal(href) {
     pendingNavHref = href;
     $("modalTitle").textContent = "Unsaved changes";
@@ -2227,7 +2132,6 @@ const MAP = (() => {
     };
   }
 
-  // Initializes navigation guards to prevent losing unsaved map edits
   function initNavGuard() {
     document.addEventListener("click", (e) => {
       if (!mapEditMode) return;
@@ -2244,7 +2148,6 @@ const MAP = (() => {
     });
   }
 
-  // Updates the overall map status bar statistics
   function updateStatus() {
     let total = 0, occ = 0, other = 0;
     blockOrder.forEach((bid) => {
@@ -2261,19 +2164,16 @@ const MAP = (() => {
 
     syncCanvasSize();
 
-    // ── CALCULATE INITIAL ZOOM TO COVER SCREEN ──
     const containerW = canvasWrap.clientWidth;
     const containerH = canvasWrap.clientHeight;
-    
-    // Math.max ensures it fills the container (no grey bars)
+
     const scaleX = containerW / MAP_W;
     const scaleY = containerH / MAP_H;
-    mapScale = Math.max(scaleX, scaleY); 
+    mapScale = Math.max(scaleX, scaleY);
 
-    // Center the map perfectly
     mapX = (containerW - (MAP_W * mapScale)) / 2;
     mapY = (containerH - (MAP_H * mapScale)) / 2;
-    
+
     applyCameraTransform();
 
     initButtons();

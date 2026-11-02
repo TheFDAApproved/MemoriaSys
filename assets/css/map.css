@@ -1,40 +1,35 @@
 /* ── BASE LAYOUT ─────────────────────────────────────────── */
-/* Main page wrapper ensuring full height layout */
 .main {
   width: 100%;
   min-width: 0;
-  min-height: 100%;
   background: #f1f5f9;
-  display: flex;
-  flex-direction: column;
+  display: block;
 }
 
-/* Map page container with padding */
 .mapContainer {
-  flex: 1;
   width: 100%;
   min-width: 0;
   padding: 24px;
-  padding-bottom: 24px;
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
+  padding-bottom: 10px;
+  display: block;
 }
 
-/* ── MAP CARD (GRID LAYOUT) ──────────────────────────────── */
-/* Card container using CSS Grid for dynamic section row heights */
+/* ── MAP CARD ────────────────────────────────────────────── */
 .mapCard {
   width: 100%;
+  max-width: 1200px;      
+  margin: 0 auto;         
   min-width: 0;
   background-color: #ffffff;
   border-radius: 15px;
-  padding-bottom: 24px;
-  display: grid;
-  grid-template-rows: auto auto 1fr auto;
-  height: 100%; /* Fills the container height */
+  padding-bottom: 15px; 
+  display: flex;         
+  flex-direction: column; 
+  height: auto;          
+  align-self: flex-start; 
+  margin-bottom: 60px;    
 }
 
-/* Header section containing title and action buttons */
 .mapHeader {
   display: flex;
   align-items: flex-start;
@@ -59,7 +54,6 @@
 }
 
 /* ── BUTTON STYLES ───────────────────────────────────────── */
-/* Common button base rules and transitions */
 .editBtn,
 .plotBtn,
 .saveBtn,
@@ -74,7 +68,6 @@
   margin-top: 10px;
   font-family: "Inter", sans-serif;
 }
-/* Primary blue buttons for edit and add actions */
 .editBtn,
 .plotBtn {
   background: #3b82f6;
@@ -84,7 +77,6 @@
 .plotBtn:hover {
   background: #2563eb;
 }
-/* Save button styles */
 .saveBtn {
   background: #22c55e;
   color: white;
@@ -92,7 +84,6 @@
 .saveBtn:hover {
   background: #16a34a;
 }
-/* Cancel button styles */
 .cancelBtn {
   background: #f1f5f9;
   color: #475569;
@@ -101,7 +92,6 @@
 .cancelBtn:hover {
   background: #e2e8f0;
 }
-/* Reshape toolbar action buttons */
 .reshapeSubBtn {
   background: #fff;
   color: #f59e0b;
@@ -120,7 +110,6 @@
 }
 
 /* ── META ROW ────────────────────────────────────────────── */
-/* Metadata section displaying total, occupied, and vacant grave status */
 .mapMeta {
   display: flex;
   justify-content: space-between;
@@ -136,25 +125,21 @@
 }
 
 /* ── CANVAS & BACKGROUND IMAGE ─────────────────────────── */
-/* Main canvas viewport matching 1000x500 map ratio */
 .mapCanvas {
-  width: calc(100% - 48px) !important;
-  margin: 0 auto !important;
-  flex: 1;
-  min-height: 0;
+  width: calc(100% - 48px) !important; 
+  max-width: 1200px;
+  margin: 0 auto !important; 
   background-color: #e2e8f0;
   position: relative !important;
-  overflow: hidden !important;
+  overflow: hidden !important; 
   isolation: isolate !important;
   border-radius: 12px;
-  touch-action: none;
-
-  /* Forces the container to perfectly match the 1000x500 ratio of the map */
-  aspect-ratio: 2 / 1;
-  min-height: 400px;
+  touch-action: none; 
+  aspect-ratio: 2.3 / 1; 
+  min-height: 380px;     
+  flex: none; 
 }
 
-/* Transform container for map zoom and panning camera */
 #mapCamera {
   position: absolute !important;
   top: 0 !important;
@@ -165,7 +150,6 @@
   will-change: transform !important;
 }
 
-/* Cemetery map background image */
 #cemetery_map_image {
   position: absolute !important;
   object-fit: fill !important;
@@ -174,7 +158,6 @@
   image-rendering: pixelated;
 }
 
-/* Canvas element layout */
 .mapCanvas canvas,
 #mapCvs {
   position: absolute !important;
@@ -183,7 +166,6 @@
   z-index: 1 !important;
 }
 
-/* User interaction hint pill */
 .mapHint {
   position: absolute;
   bottom: 12px;
@@ -201,7 +183,6 @@
   text-align: center;
   z-index: 5;
 }
-/* Loading overlay layer */
 .mapLoading {
   position: absolute;
   inset: 0;
@@ -217,7 +198,6 @@
 }
 
 /* ── LEGEND ─────────────────────────────────────────────── */
-/* Map legend items showing block status color indicators */
 .mapLegend {
   display: flex;
   gap: 14px;
@@ -243,7 +223,6 @@
 }
 
 /* ── MODAL ───────────────────────────────────────────────── */
-/* Modal overlay backdrop */
 .modalOverlay {
   display: none;
   position: fixed;
@@ -256,8 +235,6 @@
 .modalOverlay.open {
   display: flex;
 }
-
-/* Modal dialog container and form styling */
 .modalBox {
   background: #fff;
   border-radius: 12px;
@@ -305,8 +282,6 @@
 .modalRowPair > div {
   flex: 1;
 }
-
-/* Modal footer action buttons */
 .modalActions {
   display: flex;
   gap: 8px;
@@ -335,8 +310,6 @@
 .modalActions .btnPrimary:hover {
   background: #2563eb;
 }
-
-/* Modal dividers, alerts, and sub-buttons */
 .modalDivider {
   border: none;
   border-top: 1px solid #f1f5f9;
@@ -405,7 +378,6 @@
 }
 
 /* ── VIEW BLOCK MODAL: GRAVE GRID ── */
-/* Grave list container and cards inside block details modal */
 .grave-grid-container {
   margin-top: 16px;
   border-top: 1px solid #e2e8f0;
@@ -498,14 +470,12 @@
   background: #fff;
 }
 
-/* Touch scrolling behavior for block search results */
 #blockSearchResults {
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
 }
 
 /* ── RESPONSIVE MEDIA QUERIES ───────────────────────────── */
-/* Mobile layout overrides for screens up to 600px wide */
 @media (max-width: 600px) {
   .grave-grid {
     grid-template-columns: 1fr;
@@ -513,10 +483,19 @@
   .mapCard {
     height: auto;
   }
+  
+  .mapCanvas {
+    aspect-ratio: auto !important; 
+    height: 350px !important;      
+    width: calc(100% - 32px) !important; 
+    margin: 0 auto !important;
+    border-radius: 12px !important;
+  }
+
   #publicMapCanvas {
     width: 100% !important;
     margin: 0 !important;
     border-radius: 0 !important;
-    height: 60vh !important;
+    height: 60vh !important; 
   }
 }
