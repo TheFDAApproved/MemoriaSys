@@ -9,6 +9,10 @@
      - showAlertTOP(...)   → toast notifications (top-right)
    ========================================================================== */
 
+// easy options for displaying the graves name schema
+const col_letter = false;
+const row_letter = true;
+
 const MAP = (() => {
   // ── CONSTANTS ────────────────────────────────────────────────────────────
   const CELL = 22;
@@ -17,6 +21,7 @@ const MAP = (() => {
   const MAP_H = 500;  // Fixed virtual map height
 
   // Helper to convert 1 -> A, 2 -> B, etc.
+  // this is named getrowletter but it can be used to anything lol
   function getRowLetter(rowNum) {
     if (rowNum >= 1 && rowNum <= 26) {
       return String.fromCharCode(64 + rowNum);
@@ -1829,7 +1834,7 @@ const MAP = (() => {
               
               <div class="grave-card-header" style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:1px dashed #cbd5e1; padding-bottom:6px; margin-bottom:2px;">
                 <div>
-                  <div class="grave-code">${escHtml(b.block_name)}-${getRowLetter(g.row_num)}-${g.col_num}</div>
+                  <div class="grave-code">${escHtml(b.block_name)}-${row_letter ? getRowLetter(g.row_num) : g.row_num}-${col_letter ? getRowLetter(g.col_num) : g.col_num}</div>
                   <div class="grave-meta">Row ${getRowLetter(g.row_num)} &middot; Col ${g.col_num}</div>
                 </div>
                 

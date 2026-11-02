@@ -1,6 +1,19 @@
 const PH_PREFIX = "+63 ";
 const SEARCH_MIN_DELAY_MS = 700;
 
+// easy options for displaying the graves name schema
+const col_letter = false;
+const row_letter = true;
+
+// this is named getrowletter but it can be used to anything lol
+function getRowLetter(rowNum) {
+    if (rowNum >= 1 && rowNum <= 26) {
+      return String.fromCharCode(64 + rowNum);
+    }
+    return rowNum; // Fallback just in case
+}
+
+
 // Used to ignore older search responses when the user searches again quickly
 let searchRequestId = 0;
 
@@ -777,7 +790,7 @@ function openRecordModal(record) {
     if (tiles[0]) tiles[0].textContent = formatDate(record.dateOfBirth);
     if (tiles[1]) tiles[1].textContent = formatDate(record.dateOfDeath);
     if (tiles[2])
-        tiles[2].textContent = `Block ${record.block}, Row ${record.row}, Column ${record.column}`;
+        tiles[2].textContent = `Block: ${record.block}-${row_letter ? getRowLetter(record.row) : record.row}-${col_letter ? getRowLetter(record.column) : record.column}`;
     if (tiles[3]) tiles[3].textContent = record.graveType || "N/A";
 
     recordModal.classList.remove("hidden");
