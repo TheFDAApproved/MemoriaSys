@@ -173,6 +173,31 @@
 
         .modernAlertMessage{
             padding-right:24px;
+            overflow-wrap:anywhere;
+            word-break:break-word;
+        }
+
+        /* Responsive adjustments for alerts */
+        @media (max-width: 480px) {
+            #customAlertContainer {
+                top: 12px;
+                right: 12px;
+                left: 12px;
+                gap: 10px;
+            }
+
+            .modernAlert {
+                min-width: 0;
+                max-width: none;
+                width: 100%;
+                padding: 14px 16px;
+                border-radius: 14px;
+                font-size: 13.5px;
+            }
+
+            .modernAlertMessage {
+                padding-right: 22px;
+            }
         }
 
     `;
