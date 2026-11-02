@@ -1,19 +1,16 @@
 const MonitorBurialModal = (() => {
-    // ------------------------------------------------------------------
-    // module state
-    // ------------------------------------------------------------------
     let modalEl = null;
     let loadPromise = null;
     let bound = false;
 
     let reservation = null;
-    let wizardMode = null;          // 'old' | 'new' | null
+    let wizardMode = null;
     let submissionSucceeded = false;
 
-    let oldOccupantOriginal = null; // flat O data at open time
-    let newOccupantOriginal = null; // flat N data at open time
-    let oldModeSnapshot = null;     // form fields when leaving Old step
-    let newModeSnapshot = null;     // form fields when leaving New step
+    let oldOccupantOriginal = null;
+    let newOccupantOriginal = null;
+    let oldModeSnapshot = null;
+    let newModeSnapshot = null;
 
     let burialTypePlaceholderText = null;
 
@@ -27,10 +24,8 @@ const MonitorBurialModal = (() => {
     let nextBtn = null;
     let backBtn = null;
 
-    // ▼ ADDED: header element ref (parity with Reserve)
     let locationHeaderEl = null;
 
-    // Cache for the barangay_options settings fetch (idempotent, retries on error).
     let barangayOptionsPromise = null;
 
     const MONITOR_API = 'api/monitor.php';
@@ -44,10 +39,6 @@ const MonitorBurialModal = (() => {
     const INTERMENT_FIELD_IDS = ['date_buried', 'date_interment'];
     const EXPIRATION_FIELD_IDS = ['lease_expiration_date', 'expiration_date'];
 
-    // ▼ CHANGED: removed OLD_DIRECT_EDIT_FIELDS whitelist — old occupant
-    //            is fully editable, matching Reserve's setEditable("old").
-
-    // Fields locked when editing the New occupant.
     const NEW_OCCUPANT_READONLY_FIELDS = new Set([
         'status',
         'block',
@@ -55,7 +46,6 @@ const MonitorBurialModal = (() => {
         'burial_block',
     ]);
 
-    // O bio fields staged into old_edited_fields (php allow-list).
     const OLD_EDITABLE_STRING_FIELDS = [
         'deceased_name',
         'last_known_address',
@@ -84,26 +74,20 @@ const MonitorBurialModal = (() => {
         deceased_sex: ['Male', 'Female', 'Unknown'],
     };
 
-    // ==================================================================
-    // Raw-error sanitization
-    // Prevents ngrok/proxy HTML pages, bare HTTP status codes, JSON parse
-    // failures, and network failures from reaching showAlertTOP or the
-    // shared confirm modal's error display.
-    // ==================================================================
     const GENERIC_ERROR = 'Something went wrong. Please try again.';
 
     const looksRawMessage = (text) => {
         if (!text) return true;
         const t = String(text).trim();
         if (!t) return true;
-        if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true;                          // HTML body
-        if (/ERR_NGROK_|ngrok/i.test(t)) return true;                            // ngrok
-        if (/^HTTP\s+\d{3}/i.test(t)) return true;                               // bare "HTTP 502"
-        if (/^Save failed \(\d{3}\)$/i.test(t)) return true;                     // our own fallback
+        if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true;
+        if (/ERR_NGROK_|ngrok/i.test(t)) return true;
+        if (/^HTTP\s+\d{3}/i.test(t)) return true;
+        if (/^Save failed \(\d{3}\)$/i.test(t)) return true;
         if (/non-JSON|Unexpected token|is not valid JSON|Unexpected end of JSON/i.test(t)) return true;
         if (/Failed to fetch|NetworkError|Load failed/i.test(t)) return true;
         if (/^(TypeError|SyntaxError|ReferenceError|RangeError|DOMException)\b/i.test(t)) return true;
-        if (t.length > 200) return true;                                          // giant dumps
+        if (t.length > 200) return true;
         return false;
     };
 
@@ -114,15 +98,11 @@ const MonitorBurialModal = (() => {
         return s;
     }
 
-    // ==================================================================
-    // styles
-    // ==================================================================
     function injectWizardStyles() {
         if (document.getElementById('reserveWizardMiniStyles')) return;
         const style = document.createElement('style');
         style.id = 'reserveWizardMiniStyles';
         style.textContent = `
-            /* ▼ ADDED: location header (parity with Reserve) */
             #burial_modal_overlay .wizardLocationHeader {
                 margin: 0 0 16px 0;
                 padding: 6px 10px;
@@ -134,6 +114,8 @@ const MonitorBurialModal = (() => {
                 color: #1f2a3d;
                 width: 100%;
                 box-sizing: border-box;
+                overflow-wrap: anywhere;
+                word-break: break-word;
             }
             #burial_modal_overlay .wizardLocationHeader .locName { color: #2b6cd4; }
             #burial_modal_overlay .wizardLocationHeader .locCurrent {
@@ -141,12 +123,14 @@ const MonitorBurialModal = (() => {
                 font-size: 0.85rem;
                 color: #56637a;
             }
-            /* ▲ ADDED */
 
             #burial_modal_overlay .paperFormActions {
                 display: flex !important;
                 align-items: center;
                 gap: 8px;
+                flex-wrap: wrap;
+                width: 100%;
+                box-sizing: border-box;
             }
             #burial_modal_overlay .paperFormActions .paperBackBtn  { order: 1; }
             #burial_modal_overlay .paperFormActions .paperCancelBtn {
@@ -166,6 +150,10 @@ const MonitorBurialModal = (() => {
                 color: #2b3a55;
                 cursor: pointer;
                 min-width: 100px;
+                max-width: 100%;
+                box-sizing: border-box;
+                white-space: normal;
+                overflow-wrap: anywhere;
             }
             #burial_modal_overlay .paperFormActions .paperNextBtn:hover,
             #burial_modal_overlay .paperFormActions .paperBackBtn:hover {
@@ -178,13 +166,79 @@ const MonitorBurialModal = (() => {
                 color: #475569;
                 cursor: not-allowed;
             }
+
+            @media (max-width: 900px) {
+                #burial_modal_overlay .wizardLocationHeader {
+                    font-size: 0.9rem;
+                    padding: 6px 8px;
+                    margin-bottom: 12px;
+                }
+            }
+
+            @media (max-width: 640px) {
+                #burial_modal_overlay .wizardLocationHeader {
+                    font-size: 0.85rem;
+                    padding: 5px 8px;
+                    margin-bottom: 10px;
+                    line-height: 1.35;
+                }
+                #burial_modal_overlay .wizardLocationHeader .locCurrent {
+                    display: block;
+                    margin-top: 2px;
+                    font-size: 0.8rem;
+                }
+                #burial_modal_overlay .paperFormActions {
+                    gap: 6px;
+                }
+                #burial_modal_overlay .paperFormActions .paperNextBtn,
+                #burial_modal_overlay .paperFormActions .paperBackBtn {
+                    flex: 1 1 0;
+                    min-width: 0;
+                    padding: 8px 10px;
+                    font-size: 0.9rem;
+                }
+            }
+
+            @media (max-width: 420px) {
+                #burial_modal_overlay .wizardLocationHeader {
+                    font-size: 0.8rem;
+                }
+                #burial_modal_overlay .paperFormActions {
+                    flex-direction: column;
+                    align-items: stretch;
+                    gap: 6px;
+                }
+                #burial_modal_overlay .paperFormActions .paperNextBtn,
+                #burial_modal_overlay .paperFormActions .paperBackBtn {
+                    flex: 1 1 auto;
+                    width: 100%;
+                    min-width: 0;
+                    text-align: center;
+                }
+                #burial_modal_overlay .paperFormActions .paperCancelBtn {
+                    margin-right: 0;
+                }
+            }
+
+            @media (max-height: 500px) and (orientation: landscape) {
+                #burial_modal_overlay .wizardLocationHeader {
+                    margin-bottom: 8px;
+                    padding: 4px 8px;
+                    font-size: 0.8rem;
+                }
+                #burial_modal_overlay .paperFormActions {
+                    gap: 4px;
+                }
+                #burial_modal_overlay .paperFormActions .paperNextBtn,
+                #burial_modal_overlay .paperFormActions .paperBackBtn {
+                    padding: 6px 10px;
+                    font-size: 0.85rem;
+                }
+            }
         `;
         document.head.appendChild(style);
     }
 
-    // ==================================================================
-    // remarks hint UI (subtle floating pill over empty textarea)
-    // ==================================================================
     function injectRemarksHintStyles() {
         if (document.getElementById('remarksHintStyles')) return;
         const style = document.createElement('style');
@@ -208,10 +262,33 @@ const MonitorBurialModal = (() => {
                 pointer-events: none;
                 opacity: 0.85;
                 z-index: 2;
+                max-width: calc(100% - 24px);
+                box-sizing: border-box;
+                overflow: hidden;
+                text-overflow: ellipsis;
             }
             .remarksFloatHint i {
                 font-size: 10px;
                 opacity: 0.7;
+                flex: 0 0 auto;
+            }
+
+            @media (max-width: 640px) {
+                .remarksFloatHint {
+                    font-size: 10.5px;
+                    padding: 3px 8px;
+                    max-width: calc(100% - 16px);
+                }
+            }
+
+            @media (max-width: 380px) {
+                .remarksFloatHint {
+                    font-size: 10px;
+                    padding: 3px 6px;
+                    white-space: normal;
+                    overflow-wrap: anywhere;
+                    border-radius: 8px;
+                }
             }
         `;
         document.head.appendChild(style);
@@ -257,7 +334,6 @@ const MonitorBurialModal = (() => {
         };
 
         const update = () => {
-            // Hidden if: submitted, no active wizard (view/initial), or has value.
             if (submissionSucceeded || !wizardMode) {
                 hint.style.display = 'none';
                 return;
@@ -289,9 +365,6 @@ const MonitorBurialModal = (() => {
         remarksField._remarksHintUpdate();
     }
 
-    // ==================================================================
-    // utilities
-    // ==================================================================
     function warn(message) {
         if (!message) return;
         if (typeof window.showAlertTOP === 'function') {
@@ -301,7 +374,6 @@ const MonitorBurialModal = (() => {
         console.warn('[MonitorModal]', message);
     }
 
-    // Same contract as monitor.js — uses the shared confirm modal if loaded.
     function confirmDialog(opts) {
         if (typeof window.showConfirmModal === 'function') return window.showConfirmModal(opts);
         const plain = [opts.title, opts.message].filter(Boolean).join('\n\n');
@@ -381,7 +453,6 @@ const MonitorBurialModal = (() => {
         e.value = raw ? addYearsISO(raw, LEASE_YEARS) : '';
     }
 
-    // ▼ ADDED: location header helpers (parity with Reserve)
     function ensureLocationHeader() {
         if (!modalEl) return;
         injectWizardStyles();
@@ -424,8 +495,6 @@ const MonitorBurialModal = (() => {
             pick(oldOccupantOriginal?.deceased_name, oldModeSnapshot?.deceased_name) ||
             'this occupant';
 
-        // ▼ FIXED: "currently at" should show O's CURRENT grave (the target
-        //          grave N is moving into), not O's destination.
         const srcBlock = pick(
             reservation?.target_grave?.block_name,
             oldOccupantOriginal?.block
@@ -434,7 +503,6 @@ const MonitorBurialModal = (() => {
             reservation?.target_grave?.grave_code,
             oldOccupantOriginal?.grave_code
         );
-        // ▲ FIXED
         const info = (srcBlock || srcGrave) ? `${srcBlock || '—'} / ${srcGrave || '—'}` : '';
         updateLocationHeaderText(name, info);
     }
@@ -446,7 +514,6 @@ const MonitorBurialModal = (() => {
         const name = fromField || pick(newModeSnapshot?.deceased_name) || 'the incoming person';
         updateLocationHeaderText(name, '');
     }
-    // ▲ ADDED
 
     function normalizeType(value) {
         const s = String(value || '').trim();
@@ -520,9 +587,6 @@ const MonitorBurialModal = (() => {
         }
     }
 
-    // ==================================================================
-    // blocks + graves
-    // ==================================================================
     async function fetchBlocks() {
         const res = await fetch(BLOCKS_API, {
             headers: { Accept: 'application/json' },
@@ -799,8 +863,6 @@ const MonitorBurialModal = (() => {
         updateBurialTypePlaceholder();
     }
 
-    // ▼ CHANGED: run status handler in any wizard mode; treat anything
-    //            that isn't "Active" as a clear signal (matches Reserve).
     async function handleStatusChange() {
         if (!modalEl) return;
         if (wizardMode !== 'old') return;
@@ -822,12 +884,7 @@ const MonitorBurialModal = (() => {
         resetGraveSelectUI();
         updateBurialTypePlaceholder();
     }
-    // ▲ CHANGED
 
-    // ==================================================================
-    // barangay_options
-    // ==================================================================
-    // Normalise the stored JSON value into [{ value, label }, ...].
     function normalizeBarangayOptions(data) {
         const pairs = [];
         if (Array.isArray(data)) {
@@ -851,9 +908,6 @@ const MonitorBurialModal = (() => {
         return pairs;
     }
 
-    // Fetch api/settings once, pull the barangay_options value, and
-    // repopulate #contact_person_address_barangay. On any failure we
-    // silently fall back to whatever is already in burial_modal.html.
     async function loadBarangayOptions() {
         if (barangayOptionsPromise) return barangayOptionsPromise;
 
@@ -872,12 +926,9 @@ const MonitorBurialModal = (() => {
                 const result = await res.json();
                 rows = Array.isArray(result) ? result : result?.data;
                 if (!Array.isArray(rows)) {
-                    // Well-formed response, just nothing usable — don't retry.
                     return;
                 }
             } catch (err) {
-                // Network / HTTP failure — leave the HTML defaults alone,
-                // but reset so a later open can retry.
                 console.warn(
                     '[MonitorModal] Unable to load barangay_options:',
                     err,
@@ -896,14 +947,12 @@ const MonitorBurialModal = (() => {
             try {
                 parsed = JSON.parse(rawValue);
             } catch {
-                // Invalid JSON — keep whatever burial_modal.html had.
                 return;
             }
 
             const pairs = normalizeBarangayOptions(parsed);
             if (!pairs.length) return;
 
-            // Preserve whatever is currently selected, if it still exists.
             const current = select.value;
 
             select.innerHTML = '';
@@ -933,9 +982,6 @@ const MonitorBurialModal = (() => {
         return barangayOptionsPromise;
     }
 
-    // ==================================================================
-    // load / bind
-    // ==================================================================
     async function ensureLoaded() {
         modalEl = document.getElementById('burial_modal_overlay');
         if (modalEl) {
@@ -1059,7 +1105,6 @@ const MonitorBurialModal = (() => {
             });
         });
 
-        // ▼ ADDED: live-update location header name as user types
         const headerNameEl = modalEl.querySelector('#deceased_name');
         if (headerNameEl) {
             headerNameEl.addEventListener('input', () => {
@@ -1068,7 +1113,6 @@ const MonitorBurialModal = (() => {
                 else if (wizardMode === 'new') refreshNewOccupantHeader();
             });
         }
-        // ▲ ADDED
 
         const blockSelect = modalEl.querySelector('#block');
         if (blockSelect) {
@@ -1112,9 +1156,6 @@ const MonitorBurialModal = (() => {
         }
     }
 
-    // ==================================================================
-    // reservation → flat field values
-    // ==================================================================
     function reservationToOldFields(res) {
         const o = res.old_interment || {};
         const ong = res.old_new_grave || null;
@@ -1197,7 +1238,6 @@ const MonitorBurialModal = (() => {
             lease_expiration_date: n.lease_expiration_date || '',
             remarks: n.remarks || '',
 
-            // N will be Activated on execute — show that in the UI.
             status: 'Active',
             block: g.block_name || '',
             grave_code: g.grave_code || '',
@@ -1205,9 +1245,6 @@ const MonitorBurialModal = (() => {
         };
     }
 
-    // ==================================================================
-    // form I/O
-    // ==================================================================
     function setFieldValue(id, val) {
         const el = modalEl.querySelector('#' + id);
         if (!el) return;
@@ -1278,7 +1315,6 @@ const MonitorBurialModal = (() => {
 
         setFieldValue('remarks', data.remarks);
 
-        // Status: always Active unless the caller passed an explicit value.
         const statusVal = pick(data.status, 'Active');
         setFieldValue('status', statusVal);
 
@@ -1308,9 +1344,7 @@ const MonitorBurialModal = (() => {
 
         updateBurialTypePlaceholder();
 
-        // ▼ ADDED: refresh remarks hint after populate
         refreshRemarksHint();
-        // ▲ ADDED
     }
 
     function readAllFormFields() {
@@ -1349,9 +1383,7 @@ const MonitorBurialModal = (() => {
             }
         });
 
-        // ▼ ADDED: refresh remarks hint after form restore
         refreshRemarksHint();
-        // ▲ ADDED
     }
 
     function readField(id) {
@@ -1408,9 +1440,6 @@ const MonitorBurialModal = (() => {
         };
     }
 
-    // ==================================================================
-    // mode / locking
-    // ==================================================================
     function applyMode() {
         if (!modalEl) return;
 
@@ -1450,12 +1479,9 @@ const MonitorBurialModal = (() => {
                 return;
             }
 
-            // ▼ CHANGED: old occupant is fully editable (like Reserve).
-            //            new occupant keeps the readonly location/status set.
             let editable = false;
             if (isOld) editable = true;
             else if (isNew) editable = !NEW_OCCUPANT_READONLY_FIELDS.has(field.id);
-            // ▲ CHANGED
 
             if (field.tagName === 'SELECT') {
                 field.disabled = !editable;
@@ -1469,9 +1495,7 @@ const MonitorBurialModal = (() => {
         updateBurialTypePlaceholder();
         updateWizardButtons();
 
-        // ▼ ADDED: refresh remarks hint after applyMode changes editability
         refreshRemarksHint();
-        // ▲ ADDED
     }
 
     function lockFieldsOnly() {
@@ -1486,9 +1510,7 @@ const MonitorBurialModal = (() => {
             el.style.color = '';
         });
 
-        // ▼ ADDED: refresh remarks hint after lock
         refreshRemarksHint();
-        // ▲ ADDED
     }
 
     function unlockFields() {
@@ -1504,9 +1526,6 @@ const MonitorBurialModal = (() => {
         });
     }
 
-    // ==================================================================
-    // wizard buttons
-    // ==================================================================
     function updateWizardButtons() {
         ensureWizardButtons();
 
@@ -1560,9 +1579,6 @@ const MonitorBurialModal = (() => {
         }
     }
 
-    // ==================================================================
-    // wizard step transitions
-    // ==================================================================
     async function enterOldStep() {
         wizardMode = 'old';
         const data = oldModeSnapshot
@@ -1585,9 +1601,7 @@ const MonitorBurialModal = (() => {
             }
         }
 
-        // ▼ ADDED: refresh "Where will <name> go?" header
         refreshOldOccupantHeader();
-        // ▲ ADDED
     }
 
     async function enterNewStep() {
@@ -1600,13 +1614,9 @@ const MonitorBurialModal = (() => {
         applyMode();
         updateWizardButtons();
 
-        // ▼ ADDED: refresh "Where will <name> go?" header
         refreshNewOccupantHeader();
-        // ▲ ADDED
     }
 
-    // ▼ CHANGED: full parity with Reserve's handleNextClick —
-    //            phone format, Active-requires-destination, Inactive-requires-empty.
     async function handleNextClick() {
         if (submissionSucceeded) {
             wizardMode = 'new';
@@ -1621,7 +1631,6 @@ const MonitorBurialModal = (() => {
 
         if (wizardMode !== 'old') return;
 
-        // ---- A) Phone format (only if user actually typed something) ----
         const phoneEl = modalEl.querySelector('#contact_person_phone_number');
         const rawPhone = (phoneEl?.value || '').trim();
         if (rawPhone && rawPhone !== '+63') {
@@ -1633,7 +1642,6 @@ const MonitorBurialModal = (() => {
             }
         }
 
-        // ---- B) Status ↔ destination consistency ----
         const statusEl = modalEl.querySelector('#status');
         const blockEl = modalEl.querySelector('#block');
         const graveEl = modalEl.querySelector('#grave_code');
@@ -1662,8 +1670,6 @@ const MonitorBurialModal = (() => {
                 return;
             }
         } else {
-            // Non-Active → destination must be empty. handleStatusChange already
-            // clears these, but double-check in case the user re-selected.
             if ((blockEl?.value || '').trim() || (graveEl?.value || '').trim()) {
                 warn('Inactive old occupant cannot have a Block or Grave Code.');
                 blockEl?.focus();
@@ -1671,7 +1677,6 @@ const MonitorBurialModal = (() => {
             }
         }
 
-        // ---- C) Snapshot only after validation ----
         oldModeSnapshot = readAllFormFields();
 
         if (!oldModeSnapshot.deceased_name) {
@@ -1682,7 +1687,6 @@ const MonitorBurialModal = (() => {
         recalcExpirationFromInterment();
         await enterNewStep();
     }
-    // ▲ CHANGED
 
     async function handleBackClick() {
         if (submissionSucceeded) {
@@ -1702,9 +1706,6 @@ const MonitorBurialModal = (() => {
         await enterOldStep();
     }
 
-    // ==================================================================
-    // payload builder
-    // ==================================================================
     function computeOldBioDiff(current) {
         const diff = {};
         if (!reservation) return diff;
@@ -1723,8 +1724,6 @@ const MonitorBurialModal = (() => {
         return diff;
     }
 
-    // ▼ CHANGED: resolve the selected grave's id from the dropdown and
-    //            send `old_new_grave_id` alongside the code (server prefers id).
     function resolveSelectedGraveId() {
         const sel = modalEl ? modalEl.querySelector('#grave_code') : null;
         if (!sel || sel.tagName !== 'SELECT') return null;
@@ -1733,7 +1732,6 @@ const MonitorBurialModal = (() => {
         const n = Number(opt.dataset.graveId);
         return Number.isFinite(n) && n > 0 ? n : null;
     }
-    // ▲ CHANGED
 
     function buildPayload() {
         const oldValues = oldModeSnapshot || {};
@@ -1783,17 +1781,10 @@ const MonitorBurialModal = (() => {
             payload.old_new_status = status;
 
             if (status === 'Active' && oSource.grave_code) {
-                // ▼ FIXED: only resolve the id when the OLD step is the active form,
-                //          because only then does #grave_code hold O's destination.
-                //          On the 'new' step, #grave_code holds N's target, so sending
-                //          its id here would assign O to the wrong grave.
-                //          Falling back to just the code is safe: monitor.php
-                //          resolves `old_new_grave_code` → grave_id itself.
                 if (wizardMode === 'old') {
                     const gid = resolveSelectedGraveId();
                     if (gid) payload.old_new_grave_id = gid;
                 }
-                // ▲ FIXED
                 payload.old_new_grave_code = oSource.grave_code;
             }
             if (oSource.assistance_type) {
@@ -1810,14 +1801,11 @@ const MonitorBurialModal = (() => {
         return payload;
     }
 
-    // ==================================================================
-    // submit — Save opens the confirm dialog first; only then POST
-    // ==================================================================
     async function handleSubmit(e) {
         if (e && typeof e.preventDefault === 'function') e.preventDefault();
 
         if (submissionSucceeded) { close(); return; }
-        if (wizardMode === 'old') return;      // must go through Next first
+        if (wizardMode === 'old') return;
 
         recalcExpirationFromInterment();
         newModeSnapshot = readAllFormFields();
@@ -1836,7 +1824,6 @@ const MonitorBurialModal = (() => {
 
         const payload = buildPayload();
 
-        // --- Confirm step ---
         const old = reservation.old_interment || null;
         const newName = readField('deceased_name') || '';
         const blockName = readField('block') || '';
@@ -1880,8 +1867,6 @@ const MonitorBurialModal = (() => {
                     const json = await res.json().catch(() => null);
                     if (!res.ok || (json && json.success === false)) {
                         const apiMsg = json && (json.message || json.error);
-                        // Raw-error sanitization: this throw escapes into
-                        // the shared confirm modal's error display.
                         throw new Error(friendlyMessage(apiMsg, 'Failed to save reservation.'));
                     }
                     postSucceeded = true;
@@ -1891,7 +1876,7 @@ const MonitorBurialModal = (() => {
                         saveBtn.textContent = originalSaveText;
                     }
                     console.error('[MonitorModal] Save failed:', err);
-                    throw err; // let the confirm modal show the error
+                    throw err;
                 }
             },
         });
@@ -1904,7 +1889,6 @@ const MonitorBurialModal = (() => {
             return;
         }
 
-        // Post-execute "checking" lock in the burial modal.
         submissionSucceeded = true;
         lockFieldsOnly();
         if (saveBtn) {
@@ -1924,9 +1908,6 @@ const MonitorBurialModal = (() => {
         }
     }
 
-    // ==================================================================
-    // cancel
-    // ==================================================================
     function handleCancel() {
         oldModeSnapshot = null;
         newModeSnapshot = null;
@@ -1937,16 +1918,11 @@ const MonitorBurialModal = (() => {
         close();
     }
 
-    // ==================================================================
-    // open / close
-    // ==================================================================
     async function open(startType, res) {
         await ensureLoaded();
         if (!modalEl || !res) return;
 
-        // ▼ ADDED: ensure remarks hint is wired up before first render
         ensureRemarksHint();
-        // ▲ ADDED
 
         reservation = res;
         submissionSucceeded = false;
@@ -1970,15 +1946,9 @@ const MonitorBurialModal = (() => {
         const hasOld = !!res.old_interment;
         const startAt = (startType === 'old' && hasOld) ? 'old' : 'new';
 
-        // ▼ FIX: if we're opening directly on 'new' but the reservation has an
-        //        old occupant, seed oldModeSnapshot from the O's current state.
-        //        Without this, buildPayload() sends old_new_status='Inactive'
-        //        plus an old_edited_fields diff that nulls every O bio field,
-        //        which the server rejects — so Save appears to do nothing.
         if (startAt === 'new' && hasOld && oldOccupantOriginal) {
             oldModeSnapshot = { ...oldOccupantOriginal };
         }
-        // ▲ FIX
 
         if (startAt === 'old') {
             await enterOldStep();
@@ -1995,10 +1965,7 @@ const MonitorBurialModal = (() => {
         modalEl.style.display = 'block';
         modalEl.classList.add('active');
 
-        // ▼ ADDED: refresh remarks hint now that modal is visible, so
-        //          getBoundingClientRect can position the pill correctly.
         refreshRemarksHint();
-        // ▲ ADDED
     }
 
     function close() {
@@ -2018,16 +1985,12 @@ const MonitorBurialModal = (() => {
         newOccupantOriginal = null;
         reservation = null;
 
-        // ▼ ADDED: remove the location header on close (parity with Reserve)
         if (locationHeaderEl && locationHeaderEl.parentNode) {
             locationHeaderEl.parentNode.removeChild(locationHeaderEl);
         }
         locationHeaderEl = null;
-        // ▲ ADDED
 
-        // ▼ ADDED: hint will be hidden (wizardMode=null) — reflect that now
         refreshRemarksHint();
-        // ▲ ADDED
 
         const actions = modalEl.querySelector('.paperFormActions');
         if (actions) {

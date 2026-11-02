@@ -40,6 +40,7 @@ html.smsNotification--open body {
 }
 
 .smsModal__card {
+    box-sizing: border-box;
     background: #ffffff;
     color: #111827;
     border: 1px solid #e5e7eb;
@@ -48,7 +49,9 @@ html.smsNotification--open body {
         0 20px 50px rgba(15, 18, 28, 0.18),
         0 2px 6px rgba(15, 18, 28, 0.06);
     width: min(92vw, 460px);
+    max-width: 100%;
     max-height: calc(100vh - 32px);
+    max-height: calc(100dvh - 32px);
     display: flex;
     flex-direction: column;
     overflow: hidden;
@@ -66,6 +69,7 @@ html.smsNotification--open body {
     display: flex;
     align-items: center;
     gap: 12px;
+    flex: 0 0 auto;
     padding: 18px 22px;
     background: transparent;
     color: inherit;
@@ -90,6 +94,7 @@ html.smsNotification--open body {
 
 .smsModal__body {
     padding: 18px 22px 20px;
+    min-height: 0;
     overflow-y: auto;
 }
 
@@ -109,6 +114,7 @@ html.smsNotification--open body {
 .smsModal__input,
 .smsModal__textarea {
     width: 100%;
+    max-width: 100%;
     box-sizing: border-box;
     padding: 10px 12px;
     border-radius: 10px;
@@ -159,6 +165,13 @@ html.smsNotification--open body {
     color: #6b7280;
     cursor: not-allowed;
     resize: none;
+}
+
+@supports (-webkit-touch-callout: none) {
+    .smsModal__input,
+    .smsModal__textarea {
+        font-size: 16px;
+    }
 }
 
 .smsModal__checkboxRow {
@@ -323,24 +336,21 @@ html.smsNotification--open body {
         document.head.appendChild(style);
     }
 
-    // ---- raw-error sanitization ----
-    // Prevent ngrok/proxy HTML pages, bare HTTP status codes, JSON parse
-    // failures, and network failures from reaching showAlertTOP.
     const GENERIC_ERROR = 'Something went wrong. Please try again.';
 
     const looksRawMessage = (text) => {
         if (!text) return true;
         const t = String(text).trim();
         if (!t) return true;
-        if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true;                              // HTML body
-        if (/ERR_NGROK_|ngrok/i.test(t)) return true;                                // ngrok
-        if (/^HTTP\s+\d{3}/i.test(t)) return true;                                   // bare "HTTP 502"
-        if (/^Request failed \(\d{3}\)$/i.test(t)) return true;                      // our own fallback
-        if (/^Failed to send SMS \(HTTP \d{3}\)$/i.test(t)) return true;             // our own fallback
+        if (/<\s*[a-z!][\s\S]*>/i.test(t)) return true;
+        if (/ERR_NGROK_|ngrok/i.test(t)) return true;
+        if (/^HTTP\s+\d{3}/i.test(t)) return true;
+        if (/^Request failed \(\d{3}\)$/i.test(t)) return true;
+        if (/^Failed to send SMS \(HTTP \d{3}\)$/i.test(t)) return true;
         if (/non-JSON|Unexpected token|is not valid JSON|Unexpected end of JSON/i.test(t)) return true;
         if (/Failed to fetch|NetworkError|Load failed/i.test(t)) return true;
         if (/^(TypeError|SyntaxError|ReferenceError|RangeError|DOMException)\b/i.test(t)) return true;
-        if (t.length > 200) return true;                                             // giant dumps
+        if (t.length > 200) return true;
         return false;
     };
 
@@ -369,7 +379,7 @@ html.smsNotification--open body {
         }
 
         if (instance.modal && instance.modal.parentNode) {
-            try { instance.modal.remove(); } catch (_) {}
+            try { instance.modal.remove(); } catch (_) { }
         }
 
         if (activeInstance === instance) {
@@ -464,12 +474,12 @@ html.smsNotification--open body {
 
         document.body.appendChild(modal);
 
-        const card         = modal.querySelector('.smsModal__card');
-        const phoneInput   = modal.querySelector('#' + instanceId + '_phone');
+        const card = modal.querySelector('.smsModal__card');
+        const phoneInput = modal.querySelector('#' + instanceId + '_phone');
         const messageInput = modal.querySelector('#' + instanceId + '_message');
-        const includeBox   = modal.querySelector('#' + instanceId + '_include');
-        const cancelBtn    = modal.querySelector('#' + instanceId + '_cancel');
-        const sendBtn      = modal.querySelector('#' + instanceId + '_send');
+        const includeBox = modal.querySelector('#' + instanceId + '_include');
+        const cancelBtn = modal.querySelector('#' + instanceId + '_cancel');
+        const sendBtn = modal.querySelector('#' + instanceId + '_send');
 
         phoneInput.value = phone;
         messageInput.value = String(message || '');
@@ -480,7 +490,7 @@ html.smsNotification--open body {
             onKey: null,
             closeTimer: null,
             destroyed: false,
-            sending: false,      // busy lock: modal cannot close while true
+            sending: false,
         };
         activeInstance = instance;
 
@@ -500,10 +510,10 @@ html.smsNotification--open body {
         });
 
         sendBtn.addEventListener('click', async () => {
-            if (instance.sending) return;      // guard against double-click
+            if (instance.sending) return;
 
-            const phoneVal  = phoneInput.value.trim();
-            const rawMsg    = messageInput.value.trim();
+            const phoneVal = phoneInput.value.trim();
+            const rawMsg = messageInput.value.trim();
             const includeNm = includeBox.checked;
 
             if (!phoneVal) {
@@ -517,12 +527,9 @@ html.smsNotification--open body {
                 return;
             }
 
-            // The textarea content is sent verbatim.
-            // Whether the cemetery name is appended is decided by the
-            // backend/API, using the include_cemetery_name flag.
             const originalHtml = sendBtn.innerHTML;
 
-            instance.sending = true;           // lock: no close until resolved
+            instance.sending = true;
             card.setAttribute('aria-busy', 'true');
             sendBtn.innerHTML =
                 '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i>' +
@@ -549,7 +556,7 @@ html.smsNotification--open body {
                     });
 
                     let result = null;
-                    try { result = await response.json(); } catch (_) {}
+                    try { result = await response.json(); } catch (_) { }
 
                     if (!response.ok || !result || !result.success) {
                         const msg = (result && (result.message || result.error))
@@ -565,8 +572,6 @@ html.smsNotification--open body {
             } catch (err) {
                 instance.sending = false;
 
-                // Instance may have been torn down (e.g. page unloading)
-                // while the request was in flight — don't touch dead DOM.
                 if (instance.destroyed) return;
 
                 card.setAttribute('aria-busy', 'false');
@@ -595,7 +600,7 @@ html.smsNotification--open body {
         setTimeout(() => {
             messageInput.focus();
             const end = messageInput.value.length;
-            try { messageInput.setSelectionRange(end, end); } catch (_) {}
+            try { messageInput.setSelectionRange(end, end); } catch (_) { }
         }, 80);
     }
 
