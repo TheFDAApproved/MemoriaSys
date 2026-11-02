@@ -1,13 +1,15 @@
 /* ── BASE LAYOUT ─────────────────────────────────────────── */
+/* Main page wrapper ensuring full height layout */
 .main {
   width: 100%;
   min-width: 0;
-  min-height: 100%; 
+  min-height: 100%;
   background: #f1f5f9;
   display: flex;
   flex-direction: column;
 }
 
+/* Map page container with padding */
 .mapContainer {
   flex: 1;
   width: 100%;
@@ -16,10 +18,11 @@
   padding-bottom: 24px;
   display: flex;
   flex-direction: column;
-  min-height: 100vh; 
+  min-height: 100vh;
 }
 
-/* SWITCHED TO CSS GRID */
+/* ── MAP CARD (GRID LAYOUT) ──────────────────────────────── */
+/* Card container using CSS Grid for dynamic section row heights */
 .mapCard {
   width: 100%;
   min-width: 0;
@@ -27,10 +30,11 @@
   border-radius: 15px;
   padding-bottom: 24px;
   display: grid;
-  grid-template-rows: auto auto 1fr auto; 
+  grid-template-rows: auto auto 1fr auto;
   height: 100%; /* Fills the container height */
 }
 
+/* Header section containing title and action buttons */
 .mapHeader {
   display: flex;
   align-items: flex-start;
@@ -54,8 +58,13 @@
   flex-wrap: wrap;
 }
 
-/* ── BUTTONS ─────────────────────────────────────────────── */
-.editBtn, .plotBtn, .saveBtn, .cancelBtn, .reshapeSubBtn {
+/* ── BUTTON STYLES ───────────────────────────────────────── */
+/* Common button base rules and transitions */
+.editBtn,
+.plotBtn,
+.saveBtn,
+.cancelBtn,
+.reshapeSubBtn {
   border: none;
   padding: 8px 14px;
   border-radius: 6px;
@@ -65,18 +74,53 @@
   margin-top: 10px;
   font-family: "Inter", sans-serif;
 }
-.editBtn, .plotBtn { background: #3b82f6; color: white; }
-.editBtn:hover, .plotBtn:hover { background: #2563eb; }
-.saveBtn { background: #22c55e; color: white; }
-.saveBtn:hover { background: #16a34a; }
-.cancelBtn { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
-.cancelBtn:hover { background: #e2e8f0; }
-.reshapeSubBtn { background: #fff; color: #f59e0b; border: 1px solid #fcd34d; }
-.reshapeSubBtn:hover { background: #fffbeb; }
-.reshapeSubBtn.done { background: #22c55e; color: #fff; border-color: #22c55e; }
-.reshapeSubBtn.done:hover { background: #16a34a; }
+/* Primary blue buttons for edit and add actions */
+.editBtn,
+.plotBtn {
+  background: #3b82f6;
+  color: white;
+}
+.editBtn:hover,
+.plotBtn:hover {
+  background: #2563eb;
+}
+/* Save button styles */
+.saveBtn {
+  background: #22c55e;
+  color: white;
+}
+.saveBtn:hover {
+  background: #16a34a;
+}
+/* Cancel button styles */
+.cancelBtn {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+}
+.cancelBtn:hover {
+  background: #e2e8f0;
+}
+/* Reshape toolbar action buttons */
+.reshapeSubBtn {
+  background: #fff;
+  color: #f59e0b;
+  border: 1px solid #fcd34d;
+}
+.reshapeSubBtn:hover {
+  background: #fffbeb;
+}
+.reshapeSubBtn.done {
+  background: #22c55e;
+  color: #fff;
+  border-color: #22c55e;
+}
+.reshapeSubBtn.done:hover {
+  background: #16a34a;
+}
 
 /* ── META ROW ────────────────────────────────────────────── */
+/* Metadata section displaying total, occupied, and vacant grave status */
 .mapMeta {
   display: flex;
   justify-content: space-between;
@@ -86,22 +130,42 @@
   gap: 4px;
   min-height: 20px;
 }
-.mapStatus { font-size: 12px; color: #94a3b8; }
+.mapStatus {
+  font-size: 12px;
+  color: #94a3b8;
+}
 
 /* ── CANVAS & BACKGROUND IMAGE ─────────────────────────── */
+/* Main canvas viewport matching 1000x500 map ratio */
 .mapCanvas {
   width: calc(100% - 48px) !important;
   margin: 0 auto !important;
-  flex: 1; 
-  min-height: 0; /* The magic fix: allows it to shrink instead of pushing the legend */
+  flex: 1;
+  min-height: 0;
   background-color: #e2e8f0;
   position: relative !important;
-  overflow: hidden !important; 
+  overflow: hidden !important;
   isolation: isolate !important;
   border-radius: 12px;
-  touch-action: none; 
+  touch-action: none;
+
+  /* Forces the container to perfectly match the 1000x500 ratio of the map */
+  aspect-ratio: 2 / 1;
+  min-height: 400px;
 }
 
+/* Transform container for map zoom and panning camera */
+#mapCamera {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  transform-origin: 0 0 !important;
+  will-change: transform !important;
+}
+
+/* Cemetery map background image */
 #cemetery_map_image {
   position: absolute !important;
   object-fit: fill !important;
@@ -110,6 +174,7 @@
   image-rendering: pixelated;
 }
 
+/* Canvas element layout */
 .mapCanvas canvas,
 #mapCvs {
   position: absolute !important;
@@ -118,6 +183,7 @@
   z-index: 1 !important;
 }
 
+/* User interaction hint pill */
 .mapHint {
   position: absolute;
   bottom: 12px;
@@ -135,6 +201,7 @@
   text-align: center;
   z-index: 5;
 }
+/* Loading overlay layer */
 .mapLoading {
   position: absolute;
   inset: 0;
@@ -150,12 +217,13 @@
 }
 
 /* ── LEGEND ─────────────────────────────────────────────── */
+/* Map legend items showing block status color indicators */
 .mapLegend {
   display: flex;
   gap: 14px;
   padding: 10px 1.5rem 0;
   flex-wrap: wrap;
-  flex-shrink: 0; 
+  flex-shrink: 0;
 }
 .legendItem {
   display: flex;
@@ -175,6 +243,7 @@
 }
 
 /* ── MODAL ───────────────────────────────────────────────── */
+/* Modal overlay backdrop */
 .modalOverlay {
   display: none;
   position: fixed;
@@ -184,7 +253,11 @@
   align-items: center;
   justify-content: center;
 }
-.modalOverlay.open { display: flex; }
+.modalOverlay.open {
+  display: flex;
+}
+
+/* Modal dialog container and form styling */
 .modalBox {
   background: #fff;
   border-radius: 12px;
@@ -196,9 +269,21 @@
   overflow-y: auto;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12);
 }
-.modalBox h3 { font-size: 15px; font-weight: 600; color: #0f172a; margin-bottom: 1rem; }
-.modalBox label { font-size: 12px; color: #64748b; display: block; margin-bottom: 4px; margin-top: 10px; }
-.modalBox input, .modalBox select {
+.modalBox h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 1rem;
+}
+.modalBox label {
+  font-size: 12px;
+  color: #64748b;
+  display: block;
+  margin-bottom: 4px;
+  margin-top: 10px;
+}
+.modalBox input,
+.modalBox select {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid #e2e8f0;
@@ -209,10 +294,24 @@
   outline: none;
   box-sizing: border-box;
 }
-.modalBox input:focus, .modalBox select:focus { border-color: #93c5fd; }
-.modalRowPair { display: flex; gap: 8px; }
-.modalRowPair > div { flex: 1; }
-.modalActions { display: flex; gap: 8px; margin-top: 1.25rem; }
+.modalBox input:focus,
+.modalBox select:focus {
+  border-color: #93c5fd;
+}
+.modalRowPair {
+  display: flex;
+  gap: 8px;
+}
+.modalRowPair > div {
+  flex: 1;
+}
+
+/* Modal footer action buttons */
+.modalActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 1.25rem;
+}
 .modalActions button {
   flex: 1;
   padding: 8px 14px;
@@ -225,10 +324,24 @@
   background: #f8fafc;
   color: #475569;
 }
-.modalActions button:hover { background: #f1f5f9; }
-.modalActions .btnPrimary { background: #3b82f6; color: #fff; border-color: #3b82f6; }
-.modalActions .btnPrimary:hover { background: #2563eb; }
-.modalDivider { border: none; border-top: 1px solid #f1f5f9; margin: 14px 0 0; }
+.modalActions button:hover {
+  background: #f1f5f9;
+}
+.modalActions .btnPrimary {
+  background: #3b82f6;
+  color: #fff;
+  border-color: #3b82f6;
+}
+.modalActions .btnPrimary:hover {
+  background: #2563eb;
+}
+
+/* Modal dividers, alerts, and sub-buttons */
+.modalDivider {
+  border: none;
+  border-top: 1px solid #f1f5f9;
+  margin: 14px 0 0;
+}
 .warnBtn {
   width: 100%;
   padding: 7px 10px;
@@ -242,7 +355,9 @@
   transition: background 0.15s;
   margin-top: 0;
 }
-.warnBtn:hover { background: #fef3c7; }
+.warnBtn:hover {
+  background: #fef3c7;
+}
 .reshapeModalBtn {
   width: 100%;
   padding: 7px 10px;
@@ -256,52 +371,152 @@
   transition: background 0.15s;
   margin-bottom: 8px;
 }
-.reshapeModalBtn:hover { background: #fef3c7; }
-.viewInfoBox { background: #f8fafc; border-radius: 8px; padding: 12px 14px; font-size: 13px; margin-top: 6px; border: 1px solid #e2e8f0; }
-.viewInfoBox p { margin: 3px 0; color: #64748b; }
-.viewInfoBox strong { font-weight: 600; color: #0f172a; font-size: 14px; }
-.modalNote { font-size: 11px; color: #94a3b8; margin-top: 10px; }
-.modalNote a { color: #3b82f6; text-decoration: none; }
-.modalNote a:hover { text-decoration: underline; }
-
-/* ── VIEW BLOCK MODAL: GRAVE GRID ── */
-.grave-grid-container { margin-top: 16px; border-top: 1px solid #e2e8f0; padding-top: 12px; max-height: 340px; overflow-y: auto; padding-right: 4px; }
-.grave-grid-header { font-size: 13px; font-weight: 600; color: #0f172a; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
-.grave-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
-.grave-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; display: flex; flex-direction: column; gap: 6px; }
-.grave-card-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dashed #cbd5e1; padding-bottom: 6px; margin-bottom: 2px; }
-.grave-code { font-size: 12px; font-weight: 700; color: #1e3a5f; }
-.grave-status { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; }
-.grave-status.vacant { background: #dcfce7; color: #166534; }
-.grave-status.occupied { background: #fee2e2; color: #991b1b; }
-.grave-status.other { background: #f1f5f9; color: #475569; }
-.grave-occupant { font-size: 12px; color: #0f172a; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.grave-meta { font-size: 11px; color: #64748b; }
-.grave-remarks-input { width: 100%; font-size: 11px; padding: 5px 8px; border: 1px solid #e2e8f0; border-radius: 4px; margin-top: 2px; outline: none; color: #334155; transition: 0.2s; box-sizing: border-box; }
-.grave-remarks-input:focus { border-color: #3b82f6; background: #fff; }
-
-@media (max-width: 600px) {
-  .mapCanvas {
-    width: calc(100% - 48px) !important; 
-    margin: 0 24px !important;
-    border-radius: 12px !important;
-    touch-action: pan-y;
-    height: 500px !important; 
-  }
-  .grave-grid { grid-template-columns: 1fr; }
-  .mapCard { height: auto; }
+.reshapeModalBtn:hover {
+  background: #fef3c7;
+}
+.viewInfoBox {
+  background: #f8fafc;
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+  margin-top: 6px;
+  border: 1px solid #e2e8f0;
+}
+.viewInfoBox p {
+  margin: 3px 0;
+  color: #64748b;
+}
+.viewInfoBox strong {
+  font-weight: 600;
+  color: #0f172a;
+  font-size: 14px;
+}
+.modalNote {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 10px;
+}
+.modalNote a {
+  color: #3b82f6;
+  text-decoration: none;
+}
+.modalNote a:hover {
+  text-decoration: underline;
 }
 
+/* ── VIEW BLOCK MODAL: GRAVE GRID ── */
+/* Grave list container and cards inside block details modal */
+.grave-grid-container {
+  margin-top: 16px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 12px;
+  max-height: 340px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.grave-grid-header {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.grave-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+.grave-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.grave-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px dashed #cbd5e1;
+  padding-bottom: 6px;
+  margin-bottom: 2px;
+}
+.grave-code {
+  font-size: 12px;
+  font-weight: 700;
+  color: #1e3a5f;
+}
+.grave-status {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+.grave-status.vacant {
+  background: #dcfce7;
+  color: #166534;
+}
+.grave-status.occupied {
+  background: #fee2e2;
+  color: #991b1b;
+}
+.grave-status.other {
+  background: #f1f5f9;
+  color: #475569;
+}
+.grave-occupant {
+  font-size: 12px;
+  color: #0f172a;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.grave-meta {
+  font-size: 11px;
+  color: #64748b;
+}
+.grave-remarks-input {
+  width: 100%;
+  font-size: 11px;
+  padding: 5px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  margin-top: 2px;
+  outline: none;
+  color: #334155;
+  transition: 0.2s;
+  box-sizing: border-box;
+}
+.grave-remarks-input:focus {
+  border-color: #3b82f6;
+  background: #fff;
+}
+
+/* Touch scrolling behavior for block search results */
 #blockSearchResults {
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
 }
 
+/* ── RESPONSIVE MEDIA QUERIES ───────────────────────────── */
+/* Mobile layout overrides for screens up to 600px wide */
 @media (max-width: 600px) {
+  .grave-grid {
+    grid-template-columns: 1fr;
+  }
+  .mapCard {
+    height: auto;
+  }
   #publicMapCanvas {
     width: 100% !important;
     margin: 0 !important;
     border-radius: 0 !important;
-    height: 60vh !important; 
+    height: 60vh !important;
   }
 }

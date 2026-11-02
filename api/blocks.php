@@ -17,6 +17,7 @@ define('ITS_ME_JUSTTOVERIFY', true);
 require_once 'checkuser.php';
 require_once 'logger.php';
 
+// Authenticate user and determine access permissions
 $userData = checkuser(false);
 $method   = $_SERVER['REQUEST_METHOD'] ?? null;
 
@@ -27,6 +28,7 @@ $pathInfo   = $_GET['path_info'] ?? $_SERVER['PATH_INFO'] ?? '';
 $pathParts  = array_filter(explode('/', trim($pathInfo, '/')));
 $resourceId = array_shift($pathParts);
 
+// Collect request data from JSON body or POST parameters
 $rawData = array_merge(
     json_decode(file_get_contents("php://input"), true) ?: [],
     $_POST ?? []
@@ -45,8 +47,9 @@ const MAX_GRAVES_PER_BLOCK = MAX_ROWS * MAX_COLS;
 const BLOCK_NAME_MAX     = 42;
 const GRAVE_INSERT_CHUNK = 1000;
 
-// ---------- Helpers ----------
+/* ---------- Helpers ---------- */
 
+// Renders an axis coordinate as a letter or number
 function renderAxis(int $n, bool $asLetter): string
 {
     // 1 = A Z = 26, falls back to the number.
@@ -56,6 +59,7 @@ function renderAxis(int $n, bool $asLetter): string
     return (string) $n;
 }
 
+// Builds a unique grave code string from block name, row, and column
 function buildGraveCode(string $blockName, int $row, int $col): string
 {
     return $blockName
@@ -63,6 +67,7 @@ function buildGraveCode(string $blockName, int $row, int $col): string
         . '-' . renderAxis($col, COL_LETTER);  // col second
 }
 
+// Retrieves total, vacant, occupied, and other grave counts for a block
 function getBlockCounts(PDO $pdo, int $blockId): array
 {
     $stmt = $pdo->prepare("
@@ -85,6 +90,7 @@ function getBlockCounts(PDO $pdo, int $blockId): array
     ];
 }
 
+// Bulk inserts new graves for a block in chunks
 function bulkInsertGraves(PDO $pdo, int $blockId, array $positions, string $blockName): void
 {
     if (empty($positions)) {
@@ -107,6 +113,7 @@ function bulkInsertGraves(PDO $pdo, int $blockId, array $positions, string $bloc
     }
 }
 
+// Finds graves that are unsafe to remove or modify during shrink/delete operations
 function findUnsafeGraves(PDO $pdo, int $blockId, ?int $maxRow = null, ?int $maxCol = null): array
 {
     $where  = "g.block_id = ? AND g.deleted_at IS NULL";
@@ -165,6 +172,7 @@ function findUnsafeGraves(PDO $pdo, int $blockId, ?int $maxRow = null, ?int $max
     return $unsafe;
 }
 
+// Summarises a list of unsafe graves into a concise message string
 function summariseUnsafe(array $unsafe, int $max = 8): string
 {
     $codes = array_map(static fn($g) => $g['grave_code'], $unsafe);
@@ -173,6 +181,7 @@ function summariseUnsafe(array $unsafe, int $max = 8): string
     return $extra > 0 ? "$head … and $extra more" : $head;
 }
 
+// Normalizes block row types and numeric fields
 function normalizeBlockRow(array $row, bool $withCounts = false): array
 {
     if (array_key_exists('block_id', $row)) {
@@ -195,6 +204,7 @@ function normalizeBlockRow(array $row, bool $withCounts = false): array
     return $row;
 }
 
+// Translates PDO database exceptions into user-friendly error messages and status codes
 function friendlyDbError(PDOException $e, string $context = 'operation'): array
 {
     $mysqlCode = $e->errorInfo[1] ?? null;
@@ -249,6 +259,7 @@ function friendlyDbError(PDOException $e, string $context = 'operation'): array
     }
 }
 
+// Logs a database error and responds with an error message
 function failWithDbError(PDOException $e, string $context): void
 {
     [$msg, $code] = friendlyDbError($e, $context);
@@ -256,7 +267,7 @@ function failWithDbError(PDOException $e, string $context): void
     Response::error($msg, $code);
 }
 
-// GET (view)
+// GET – Retrieves blocks or specific block details with graves
 if ($method === 'GET') {
 
     if (is_numeric($resourceId)) {
@@ -498,12 +509,12 @@ if ($method === 'GET') {
     Response::success("Blocks retrieved.", $response);
 }
 
-// Everything below is Admin / Office only
+// Enforce Admin / Office authorization for mutating actions
 if (!$isAdminOffice) {
     Response::error("Forbidden.", 403);
 }
 
-// POST – Create a block (optionally with a full grave grid)
+// POST – Creates a new block and initializes its grave grid
 if ($method === 'POST') {
 
     if (empty($rawData['block_name']) || empty($rawData['block_type'])) {
@@ -604,7 +615,7 @@ if ($method === 'POST') {
     }
 }
 
-// PUT – Update block details, rename, resize
+// PUT – Updates block details, renames block, or resizes the grave grid
 if ($method === 'PUT') {
 
     if (!is_numeric($resourceId)) {
@@ -866,7 +877,7 @@ if ($method === 'PUT') {
     }
 }
 
-// DELETE – Soft-delete a block and all its graves
+// DELETE – Soft-deletes a block and all its associated graves
 if ($method === 'DELETE') {
 
     if (!is_numeric($resourceId)) {

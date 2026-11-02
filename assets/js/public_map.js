@@ -10,7 +10,6 @@ const PUBLIC_MAP = (() => {
   let blocks = {}; 
   let blockOrder = []; 
   let hoveredBlock = null;
-  let highlightedBlock = null; 
   let rafPending = false;
   let loadingEl = null;
   let modalEl = null;
@@ -25,15 +24,28 @@ const PUBLIC_MAP = (() => {
   let initialPinchDistance = 0;
   let initialScale = 1;
 
+  // ── CAMERA ANIMATION STATE ──
+  let isAnimatingCamera = false;
+  let camAnimStartTime = null;
+  let camStartX = 0, camStartY = 0;
+  let camTargetX = 0, camTargetY = 0;
+  let camDuration = 600; // milliseconds
+  
+  // ── HIGHLIGHT STATE ──
+  // Store highlights by block ID so multiple can glow independently
+  let activeHighlights = {}; 
+  let highlightPulseId = null;
+
+  // Applies the camera transform and clamps panning to map bounds
   function applyCameraTransform() {
     const camera = document.getElementById("publicMapCamera");
     if (camera) {
       const container = canvasWrap.getBoundingClientRect();
       
       const maxX = 0;
-      const minX = container.width - (container.width * mapScale);
+      const minX = container.width - (MAP_W * mapScale);
       const maxY = 0;
-      const minY = container.height - (container.height * mapScale);
+      const minY = container.height - (MAP_H * mapScale);
 
       mapX = Math.max(minX, Math.min(maxX, mapX));
       mapY = Math.max(minY, Math.min(maxY, mapY));
@@ -42,7 +54,53 @@ const PUBLIC_MAP = (() => {
     }
   }
 
+  // Animates the camera to target coordinates smoothly using cubic easing
+  function animateCameraTo(targetX, targetY) {
+    const containerW = canvasWrap.clientWidth;
+    const containerH = canvasWrap.clientHeight;
+
+    const minX = containerW - (MAP_W * mapScale);
+    const maxX = 0;
+    const minY = containerH - (MAP_H * mapScale);
+    const maxY = 0;
+
+    // Clamp targets to prevent showing the grey background
+    camTargetX = Math.max(minX, Math.min(maxX, targetX));
+    camTargetY = Math.max(minY, Math.min(maxY, targetY));
+
+    camStartX = mapX;
+    camStartY = mapY;
+    camAnimStartTime = performance.now();
+    isAnimatingCamera = true;
+
+    function step(time) {
+      if (!isAnimatingCamera) return;
+      
+      let progress = (time - camAnimStartTime) / camDuration;
+      if (progress > 1) progress = 1;
+
+      const ease = 1 - Math.pow(1 - progress, 3);
+
+      mapX = camStartX + (camTargetX - camStartX) * ease;
+      mapY = camStartY + (camTargetY - camStartY) * ease;
+
+      const camera = document.getElementById("publicMapCamera");
+      if (camera) {
+        camera.style.transform = `translate(${mapX}px, ${mapY}px) scale(${mapScale})`;
+      }
+
+      if (progress < 1) {
+        requestAnimationFrame(step);
+      } else {
+        isAnimatingCamera = false;
+        applyCameraTransform();
+      }
+    }
+    requestAnimationFrame(step);
+  }
+
   // ── GEOMETRY ──────────────────────────────────────────────
+  // Parses and validates a JSON or array coordinate string
   function parseCoordinates(c) {
     if (!c) return null;
     if (Array.isArray(c)) return c.length >= 3 ? c : null;
@@ -54,6 +112,7 @@ const PUBLIC_MAP = (() => {
     }
   }
 
+  // Calculates the bounding box of a polygon
   function polyBounds(pts) {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (let i = 0; i < pts.length; i++) {
@@ -66,6 +125,7 @@ const PUBLIC_MAP = (() => {
     return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
   }
 
+  // Checks if a point lies inside a polygon using ray casting
   function pointInPoly(px, py, pts) {
     let inside = false;
     for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
@@ -78,41 +138,40 @@ const PUBLIC_MAP = (() => {
   }
 
   // ── CANVAS ────────────────────────────────────────────────
+  // Synchronizes the canvas logical and physical display sizes
   function syncCanvasSize() {
     const containerW = canvasWrap.clientWidth;
     const containerH = canvasWrap.clientHeight;
     if (!containerW || !containerH) return;
 
-    const displayW = containerW;
-    const displayH = containerH;
+    cvW = MAP_W;
+    cvH = MAP_H;
 
     const dpr = window.devicePixelRatio || 1;
-    cvW = displayW;
-    cvH = displayH;
-
-    const bw = Math.round(displayW * dpr);
-    const bh = Math.round(displayH * dpr);
+    const bw = Math.round(cvW * dpr);
+    const bh = Math.round(cvH * dpr);
     
     if (cv.width !== bw || cv.height !== bh) {
       cv.width = bw;
       cv.height = bh;
     }
 
-    cv.style.width = `${displayW}px`;
-    cv.style.height = `${displayH}px`;
+    cv.style.width = `${cvW}px`;
+    cv.style.height = `${cvH}px`;
     cv.style.left = `0px`;
     cv.style.top = `0px`;
 
     const bg = document.getElementById("cemetery_map_image");
     if (bg) {
-      bg.style.width = `${displayW}px`;
-      bg.style.height = `${displayH}px`;
+      bg.style.width = `${cvW}px`;
+      bg.style.height = `${cvH}px`;
       bg.style.left = `0px`;
       bg.style.top = `0px`;
       bg.style.objectFit = "fill"; 
     }
   } 
 
+  // Schedules a canvas redraw using requestAnimationFrame
   function scheduleDraw() {
     if (rafPending) return;
     rafPending = true;
@@ -123,6 +182,7 @@ const PUBLIC_MAP = (() => {
   }
 
   // ── DRAW ──────────────────────────────────────────────────
+  // Renders the public cemetery map, blocks, and highlights
   function draw() {
     if (!ctx) return;
     if (!cvW || !cvH) {
@@ -152,18 +212,22 @@ const PUBLIC_MAP = (() => {
       return;
     }
 
+    const now = Date.now();
+
     for (const bid of blockOrder) {
       const b = blocks[bid];
       const pts = b.points;
       const hov = hoveredBlock === bid;
-      const isHighlighted = highlightedBlock === bid;
+      
+      // Check if this specific block has an active highlight
+      const highlightData = activeHighlights[bid];
+      const isHighlighted = !!highlightData;
 
       const bounds = polyBounds(pts);
       const cx = bounds.x + bounds.w / 2;
       const cy = bounds.y + bounds.h / 2;
       const rotation = b.rotation || 0;
 
-      // ── APPLY ROTATION ──
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(rotation);
@@ -178,13 +242,16 @@ const PUBLIC_MAP = (() => {
 
       ctx.globalAlpha = 0.8;
 
-      // Highlight logic
       if (isHighlighted) {
-        ctx.fillStyle = "#fef08a"; // Bright yellow
-        ctx.strokeStyle = "#eab308"; // Gold border
-        ctx.lineWidth = 6; 
-        ctx.shadowColor = "#eab308"; // Glow effect
-        ctx.shadowBlur = 15;
+        // Use this block's specific start time for the pulse
+        const elapsed = now - highlightData.startTime;
+        const pulse = Math.sin(elapsed / 150) * 10 + 20; 
+        
+        ctx.fillStyle = "#fef08a"; 
+        ctx.strokeStyle = "#eab308"; 
+        ctx.lineWidth = 4; 
+        ctx.shadowColor = "#eab308"; 
+        ctx.shadowBlur = pulse;
       } else {
         ctx.fillStyle = hov ? "#bfdbfe" : "#dbeafe";
         ctx.strokeStyle = hov ? "#1d4ed8" : "#3b82f6";
@@ -195,7 +262,6 @@ const PUBLIC_MAP = (() => {
       ctx.fill();
       ctx.stroke();
       
-      // Reset shadow
       ctx.shadowBlur = 0;
       ctx.globalAlpha = 1.0;
 
@@ -221,6 +287,7 @@ const PUBLIC_MAP = (() => {
   }
 
   // ── EVENTS ────────────────────────────────────────────────
+  // Gets the correct logical map coordinates from a mouse or touch event
   function getXY(e) {
     if (e.offsetX !== undefined) {
       return {
@@ -239,6 +306,7 @@ const PUBLIC_MAP = (() => {
     };
   }
 
+  // Finds the topmost block hit by mouse or touch coordinates
   function getHitBlock(x, y) {
     return blockOrder
       .slice()
@@ -246,12 +314,12 @@ const PUBLIC_MAP = (() => {
       .find((id) => pointInPoly(x, y, blocks[id].points));
   }
 
+  // Initializes all mouse, touch, wheel, zoom, search, and resize event listeners
   function initEvents() {
     let pointerStartX = 0;
     let pointerStartY = 0;
     let hasDragged = false;
 
-    // ── MOBILE PINCH TO ZOOM & PAN ──
     cv.addEventListener("touchstart", (e) => {
       if (e.touches.length === 2) {
         const dx = e.touches[0].clientX - e.touches[1].clientX;
@@ -298,7 +366,6 @@ const PUBLIC_MAP = (() => {
       if (e.touches.length === 0) isPanning = false;
     });
 
-    // ── DESKTOP MOUSE (PAN & CLICK) ──
     cv.addEventListener("mousedown", (e) => {
       isPanning = true;
       startPanX = e.clientX - mapX;
@@ -324,7 +391,6 @@ const PUBLIC_MAP = (() => {
         return;
       }
 
-      // Hover logic
       const { x, y } = getXY(e);
       const bid = getHitBlock(x, y) || null;
       if (bid !== hoveredBlock) {
@@ -341,7 +407,6 @@ const PUBLIC_MAP = (() => {
       }
     });
 
-    // ── ZOOM (WHEEL) ──
     cv.addEventListener("wheel", (e) => {
       if (e.cancelable) e.preventDefault();
       const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
@@ -357,7 +422,6 @@ const PUBLIC_MAP = (() => {
       }
     });
 
-    // ── CLICK TO OPEN MODAL ──
     cv.addEventListener("click", (e) => {
       if (hasDragged) {
         hasDragged = false;
@@ -369,7 +433,6 @@ const PUBLIC_MAP = (() => {
       if (bid) openImageModal(blocks[bid]);
     });
 
-    // ── ZOOM CONTROLS ──
     const btnZoomIn = document.getElementById("btnZoomIn");
     const btnZoomOut = document.getElementById("btnZoomOut");
 
@@ -397,7 +460,6 @@ const PUBLIC_MAP = (() => {
     const clearSearchBtn = document.getElementById("clearSearchBtn");
 
     if (searchInput && searchResults) {
-      // Don't let map dragging happen when typing in the search bar
       searchInput.addEventListener("mousedown", (e) => e.stopPropagation());
       searchInput.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: false });
       searchInput.addEventListener("click", (e) => e.stopPropagation());
@@ -406,7 +468,6 @@ const PUBLIC_MAP = (() => {
         const query = e.target.value.toLowerCase().trim();
         searchResults.innerHTML = "";
 
-        // Show/hide the X button
         if (clearSearchBtn) {
           clearSearchBtn.style.display = query.length > 0 ? "flex" : "none";
         }
@@ -434,17 +495,52 @@ const PUBLIC_MAP = (() => {
           item.onmouseleave = () => item.style.background = "transparent";
           
           item.addEventListener("click", () => {
-            // 1. Highlight the block
-            highlightedBlock = "b" + m.block_id;
-            scheduleDraw();
+            const bid = "b" + m.block_id;
+            
+            // 1. Set a FRESH start time just for this block
+            activeHighlights[bid] = { startTime: Date.now() };
 
-            // 2. Remove the highlight after 3 seconds
-            setTimeout(() => {
-              highlightedBlock = null;
-              scheduleDraw();
-            }, 3000);
+            // 2. Ensure the pulse loop is running
+            if (!highlightPulseId) {
+              const pulseLoop = () => {
+                const now = Date.now();
+                let anyActive = false;
 
-            // 3. Clear the search
+                // Remove expired highlights (older than 3 seconds)
+                for (const hBid in activeHighlights) {
+                  if (now - activeHighlights[hBid].startTime > 3000) {
+                    delete activeHighlights[hBid];
+                  } else {
+                    anyActive = true;
+                  }
+                }
+
+                draw(); // Redraw canvas with current pulse states
+
+                if (anyActive || Object.keys(activeHighlights).length > 0) {
+                  highlightPulseId = requestAnimationFrame(pulseLoop);
+                } else {
+                  highlightPulseId = null;
+                  draw(); // One final draw to clear the glow completely
+                }
+              };
+              highlightPulseId = requestAnimationFrame(pulseLoop);
+            }
+
+            // 3. Center the camera
+            const bnds = m.bounds;
+            const blockCenterX = bnds.x + bnds.w / 2;
+            const blockCenterY = bnds.y + bnds.h / 2;
+
+            const containerW = canvasWrap.clientWidth;
+            const containerH = canvasWrap.clientHeight;
+
+            const targetX = (containerW / 2) - (blockCenterX * mapScale);
+            const targetY = (containerH / 2) - (blockCenterY * mapScale);
+
+            animateCameraTo(targetX, targetY);
+
+            // 4. Clear search UI
             searchInput.value = "";
             if (clearSearchBtn) clearSearchBtn.style.display = "none";
             searchResults.style.display = "none";
@@ -455,7 +551,6 @@ const PUBLIC_MAP = (() => {
         searchResults.style.display = "block";
       });
 
-      // Clear search button
       if (clearSearchBtn) {
         clearSearchBtn.addEventListener("click", (e) => {
           e.preventDefault();
@@ -467,7 +562,6 @@ const PUBLIC_MAP = (() => {
         });
       }
 
-      // Close search results when clicking outside
       document.addEventListener("click", (e) => {
         if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
           searchResults.style.display = "none";
@@ -477,6 +571,7 @@ const PUBLIC_MAP = (() => {
   }
 
   // ── MODAL ─────────────────────────────────────────────────
+  // Opens the image modal dialog for a selected block
   function openImageModal(b) {
     if (!modalEl) return;
     const titleEl = document.getElementById("pubMapModalTitle");
@@ -507,18 +602,21 @@ const PUBLIC_MAP = (() => {
     modalEl.style.display = "flex";
   }
 
+  // Closes the image modal dialog
   function closeImageModal() {
     if (!modalEl) return;
     modalEl.style.display = "none";
   }
 
   // ── LOADING ───────────────────────────────────────────────
+  // Sets the custom HTML content for the loading indicator
   function setLoadingHTML(html) {
     if (!loadingEl) return;
     loadingEl.innerHTML = html;
     loadingEl.style.display = "flex";
   }
 
+  // Shows the loading spinner
   function showLoading() {
     setLoadingHTML(`
       <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
@@ -528,16 +626,19 @@ const PUBLIC_MAP = (() => {
     `);
   }
 
+  // Shows an error message in the loading container
   function showError(msg) {
     setLoadingHTML(
       `<div style="text-align:center;padding:20px;color:#ef4444;font-size:13px">${msg}</div>`,
     );
   }
 
+  // Hides the loading container
   function hideLoading() {
     if (loadingEl) loadingEl.style.display = "none";
   }
 
+  // Injects dynamic CSS styles for the public map UI
   function injectStyle() {
     if (document.getElementById("pubMapStyle")) return;
     const s = document.createElement("style");
@@ -554,6 +655,7 @@ const PUBLIC_MAP = (() => {
   }
 
   // ── PLACEHOLDER WAIT ──────────────────────────────────────
+  // Waits for the map container placeholder element to appear in the DOM
   function waitForPlaceholder(maxWaitMs) {
     return new Promise((resolve) => {
       const start = Date.now();
@@ -598,7 +700,6 @@ const PUBLIC_MAP = (() => {
         
         <div id="publicMapLoading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#f1f5f9;z-index:10"></div>
 
-        <!-- Zoom Controls -->
         <div class="map-zoom-controls" style="position:absolute; bottom:20px; right:20px; display:flex; flex-direction:column; gap:6px; z-index:20;">
           <button id="btnZoomIn" style="width:36px; height:36px; border-radius:50%; border:none; background:#fff; color:#0f172a; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(0,0,0,0.15); transition: background 0.2s;">
             <i class="fas fa-search-plus" style="font-size:16px;"></i>
@@ -608,7 +709,6 @@ const PUBLIC_MAP = (() => {
           </button>
         </div>
 
-        <!-- Block Search -->
         <div style="position:absolute; top:20px; left:50%; transform:translateX(-50%); width:250px; z-index:20;">
           <div class="search-wrapper">
             <i class="fas fa-search search-icon"></i>
@@ -680,11 +780,17 @@ const PUBLIC_MAP = (() => {
 
       syncCanvasSize();
       
-      // ── INITIAL ZOOM TO PREVENT SQUEEZING ON SMALL SCREENS ──
-      if (window.innerWidth < 768) {
-        mapScale = 1.6; 
-        applyCameraTransform();
-      }
+      const containerW = canvasWrap.clientWidth;
+      const containerH = canvasWrap.clientHeight;
+      const scaleX = containerW / MAP_W;
+      const scaleY = containerH / MAP_H;
+      
+      mapScale = Math.max(scaleX, scaleY);
+      
+      mapX = (containerW - (MAP_W * mapScale)) / 2;
+      mapY = (containerH - (MAP_H * mapScale)) / 2;
+      
+      applyCameraTransform();
 
       draw();
       hideLoading();
@@ -692,8 +798,19 @@ const PUBLIC_MAP = (() => {
 
       const redraw = () => {
         syncCanvasSize();
+        
+        const cW = canvasWrap.clientWidth;
+        const cH = canvasWrap.clientHeight;
+        const minScale = Math.max(cW / MAP_W, cH / MAP_H);
+        
+        if (mapScale < minScale) {
+          mapScale = minScale;
+        }
+        
+        applyCameraTransform();
         scheduleDraw();
       };
+      
       if (typeof ResizeObserver !== "undefined") {
         new ResizeObserver(redraw).observe(canvasWrap);
       } else {
