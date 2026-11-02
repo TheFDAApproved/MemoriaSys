@@ -790,7 +790,7 @@ function openRecordModal(record) {
     if (tiles[0]) tiles[0].textContent = formatDate(record.dateOfBirth);
     if (tiles[1]) tiles[1].textContent = formatDate(record.dateOfDeath);
     if (tiles[2])
-        tiles[2].textContent = `Block: ${record.block}-${row_letter ? getRowLetter(record.row) : record.row}-${col_letter ? getRowLetter(record.column) : record.column}`;
+        tiles[2].textContent = `Block: ${record.block ?? '-'}-${(row_letter ? getRowLetter(record.row) : record.row) ?? '-'}-${(col_letter ? getRowLetter(record.column) : record.column) ?? '-'}`;
     if (tiles[3]) tiles[3].textContent = record.graveType || "N/A";
 
     recordModal.classList.remove("hidden");
