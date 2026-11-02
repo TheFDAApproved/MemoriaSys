@@ -980,9 +980,13 @@ function renderCapacity(data, container) {
     </table>
 
     <div class="docBlockHeader">Grave Status Distribution</div>
-    <div style="display:grid;grid-template-columns:minmax(220px,1fr) minmax(280px,2fr);gap:16px;align-items:stretch;margin-bottom:16px;">
-      <div style="position:relative;min-height:260px;"><canvas id="capacity-status-pie"></canvas></div>
-      <div style="position:relative;min-height:260px;"><canvas id="capacity-monthly-line"></canvas></div>
+    <div style="display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; width: 100%;">
+        <div style="position: relative; height: 260px; flex: 1 1 250px; min-width: 0; max-width: 100%;">
+            <canvas id="capacity-status-pie"></canvas>
+        </div>
+        <div style="position: relative; height: 260px; flex: 2 1 300px; min-width: 0; max-width: 100%;">
+            <canvas id="capacity-monthly-line"></canvas>
+        </div>
     </div>
 
     <div class="docBlockHeader">Breakdown by Block</div>
