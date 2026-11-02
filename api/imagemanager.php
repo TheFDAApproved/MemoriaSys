@@ -115,10 +115,25 @@ class ImageManager
         return ['success' => true, 'mime' => $mime];
     }
 
-    // Resize an image in place to exact target dimensions, stretching to fit
-    // Keeps transparency for formats that support it
-    private function resizeImage($sourcePath, $targetWidth, $targetHeight, $mimeType)
-    {
+    // Resize an image in place to fit within the target bounds
+    // (aspect ratio preserved, never upscaled). Keeps transparency where supported.
+    private function resizeImage(
+        $sourcePath,
+        $targetWidth,
+        $targetHeight,
+        $mimeType,
+        $resizeIfMaxed = false,
+        $resizeIfMaxedWidth = false,
+        $resizeIfMaxedHeight = false
+    ) {
+        $boundWidth  = $resizeIfMaxed || $resizeIfMaxedWidth;
+        $boundHeight = $resizeIfMaxed || $resizeIfMaxedHeight;
+
+        // No resize requested: leave the file untouched
+        if (!$boundWidth && !$boundHeight) {
+            return ['success' => true, 'resized' => false];
+        }
+
         if (!extension_loaded('gd')) {
             return ['success' => false, 'error' => 'GD extension is required for image resizing.'];
         }
@@ -135,6 +150,28 @@ class ImageManager
         if ($srcW * $srcH > 25_000_000) {
             return ['success' => false, 'error' => 'Source image is too large to resize safely.'];
         }
+
+        // Preserve aspect ratio only shrink, never grow
+        $scale = 1.0;
+        if ($boundWidth && $targetWidth > 0 && $srcW > $targetWidth) {
+            $scale = min($scale, $targetWidth / $srcW);
+        }
+        if ($boundHeight && $targetHeight > 0 && $srcH > $targetHeight) {
+            $scale = min($scale, $targetHeight / $srcH);
+        }
+
+        // Already within bounds so nothing to do
+        if ($scale >= 1.0) {
+            return [
+                'success' => true,
+                'resized' => false,
+                'width'   => $srcW,
+                'height'  => $srcH,
+            ];
+        }
+
+        $newW = max(1, (int)round($srcW * $scale));
+        $newH = max(1, (int)round($srcH * $scale));
 
         switch ($mimeType) {
             case 'image/png':
@@ -157,17 +194,20 @@ class ImageManager
             return ['success' => false, 'error' => 'Failed to load image for resizing.'];
         }
 
-        $dst = imagecreatetruecolor($targetWidth, $targetHeight);
+        $dst = imagecreatetruecolor($newW, $newH);
+        if (!$dst) {
+            return ['success' => false, 'error' => 'Failed to create target image.'];
+        }
 
         // Keep transparency for formats that support it
         if (in_array($mimeType, ['image/png', 'image/gif', 'image/webp'], true)) {
             imagealphablending($dst, false);
             imagesavealpha($dst, true);
             $transparent = imagecolorallocatealpha($dst, 0, 0, 0, 127);
-            imagefilledrectangle($dst, 0, 0, $targetWidth, $targetHeight, $transparent);
+            imagefilledrectangle($dst, 0, 0, $newW - 1, $newH - 1, $transparent);
         }
 
-        // Stretch to fit, ignoring aspect ratio
+        // Scale to the computed target size (aspect ratio preserved above)
         imagecopyresampled(
             $dst,
             $src,
@@ -175,8 +215,8 @@ class ImageManager
             0,
             0,
             0,
-            $targetWidth,
-            $targetHeight,
+            $newW,
+            $newH,
             $srcW,
             $srcH
         );
@@ -197,14 +237,20 @@ class ImageManager
                 break;
         }
 
-        imagedestroy($src);
-        imagedestroy($dst);
+        // deprecated php 8 or 8. something
+        // imagedestroy($src);
+        // imagedestroy($dst);
 
         if (!$saved) {
             return ['success' => false, 'error' => 'Failed to write resized image.'];
         }
 
-        return ['success' => true];
+        return [
+            'success' => true,
+            'resized' => true,
+            'width'   => $newW,
+            'height'  => $newH,
+        ];
     }
 
     // Wait up to lockTimeoutMs for an exclusive flock, return false on timeout
@@ -397,7 +443,10 @@ class ImageManager
                 $tmpFilePath,
                 (int)$dimensions['width'],
                 (int)$dimensions['height'],
-                $validation['mime']
+                $validation['mime'],
+                $dimensions['resize_if_maxed'] ?? true,
+                $dimensions['resize_if_maxed_width'] ?? false,
+                $dimensions['resize_if_maxed_height'] ?? false
             );
 
             if (empty($resizeResult['success'])) {

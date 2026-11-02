@@ -213,8 +213,8 @@ try {
                 try {
                     // Optional resize per image key; unlisted keys save at original size
                     $imageDimensions = [
-                        'header' => ['width' => 1276, 'height' => 152],
-                        'footer' => ['width' => 1276, 'height' => 152],
+                        'header' => ['width' => 1700, 'height' => 300, 'resize_if_maxed' => true],
+                        'footer' => ['width' => 1700, 'height' => 300, 'resize_if_maxed' => true],
                     ];
                     foreach ($rawData['bulk_settings'] as $index => $setting) {
                         $sKey = trim($setting['setting_key'] ?? '');
