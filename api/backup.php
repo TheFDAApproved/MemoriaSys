@@ -253,15 +253,26 @@ function createBackup(PDO $pdo, string $backupDir): string
     return $filename;
 }
 
-function pruneBackups(string $backupDir): array
+function pruneBackups(string $backupDir, ?string $keep = null): array
 {
     $files = glob($backupDir . '*.sql') ?: [];
 
     usort($files, static fn(string $a, string $b): int => filemtime($b) <=> filemtime($a));
 
     $deleted = [];
+    $kept    = 0;
 
-    foreach (array_slice($files, BACKUP_LIMIT) as $file) {
+    foreach ($files as $file) {
+        // Never delete the file we are currently restoring from.
+        if ($keep !== null && basename($file) === $keep) {
+            continue;
+        }
+
+        if ($kept < BACKUP_LIMIT) {
+            $kept++;
+            continue;
+        }
+
         if (is_file($file) && @unlink($file)) {
             $deleted[] = basename($file);
         }
@@ -378,7 +389,7 @@ function splitSqlStatements(string $sql): array
 }
 function restoreBackup(PDO $pdo, string $filePath): int
 {
-    $sql = file_get_contents($filePath);
+    $sql = @file_get_contents($filePath);
 
     if ($sql === false || trim($sql) === '') {
         throw new RuntimeException('The backup file is empty or unreadable.');
@@ -516,7 +527,7 @@ if ($method === 'PUT') {
 
     try {
         $safetyFile = createBackup($pdo, $backupDir);
-        pruneBackups($backupDir);
+        pruneBackups($backupDir, basename($filePath));
 
         $executed = restoreBackup($pdo, $filePath);
 
