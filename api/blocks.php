@@ -3,13 +3,14 @@
 // blocks.php – Manage cemetery blocks and their graves
 // GET  returns all blocks or get a specific block with its graves
 // Admin/Office receive full records including grave status, remarks, occupants
-// Public and Grounds receive only the coordiantes needed to render blocks and graves in the map
-// Admin/Office only: 
-// POST Create a new block.
-// PUT  Update block details, rename, and resize the grave grid
-// DELETE   Soft-delete a block and all its graves
+// Public and Grounds receive only the coordinates needed to render blocks and graves in the map
+// Admin/Office only:
+// POST   Create a new block.
+// PUT    Update block details, rename, and resize the grave grid
+// DELETE Soft-delete a block and all its graves
 // PUT RESIZE RULES: if SHRINK make sure there is no other occupants. Soft-delete graves outside the new
 // DELETE: A block can only be soft-deleted if every grave inside it is safe (no occupants)
+// Naming scheme (configurable with ROW_LETTER / COL_LETTER):
 
 define('ITS_ME_JUSTTOVERIFY', true);
 
@@ -31,11 +32,36 @@ $rawData = array_merge(
     $_POST ?? []
 );
 
-const BLOCK_NAME_MAX = 42;
+// Format is {block_name}-{row}-{col} (row first).
+const ROW_LETTER = true;
+const COL_LETTER = false;
 
-const MAX_GRAVES_PER_BLOCK = 676;
+// Both axes hard-capped at 26 (A-Z) for now.
+// MAX_GRAVES_PER_BLOCK = 26 * 26 = 676.
+const MAX_ROWS = 26;
+const MAX_COLS = 26;
+const MAX_GRAVES_PER_BLOCK = MAX_ROWS * MAX_COLS;
 
+const BLOCK_NAME_MAX     = 42;
 const GRAVE_INSERT_CHUNK = 1000;
+
+// ---------- Helpers ----------
+
+function renderAxis(int $n, bool $asLetter): string
+{
+    // 1 = A Z = 26, falls back to the number.
+    if ($asLetter && $n >= 1 && $n <= 26) {
+        return chr(64 + $n);
+    }
+    return (string) $n;
+}
+
+function buildGraveCode(string $blockName, int $row, int $col): string
+{
+    return $blockName
+        . '-' . renderAxis($row, ROW_LETTER)   // row first
+        . '-' . renderAxis($col, COL_LETTER);  // col second
+}
 
 function getBlockCounts(PDO $pdo, int $blockId): array
 {
@@ -137,16 +163,6 @@ WHERE $where
         }
     }
     return $unsafe;
-}
-
-function buildGraveCode(string $blockName, int $row, int $col): string
-{
-    // Convert 1 to 'A', 2 to 'B', etc.
-    $rowLetter = ($row >= 1 && $row <= 26) ? chr(64 + $row) : $row;
-    
-    return $blockName
-        . '-' . $rowLetter
-        . '-' . $col;
 }
 
 function summariseUnsafe(array $unsafe, int $max = 8): string
@@ -502,8 +518,11 @@ WHERE block_name = ? AND deleted_at IS NULL
     if ($rows < 0 || $cols < 0) {
         Response::error("rows and cols must be non-negative integers.", 400);
     }
-    if ($rows > 26 || $cols > 26) {
-        Response::error("rows and cols cannot exceed 26 (A-Z).", 400);
+    if ($rows > MAX_ROWS) {
+        Response::error("rows cannot exceed " . MAX_ROWS . ".", 400);
+    }
+    if ($cols > MAX_COLS) {
+        Response::error("cols cannot exceed " . MAX_COLS . ".", 400);
     }
 
     $totalGraves = $rows * $cols;
@@ -573,9 +592,11 @@ if ($method === 'PUT') {
     if ($newRows !== null && $newRows < 0) Response::error("rows cannot be negative.", 400);
     if ($newCols !== null && $newCols < 0) Response::error("cols cannot be negative.", 400);
 
-    $maxAllowed = 26;
-    if (($newRows !== null && $newRows > $maxAllowed) || ($newCols !== null && $newCols > $maxAllowed)) {
-        Response::error("rows and cols cannot exceed $maxAllowed.", 400);
+    if ($newRows !== null && $newRows > MAX_ROWS) {
+        Response::error("rows cannot exceed " . MAX_ROWS . ".", 400);
+    }
+    if ($newCols !== null && $newCols > MAX_COLS) {
+        Response::error("cols cannot exceed " . MAX_COLS . ".", 400);
     }
 
     $scalarFields = ['block_type', 'coordinates', 'remarks', 'image_link', 'rotation'];
@@ -699,20 +720,25 @@ WHERE block_id = ?
 ");
             $upd->execute([$renameTo, $userData['user_id'], $blockId]);
 
+            // Keep this SQL in sync with buildGraveCode().
+            // Format: {block_name}-{row}-{col}
+            // IF(flag, letters, number) — flag passed as 1/0.
             $graveUpd = $pdo->prepare("
 UPDATE graves
 SET grave_code = CONCAT(
-?,
-'-',
-IF(row_num < 10, '0', ''), row_num,
-'-',
-IF(col_num < 10, '0', ''), col_num
+    ?,
+    '-',
+    IF(?, CHAR(64 + row_num), CAST(row_num AS CHAR)),
+    '-',
+    IF(?, CHAR(64 + col_num), CAST(col_num AS CHAR))
 ),
 updated_by = ?
 WHERE block_id = ? AND deleted_at IS NULL
 ");
             $graveUpd->execute([
                 $renameTo,
+                ROW_LETTER ? 1 : 0,
+                COL_LETTER ? 1 : 0,
                 $userData['user_id'],
                 $blockId,
             ]);
