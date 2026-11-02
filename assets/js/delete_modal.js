@@ -10,6 +10,7 @@
     let currentRecord = null;
     let keydownHandler = null;
 
+    // Modal Template
     function buildModalHtml() {
         return `
       <div class="deleteModalOverlay" id="${MODAL_ID}"
@@ -70,6 +71,7 @@
     `;
     }
 
+    // Mounting and static event binding
     function ensureMounted() {
         if (modalEl && document.body.contains(modalEl)) return modalEl;
 
@@ -96,11 +98,13 @@
         if (cancelBtn) cancelBtn.addEventListener('click', () => close(false));
         if (okBtn) okBtn.addEventListener('click', onConfirmClick);
 
+        // Clicking the dark overlay (but not the card) closes the modal
         modalEl.addEventListener('click', (e) => {
             if (e.target === modalEl) close(false);
         });
     }
 
+    // Open / close
     function open(options = {}) {
         ensureMounted();
 
@@ -118,6 +122,7 @@
             ? options.onConfirm
             : null;
 
+        // Fill the info rows; show "—" when a value is missing
         const info = modalEl.querySelector('#deleteModalInfo');
         if (info) {
             info.querySelectorAll('[data-field]').forEach((el) => {
@@ -135,6 +140,7 @@
 
         modalEl.classList.add('active');
 
+        // Force a reflow so the "visible" class animates in smoothly
         modalEl.offsetWidth;
         modalEl.classList.add('visible');
 
@@ -183,6 +189,7 @@
         return result;
     }
 
+    // Confirm action
     async function onConfirmClick() {
         if (busy) return;
 
@@ -211,6 +218,7 @@
         }
     }
 
+    // UI helpers
     function setLoading(isLoading) {
         if (!modalEl) return;
 
@@ -238,6 +246,7 @@
 
     function hideError() { showError(''); }
 
+    // Public API
     global.DeleteModal = {
         open,
         close: () => close(false),

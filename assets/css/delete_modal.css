@@ -3,9 +3,8 @@
     inset: 0;
     z-index: 10000;
     display: none;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
+    flex-direction: column;
+    padding: clamp(10px, 2.5vw, 24px);
     background: rgba(15, 23, 42, 0.45);
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
@@ -13,35 +12,48 @@
     transition: opacity 0.2s ease;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
         Helvetica, Arial, sans-serif;
+    box-sizing: border-box;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
 }
 
+/* Display the overlay when the component marks itself as active */
 .deleteModalOverlay.active {
     display: flex;
 }
 
+/* Fade the overlay in once it is mounted and visible */
 .deleteModalOverlay.visible {
     opacity: 1;
 }
 
+/* Card */
 .deleteModalCard {
     position: relative;
+    flex: 0 1 auto;
     width: 100%;
     max-width: 420px;
+    margin: auto;
     background: #ffffff;
     border-radius: 10px;
-    padding: 40px 28px 24px;
+    padding: clamp(20px, 5vw, 40px) clamp(16px, 4.5vw, 28px) clamp(16px, 4vw, 24px);
     box-shadow:
         0 20px 40px -10px rgba(15, 23, 42, 0.15),
         0 8px 16px -8px rgba(15, 23, 42, 0.08);
     transform: translateY(12px) scale(0.96);
     transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
     color: #1c1e21;
+    box-sizing: border-box;
 }
 
+/* Card slide/scale animation while the overlay is visible */
 .deleteModalOverlay.visible .deleteModalCard {
     transform: translateY(0) scale(1);
 }
 
+/* Close button */
 .deleteModalClose {
     position: absolute;
     top: 14px;
@@ -76,6 +88,7 @@
     cursor: not-allowed;
 }
 
+/* Icon, title, and message */
 .deleteModalIcon {
     width: 50px;
     height: 50px;
@@ -98,30 +111,35 @@
 
 .deleteModalTitle {
     margin: 0 0 10px;
-    font-size: 22px;
+    font-size: clamp(19px, 4.5vw, 22px);
     font-weight: 700;
     text-align: center;
     color: #111827;
     letter-spacing: -0.01em;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
 }
 
 .deleteModalMessage {
     margin: 0 0 22px;
-    font-size: 14px;
+    font-size: clamp(13px, 3.4vw, 14px);
     line-height: 1.55;
     text-align: center;
     color: #6b7280;
     font-weight: 500;
+    overflow-wrap: anywhere;
 }
 
+/* Record info block */
 .deleteModalInfo {
     display: grid;
     gap: 8px;
-    padding: 12px 16px;
+    padding: clamp(10px, 3vw, 12px) clamp(12px, 4vw, 16px);
     margin-bottom: 16px;
     background: #f9fafb;
     border: 1px solid #f3f4f6;
     border-radius: 12px;
+    min-width: 0;
 }
 
 .deleteModalInfoRow {
@@ -131,6 +149,7 @@
     align-items: baseline;
     font-size: 13px;
     line-height: 1.45;
+    min-width: 0;
 }
 
 .deleteModalInfoLabel {
@@ -144,14 +163,17 @@
     font-weight: 600;
     min-width: 0;
     word-break: break-word;
+    overflow-wrap: anywhere;
 }
 
+/* Style for rows where the record has no value */
 .deleteModalInfoValue.muted {
     color: #9ca3af;
     font-weight: 500;
     font-style: italic;
 }
 
+/* Error message */
 .deleteModalError {
     display: flex;
     align-items: flex-start;
@@ -164,24 +186,28 @@
     border-radius: 10px;
     font-size: 12.5px;
     line-height: 1.45;
+    overflow-wrap: anywhere;
 }
 
+/* Action buttons */
 .deleteModalActions {
     display: flex;
+    flex-wrap: wrap;
     gap: 12px;
     justify-content: stretch;
 }
 
 .deleteModalBtn {
-    flex: 1;
+    flex: 1 1 140px;
+    min-width: 0;
     min-height: 44px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     gap: 8px;
-    padding: 10px 18px;
+    padding: 10px clamp(12px, 3vw, 18px);
     font-family: inherit;
-    font-size: 14px;
+    font-size: clamp(13px, 3vw, 14px);
     font-weight: 600;
     border-radius: 5px;
     border: none;
@@ -200,6 +226,7 @@
     cursor: not-allowed;
 }
 
+/* Cancel button */
 .deleteModalCancel {
     background: #e5e7eb;
     color: #4b5563;
@@ -210,6 +237,7 @@
     color: #374151;
 }
 
+/* Confirm (delete) button */
 .deleteModalConfirm {
     background: #ff3b30;
     color: #ffffff;
@@ -238,5 +266,16 @@
 @keyframes deleteModalSpin {
     to {
         transform: rotate(360deg);
+    }
+}
+
+@media (max-width: 480px) {
+    .deleteModalCard {
+        border-radius: 8px;
+    }
+
+    .deleteModalInfoRow {
+        grid-template-columns: minmax(80px, 100px) 1fr;
+        gap: 8px;
     }
 }
