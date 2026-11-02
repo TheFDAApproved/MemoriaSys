@@ -96,6 +96,28 @@
         }
     };
 
+    // Format a MySQL DATE (or ISO string) as a readable local date
+    const formatDate = (value) => {
+        if (value === null || value === undefined || value === "") return "\u2014";
+        const s = String(value).trim();
+        if (!s) return "\u2014";
+        // MySQL "YYYY-MM-DD HH:MM:SS" → make it parseable across browsers
+        const iso = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)
+            ? s.replace(" ", "T")
+            : s;
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return s;
+        try {
+            return d.toLocaleDateString("en-PH", {
+                year: "numeric",
+                month: "short",
+                day: "2-digit",
+            });
+        } catch (_) {
+            return s;
+        }
+    };
+
     const truncate = (text, max) => {
         const s = String(text || "");
         return s.length <= max ? s : s.slice(0, max - 1) + "\u2026";
@@ -475,7 +497,7 @@
     // A banner shown above the rows to explain why this tab is read-only
     function buildReadOnlyNoticeHtml() {
         if (state.activeTab === "pending_office") {
-            return '<tr class="readOnlyNoticeRow is-office"><td colspan="11"><div class="readOnlyNotice"><i class="fas fa-lock"></i><span>These payments are still awaiting <strong>Administrator / Office Staff</strong> confirmation.</span></div></td></tr>';
+            return '<tr class="readOnlyNoticeRow is-office"><td colspan="12"><div class="readOnlyNotice"><i class="fas fa-lock"></i><span>These payments are still awaiting <strong>Administrator / Office Staff</strong> confirmation.</span></div></td></tr>';
         }
         return "";
     }
@@ -500,7 +522,7 @@
     function renderLoading() {
         hideNoData();
         el.tbody.innerHTML =
-            '<tr><td colspan="12" style="text-align:center;padding:24px;opacity:.75;"><i class="fas fa-spinner fa-spin"></i> Loading payments\u2026</td></tr>';
+            '<tr><td colspan="13" style="text-align:center;padding:24px;opacity:.75;"><i class="fas fa-spinner fa-spin"></i> Loading payments\u2026</td></tr>';
     }
 
     function renderError(message) {
@@ -529,6 +551,9 @@
             tr.__payment = p;
 
             tr.innerHTML =
+                "<td>" +
+                escapeHtml(formatDate(p.created_at)) +
+                "</td>" +
                 "<td>" +
                 escapeHtml(p.deceased_name || "\u2014") +
                 "</td>" +

@@ -650,8 +650,8 @@ body {
 }
 
 /* Hide the action column when the Pending-Office tab is active */
-.tableScrollWrapper.hideActionCol thead th:nth-child(12),
-.tableScrollWrapper.hideActionCol tbody td:nth-child(12) {
+.tableScrollWrapper.hideActionCol thead th:nth-child(13),
+.tableScrollWrapper.hideActionCol tbody td:nth-child(13) {
     display: none;
 }
 

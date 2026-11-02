@@ -310,8 +310,8 @@ body {
 }
 
 /* Keep the action column at a fixed width */
-.tableScrollWrapper thead th:nth-child(12),
-.tableScrollWrapper tbody td:nth-child(12) {
+.tableScrollWrapper thead th:nth-child(13),
+.tableScrollWrapper tbody td:nth-child(13) {
     width: 120px;
 }
 

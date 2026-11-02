@@ -95,6 +95,28 @@
         }
     };
 
+    // Format a MySQL DATE (or ISO string) as a readable local date
+    const formatDate = (value) => {
+        if (value === null || value === undefined || value === "") return "\u2014";
+        const s = String(value).trim();
+        if (!s) return "\u2014";
+        // MySQL "YYYY-MM-DD HH:MM:SS" → make it parseable across browsers
+        const iso = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(s)
+            ? s.replace(" ", "T")
+            : s;
+        const d = new Date(iso);
+        if (isNaN(d.getTime())) return s;
+        try {
+            return d.toLocaleDateString("en-PH", {
+                year: "numeric",
+                month: "short",
+                day: "2-digit",
+            });
+        } catch (_) {
+            return s;
+        }
+    };
+
     // Delay a function call until input stops for the given time
     const debounce = (fn, wait) => {
         let timer;
@@ -1001,7 +1023,7 @@
     function renderLoading() {
         hideNoData();
         el.tbody.innerHTML =
-            '<tr><td colspan="12" style="text-align:center;padding:24px;opacity:.75;">' +
+            '<tr><td colspan="13" style="text-align:center;padding:24px;opacity:.75;">' +
             '<i class="fas fa-spinner fa-spin"></i> Loading payments\u2026' +
             "</td></tr>";
     }
@@ -1212,6 +1234,9 @@
             tr.dataset.paymentId = p.payment_id;
 
             tr.innerHTML =
+                "<td>" +
+                escapeHtml(formatDate(p.created_at)) +
+                "</td>" +
                 "<td>" +
                 escapeHtml(p.deceased_name || "\u2014") +
                 "</td>" +
