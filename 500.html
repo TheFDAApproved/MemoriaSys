@@ -19,10 +19,10 @@
     <meta property="og:title" content="500 — Server Error | Memoria: Cemetery Management System">
     <meta property="og:description" content="An unexpected server error has occurred. Return to the Memoria: Cemetery Management System dashboard.">
 
-    <link rel="stylesheet" href="assets/css/root.css">
-    <link rel="stylesheet" href="api/rootcolors.php" onerror="console.error('Failed to load custom colors. Using default theme.')">
-
     <style>
+        :root {
+            --mainColor: #0f172a;
+        }
         *,
         *::before,
         *::after {
@@ -398,12 +398,12 @@
 
             <span class="brand-text">
                 <span class="brand-name">Memoria</span>
-                <span class="brand-sub" id="cemetery_name">Mandaue City Public Cemetery</span>
+                <span class="brand-sub">Cemetery Management System</span>
             </span>
         </a>
 
         <p class="header-note">
-            <span id="cemetery_name_1">Mandaue City Public Cemetery</span> &middot; Records Office
+            Cemetery &middot; Records Office
         </p>
     </header>
 
@@ -494,14 +494,9 @@
 
     <!-- Footer -->
     <footer class="site-footer">
-        &copy; <span id="year">2025</span> Memoria &middot; <span id="cemetery_name_3">Mandaue City Public
-        Cemetery</span> Management System
+        &copy; <span id="year">2025</span> Memoria &middot; Cemetery Management System
     </footer>
 
-    <script src="assets/js/load_site_contents.js"></script>
-    <script>        
-        loadSiteContent();
-    </script>
     <script>
         (function resolveHomeLinks() {
             var links = document.querySelectorAll("[data-home-link]");
