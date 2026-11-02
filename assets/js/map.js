@@ -1,12 +1,5 @@
 /* ==========================================================================
    MEMORIA - CEMETERY MAP ENGINE (map.js)
-   ========================================================================== 
-   This file handles the 2D canvas rendering, editing, reshaping, 
-   and grave management for the admin map.
-
-   Integrations:
-     - confirm_ui(...)     → promise-based confirm dialog (confirm_ui.js)
-     - showAlertTOP(...)   → toast notifications (top-right)
    ========================================================================== */
 
 // easy options for displaying the graves name schema
@@ -17,16 +10,42 @@ const MAP = (() => {
   // ── CONSTANTS ────────────────────────────────────────────────────────────
   const CELL = 22;
   const API_BLOCKS = "api/blocks.php";
-  const MAP_W = 1000; // Fixed virtual map width
-  const MAP_H = 500;  // Fixed virtual map height
+  const MAP_W = 1000;
+  const MAP_H = 500;
 
-  // Helper to convert 1 -> A, 2 -> B, etc.
-  // this is named getrowletter but it can be used to anything lol
+  // ── CAMERA STATE ──
+  let mapScale = 1;
+  let mapX = 0;
+  let mapY = 0;
+  let isPanning = false;
+  let startPanX = 0;
+  let startPanY = 0;
+  let initialPinchDistance = 0;
+  let initialScale = 1;
+
+  function applyCameraTransform() {
+    const camera = document.getElementById("mapCamera");
+    if (camera) {
+      const container = canvasWrap.getBoundingClientRect();
+
+      const maxX = 0;
+      const minX = container.width - (container.width * mapScale);
+      const maxY = 0;
+      const minY = container.height - (container.height * mapScale);
+
+      mapX = Math.max(minX, Math.min(maxX, mapX));
+      mapY = Math.max(minY, Math.min(maxY, mapY));
+
+      camera.style.transform = `translate(${mapX}px, ${mapY}px) scale(${mapScale})`;
+    }
+  }
+
+
   function getRowLetter(rowNum) {
     if (rowNum >= 1 && rowNum <= 26) {
       return String.fromCharCode(64 + rowNum);
     }
-    return rowNum; // Fallback just in case
+    return rowNum;
   }
 
   // ── STATE VARIABLES ──────────────────────────────────────────────────────
@@ -76,27 +95,19 @@ const MAP = (() => {
     origRotation: 0,
   };
 
-
   const $ = (id) => document.getElementById(id);
   let canvasWrap, cv, ctx;
 
-  // Helper to check distance to a point that has been rotated around a center
   function getDistToRotatedPoint(mx, my, px, py, cx, cy, rotation) {
-    // 1. Move mouse to be relative to the block's center
     const dx = mx - cx;
     const dy = my - cy;
-
-    // 2. Rotate the mouse backwards by the block's rotation
     const cos = Math.cos(-rotation);
     const sin = Math.sin(-rotation);
     const rotatedX = cx + (dx * cos - dy * sin);
     const rotatedY = cy + (dx * sin + dy * cos);
-
-    // 3. Now check distance to the unrotated corner
     return Math.sqrt((rotatedX - px) ** 2 + (rotatedY - py) ** 2);
   }
 
-  // Un-rotates a mouse click back to the block's original orientation
   function screenToUnrotated(sx, sy, cx, cy, rotation) {
     const dx = sx - cx;
     const dy = sy - cy;
@@ -156,7 +167,7 @@ const MAP = (() => {
     return Math.random().toString(36).slice(2, 8);
   }
   function snap(v) {
-    return v; // Removed the Math.round(v / CELL) * CELL so you have free movement
+    return v;
   }
 
   function rectToPoints(x, y, w, h) {
@@ -316,36 +327,26 @@ const MAP = (() => {
 
   function isCustomShape(b) {
     const pts = ensurePolygon(b);
-    return pts.length > 4; // 4 = rectangle, >4 = custom shape
+    return pts.length > 4;
   }
 
-  // Helper to remove redundant collinear points (points on a straight line)
   function cleanPolygon(pts) {
     if (pts.length <= 4) return pts;
-
-    // 1. Round to 2 decimal places to kill microscopic float errors
     let rounded = pts.map(p => ({
       x: Math.round(p.x * 100) / 100,
       y: Math.round(p.y * 100) / 100
     }));
-
     let cleaned = [];
     for (let i = 0; i < rounded.length; i++) {
       const prev = rounded[(i - 1 + rounded.length) % rounded.length];
       const curr = rounded[i];
       const next = rounded[(i + 1) % rounded.length];
-
-      // Calculate slopes (delta Y / delta X)
       const slope1 = Math.abs(curr.x - prev.x) < 0.01 ? 9999 : (curr.y - prev.y) / (curr.x - prev.x);
       const slope2 = Math.abs(next.x - curr.x) < 0.01 ? 9999 : (next.y - curr.y) / (next.x - curr.x);
-
-      // If the slope is the same (or the lines are exactly vertical), it's a straight line!
-      // We use a tolerance of 0.01 to account for minor floating-point drift.
       if (Math.abs(slope1 - slope2) > 0.01) {
         cleaned.push(curr);
       }
     }
-
     return cleaned.length >= 3 ? cleaned : pts;
   }
 
@@ -391,9 +392,6 @@ const MAP = (() => {
     });
   }
 
-  // ── CLAMPING HELPERS ─────────────────────────────────────────────────────
-  // Clamp a translation so the block's bounds stay within the canvas, or
-  // at least partially visible when the block is larger than the canvas.
   function clampTranslate(b, dx, dy) {
     const minX = Math.min(0, MAP_W - b.w);
     const maxX = Math.max(0, MAP_W - b.w);
@@ -404,9 +402,7 @@ const MAP = (() => {
     return { dx: newX - b.x, dy: newY - b.y };
   }
 
-  // Clamp a resize so the block can't extend past the canvas edges.
   function clampResize(origX, origY, origW, origH, dx, dy) {
-    // Allowed to shrink down to 1px, cannot exceed the map edge
     const maxNewW = Math.max(1, MAP_W - origX);
     const maxNewH = Math.max(1, MAP_H - origY);
     const newW = Math.max(1, Math.min(maxNewW, origW + dx));
@@ -420,7 +416,7 @@ const MAP = (() => {
     const containerH = canvasWrap.clientHeight;
     if (!containerW || !containerH) return;
 
-    // Prevent infinite loop on mobile if height is 0
+    // Fill the entire container
     const displayW = containerW;
     const displayH = containerH;
 
@@ -430,16 +426,16 @@ const MAP = (() => {
 
     const bw = Math.round(displayW * dpr);
     const bh = Math.round(displayH * dpr);
-    
-    // Only resize if it actually changed
+
     if (cv.width !== bw || cv.height !== bh) {
       cv.width = bw;
       cv.height = bh;
-      cv.style.width = `${displayW}px`;
-      cv.style.height = `${displayH}px`;
-      cv.style.left = `0px`;
-      cv.style.top = `0px`;
     }
+
+    cv.style.width = `${displayW}px`;
+    cv.style.height = `${displayH}px`;
+    cv.style.left = `0px`;
+    cv.style.top = `0px`;
 
     const bg = document.getElementById("cemetery_map_image");
     if (bg) {
@@ -447,18 +443,26 @@ const MAP = (() => {
       bg.style.height = `${displayH}px`;
       bg.style.left = `0px`;
       bg.style.top = `0px`;
-      bg.style.objectFit = "fill"; 
+      bg.style.objectFit = "fill"; // Forces the image to stretch exactly like the canvas
     }
   }
 
-  function screenToMap(sx, sy) {
-    const rect = cv.getBoundingClientRect();
-    // Because the canvas is scaled and cropped, we calculate the ratio dynamically
-    const scaleX = MAP_W / cvW;
-    const scaleY = MAP_H / cvH;
+  function getXY(e) {
+    // This is the magic fix for accurate clicking!
+    if (e.offsetX !== undefined) {
+      return {
+        x: e.offsetX * (MAP_W / cvW),
+        y: e.offsetY * (MAP_H / cvH),
+      };
+    }
+
+    const r = cv.getBoundingClientRect();
+    const s = e.touches ? e.touches[0] : e;
+    const screenX = s.clientX - r.left;
+    const screenY = s.clientY - r.top;
     return {
-      x: (sx - rect.left) * scaleX,
-      y: (sy - rect.top) * scaleY,
+      x: screenX * (MAP_W / r.width),
+      y: screenY * (MAP_H / r.height),
     };
   }
 
@@ -490,13 +494,10 @@ const MAP = (() => {
         if (r && r.success && r.data && r.data.block_id && !b.block_id) {
           b.block_id = r.data.block_id;
         }
-
         if (r && r.success) {
-          // Clear the local dirty state instantly so it doesn't save again
           b._dirty = false;
           b.needsPlacement = false;
         }
-
         return r;
       });
   }
@@ -541,16 +542,12 @@ const MAP = (() => {
           let pts = null;
           if (row.coordinates) {
             try {
-              pts =
-                typeof row.coordinates === "string"
-                  ? JSON.parse(row.coordinates)
-                  : row.coordinates;
+              pts = typeof row.coordinates === "string" ? JSON.parse(row.coordinates) : row.coordinates;
             } catch {
               pts = null;
             }
           }
 
-          // ── ADDED: Clean up any straight-line points from the database ──
           if (pts && Array.isArray(pts)) {
             pts = cleanPolygon(pts);
           }
@@ -599,13 +596,11 @@ const MAP = (() => {
         draw();
         updateStatus();
 
-        const needsPlacement = Object.values(blocks).some(
-          (b) => b.needsPlacement,
-        );
+        const needsPlacement = Object.values(blocks).some((b) => b.needsPlacement);
         setHint(
           needsPlacement
             ? 'Some blocks need placement — click "Edit Layout" to drag them into position.'
-            : 'Click "Add Block" to create one, or "Edit Layout" to rearrange existing blocks.',
+            : 'Click "Add Block" to create one, or "Edit Layout" to rearrange existing blocks.'
         );
       })
       .catch((err) => {
@@ -613,8 +608,7 @@ const MAP = (() => {
         const el = $("mapLoading");
         if (el) el.textContent = "Failed to load map.";
         setHint("Could not load blocks from server.");
-        if (window.showAlertTOP)
-          showAlertTOP("Could not load blocks from server.", "error");
+        if (window.showAlertTOP) showAlertTOP("Could not load blocks from server.", "error");
       });
   }
 
@@ -667,7 +661,6 @@ const MAP = (() => {
       const cy = bounds.y + bounds.h / 2;
       const rotation = b.rotation || 0;
 
-      // 1. ROTATE THE CANVAS FOR EVERYTHING BELOW
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(rotation);
@@ -675,7 +668,6 @@ const MAP = (() => {
 
       ctx.globalAlpha = reshapeMode && !isResh ? 0.25 : isDrag || isResize || isRotate ? 0.75 : 1;
 
-      // 2. DRAW THE BLOCK SHAPE
       ctx.beginPath();
       pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
       ctx.closePath();
@@ -700,27 +692,22 @@ const MAP = (() => {
       ctx.stroke();
       ctx.globalAlpha = 1.0;
 
-      // 3. DRAW HANDLES (Only in Edit Layout mode)
       if (mapEditMode && !reshapeMode) {
-        // Use the bounding box to guarantee Top-Left and Bottom-Right positions
         const minX = bounds.x;
         const minY = bounds.y;
         const maxX = bounds.x + bounds.w;
         const maxY = bounds.y + bounds.h;
 
-        // Bottom-Right: Resize handle (Blue)
         ctx.beginPath();
         ctx.arc(maxX, maxY, 6, 0, Math.PI * 2);
         ctx.fillStyle = "#3b82f6"; ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
         ctx.fill(); ctx.stroke();
 
-        // Top-Left: Rotate handle (Orange)
         ctx.beginPath();
         ctx.arc(minX, minY, 6, 0, Math.PI * 2);
         ctx.fillStyle = "#f59e0b"; ctx.strokeStyle = "#fff"; ctx.lineWidth = 2;
         ctx.fill(); ctx.stroke();
 
-        // Dashed line to center
         ctx.beginPath();
         ctx.moveTo(minX, minY);
         ctx.lineTo(cx, cy);
@@ -731,7 +718,6 @@ const MAP = (() => {
         ctx.setLineDash([]);
       }
 
-      // 4. DRAW RESHAPE PREVIEW (Green/Grey and dots)
       if (isResh) {
         if (pendingSplit) {
           drawSplitPreview();
@@ -775,18 +761,14 @@ const MAP = (() => {
         }
       }
 
-      // 5. DRAW TEXT
       const label = labelAnchor(pts);
       const roomy = bounds.h >= 56;
-      
       const isMobile = canvasWrap.clientWidth < 600;
-      
-      // Fixed sizes on mobile
       const titleSize = isMobile ? 10 : 13;
       const subSize = isMobile ? 8 : 10;
 
-      ctx.imageSmoothingEnabled = false; 
-      
+      ctx.imageSmoothingEnabled = false;
+
       ctx.fillStyle = "#1e3a5f";
       ctx.font = `500 ${titleSize}px Inter, sans-serif`;
       ctx.textAlign = "center";
@@ -806,10 +788,9 @@ const MAP = (() => {
         ctx.font = `${subSize}px Inter, sans-serif`;
         ctx.fillText(mapEditMode ? "click to reshape \u00b7 drag to move" : "click to view", label.x, hintY);
       }
-      
-      ctx.imageSmoothingEnabled = true; 
 
-      // 6. DRAW DRAG GHOST
+      ctx.imageSmoothingEnabled = true;
+
       if (isDrag) {
         const gx = snap(blockDrag.dx) - blockDrag.dx;
         const gy = snap(blockDrag.dy) - blockDrag.dy;
@@ -822,7 +803,6 @@ const MAP = (() => {
         }
       }
 
-      // 7. RESTORE CANVAS
       ctx.restore();
       ctx.globalAlpha = 1;
     });
@@ -874,42 +854,23 @@ const MAP = (() => {
       .find((bid) => pointInPoly(mx, my, ensurePolygon(blocks[bid])));
   }
 
-  function getXY(e) {
-    const r = cv.getBoundingClientRect();
-    const s = e.touches ? e.touches[0] : e;
-    const sx = s.clientX - r.left;
-    const sy = s.clientY - r.top;
-    return screenToMap(sx + r.left, sy + r.top);
-  }
-
   // ── RESHAPE MODE LOGIC ───────────────────────────────────────────────────
   function handleDrawClick(mx, my) {
     const blk = blocks[reshapeBid];
     const pts = ensurePolygon(blk);
 
-    // 1. Check if the block is rotated
     const bounds = polyBounds(pts);
     const cx = bounds.x + bounds.w / 2;
     const cy = bounds.y + bounds.h / 2;
     const rotation = blk.rotation || 0;
 
-    // 2. Un-rotate the mouse click so we can check the real edges
     const clickPoint = screenToUnrotated(mx, my, cx, cy, rotation);
-
-    // 3. Find the closest edge using the un-rotated click point
     const edge = closestEdge(pts, clickPoint.x, clickPoint.y);
     const onEdge = edge && edge.dist < 24;
 
     if (drawPoints.length === 0) {
       if (!onEdge) return;
-      drawPoints = [
-        {
-          x: edge.point.x,
-          y: edge.point.y,
-          edgeIndex: edge.edgeIndex,
-          onEdge: true,
-        },
-      ];
+      drawPoints = [{ x: edge.point.x, y: edge.point.y, edgeIndex: edge.edgeIndex, onEdge: true }];
       setHint("Add waypoints, then click another edge to close the line.");
       updateReshapeToolbar();
       draw();
@@ -921,12 +882,7 @@ const MAP = (() => {
       const endPoint = { x: snap(edge.point.x), y: snap(edge.point.y) };
       if (dist(endPoint, startPt) < 10 && drawPoints.length < 2) return;
 
-      const split = splitPolygon(
-        pts,
-        startPt,
-        { ...endPoint, edgeIndex: edge.edgeIndex },
-        drawPoints.slice(1),
-      );
+      const split = splitPolygon(pts, startPt, { ...endPoint, edgeIndex: edge.edgeIndex }, drawPoints.slice(1));
       drawPoints = [];
 
       if (!split) {
@@ -942,14 +898,11 @@ const MAP = (() => {
         keep: polyArea(split.a) >= polyArea(split.b) ? "a" : "b",
       };
       updateReshapeToolbar();
-      setHint(
-        'Click a half to pick it, then "Keep this side" to confirm \u00b7 Esc to redraw.',
-      );
+      setHint('Click a half to pick it, then "Keep this side" to confirm \u00b7 Esc to redraw.');
       draw();
       return;
     }
 
-    // Add a waypoint using the un-rotated coordinates
     drawPoints.push({ x: snap(clickPoint.x), y: snap(clickPoint.y), onEdge: false });
     updateReshapeToolbar();
     draw();
@@ -992,12 +945,7 @@ const MAP = (() => {
       }
       return out;
     };
-    const a = [
-      pt1,
-      ...chain(i1, i2).slice(1, -1),
-      pt2,
-      ...midPoints.slice().reverse(),
-    ];
+    const a = [pt1, ...chain(i1, i2).slice(1, -1), pt2, ...midPoints.slice().reverse()];
     const b = [pt1, ...midPoints, pt2, ...chain(i2, i1).slice(1, -1)];
     if (a.length < 3 || b.length < 3) return null;
     return { a, b };
@@ -1021,17 +969,9 @@ const MAP = (() => {
   function keepSplitSide() {
     if (!pendingSplit) return;
     const blk = blocks[reshapeBid];
-    reshapeHistory.push({
-      coordinates: blk.coordinates.map((p) => ({ ...p })),
-      custom: !!blk.custom,
-    });
-
-    // Get the new shape
+    reshapeHistory.push({ coordinates: blk.coordinates.map((p) => ({ ...p })), custom: !!blk.custom });
     const newShape = pendingSplit.keep === "a" ? pendingSplit.a : pendingSplit.b;
-
-    // Clean up any redundant points on straight lines
     blk.coordinates = cleanPolygon(newShape);
-
     blk.custom = true;
     syncBounds(blk);
     pendingSplit = null;
@@ -1070,7 +1010,22 @@ const MAP = (() => {
 
   // ── EVENT LISTENERS ──────────────────────────────────────────────────────
   function initCanvasEvents() {
+    let pointerStartX = 0;
+    let pointerStartY = 0;
+    let hasDragged = false;
+
+    // Helper to check if we are in Mobile/Responsive mode
+    const isMobile = () => window.innerWidth <= 768;
+
     const handleMove = (e) => {
+      // ── PANNING (Takes priority over everything else) ──
+      if (isPanning && isMobile()) {
+        mapX = e.clientX - startPanX;
+        mapY = e.clientY - startPanY;
+        applyCameraTransform();
+        return;
+      }
+
       if (
         blockDrag.active ||
         resizeDrag.active ||
@@ -1079,7 +1034,7 @@ const MAP = (() => {
       ) {
         if (e.cancelable) e.preventDefault();
       }
-      
+
       const { x, y } = getXY(e);
       mousePos = { x, y };
 
@@ -1149,7 +1104,7 @@ const MAP = (() => {
           const cx = bounds.x + bounds.w / 2;
           const cy = bounds.y + bounds.h / 2;
           const rotation = blk.rotation || 0;
-          
+
           mousePos = screenToUnrotated(x, y, cx, cy, rotation);
         } else {
           mousePos = { x, y };
@@ -1189,6 +1144,16 @@ const MAP = (() => {
       if (e.target !== cv) return;
       const { x, y } = getXY(e);
 
+      // ── START PANNING (Works in both View Mode and Edit Mode) ──
+      // If we are on mobile AND we didn't click a block, start panning!
+      if (isMobile() && !hitBlock(x, y)) {
+        isPanning = true;
+        startPanX = e.clientX - mapX;
+        startPanY = e.clientY - mapY;
+        canvasWrap.style.cursor = "grabbing";
+        return;
+      }
+
       if (reshapeMode) {
         if (!reshapeBid) return;
         if (pendingSplit) pickSplitSide(x, y);
@@ -1200,7 +1165,7 @@ const MAP = (() => {
         for (let i = blockOrder.length - 1; i >= 0; i--) {
           const bid = blockOrder[i], b = blocks[bid];
           if (b.needsPlacement) continue;
-          
+
           const pts = ensurePolygon(b);
           const bounds = polyBounds(pts);
           const rotation = b.rotation || 0;
@@ -1245,6 +1210,9 @@ const MAP = (() => {
     };
 
     const handleUp = (e) => {
+      isPanning = false;
+      if (!mapEditMode) canvasWrap.style.cursor = "default";
+
       if (rotateDrag.active) {
         rotateDrag.active = false;
         canvasWrap.style.cursor = "grab";
@@ -1292,38 +1260,71 @@ const MAP = (() => {
       }
     };
 
-    // ── MOBILE TOUCH HANDLING ──
+    // ── MOBILE TOUCH EVENTS (Only active on Mobile) ──
     cv.addEventListener("touchstart", (e) => {
-      // If NOT in Edit mode, let the page scroll normally!
-      if (!mapEditMode && !reshapeMode) return;
-      handleDown(e);
+      if (!isMobile()) return;
+      
+      if (e.touches.length === 2) {
+        // Pinch to zoom (always works)
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        initialPinchDistance = Math.hypot(dx, dy);
+        initialScale = mapScale;
+      } else if (e.touches.length === 1) {
+        const { x, y } = getXY(e);
+        // If we didn't hit a block, pan the map (works in Edit Mode too)
+        if (!hitBlock(x, y)) {
+          isPanning = true;
+          startPanX = e.touches[0].clientX - mapX;
+          startPanY = e.touches[0].clientY - mapY;
+        } else if (mapEditMode) {
+          // If we DID hit a block, let the block drag logic take over
+          handleDown(e);
+        }
+      }
     }, { passive: false });
 
     cv.addEventListener("touchmove", (e) => {
-      // If NOT in Edit mode, let the page scroll normally!
-      if (!mapEditMode && !reshapeMode) return;
-      handleMove(e);
+      if (!isMobile()) return;
+      
+      if (e.touches.length === 2) {
+        if (e.cancelable) e.preventDefault();
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const distance = Math.hypot(dx, dy);
+        mapScale = Math.max(1, Math.min(4, initialScale * (distance / initialPinchDistance)));
+        applyCameraTransform();
+      } else if (e.touches.length === 1 && isPanning) {
+        if (e.cancelable) e.preventDefault();
+        mapX = e.touches[0].clientX - startPanX;
+        mapY = e.touches[0].clientY - startPanY;
+        applyCameraTransform();
+      } else if (mapEditMode) {
+        handleMove(e);
+      }
     }, { passive: false });
 
     cv.addEventListener("touchend", (e) => {
-      if (!mapEditMode && !reshapeMode) return;
-      handleUp(e);
+      if (!isMobile()) return;
+      if (e.touches.length < 2) initialPinchDistance = 0;
+      if (e.touches.length === 0) isPanning = false;
+      if (mapEditMode) handleUp(e);
     });
 
-    // ── DESKTOP MOUSE ──
-    cv.addEventListener("mousemove", handleMove);
-    cv.addEventListener("mouseleave", () => {
-      if (blockDrag.active || resizeDrag.active || reshapeMode) return;
-      if (hoveredBlock) {
-        hoveredBlock = null;
-        scheduleDraw();
-      }
-    });
-    window.addEventListener("mousemove", (e) => {
-      if (blockDrag.active || resizeDrag.active) handleMove(e);
-    });
+    // ── DESKTOP MOUSE EVENTS ──
+    window.addEventListener("mousemove", handleMove);
     window.addEventListener("mousedown", handleDown);
-    cv.addEventListener("mouseup", handleUp);
+    window.addEventListener("mouseup", handleUp);
+
+    // ── DESKTOP WHEEL ZOOM (Only active on Mobile) ──
+    cv.addEventListener("wheel", (e) => {
+      if (!isMobile()) return; // Disable on PC
+      if (mapEditMode) return;  // Disable while editing
+      if (e.cancelable) e.preventDefault();
+      const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+      mapScale = Math.max(1, Math.min(4, mapScale * zoomFactor));
+      applyCameraTransform();
+    }, { passive: false });
 
     cv.addEventListener("dblclick", (e) => {
       if (!reshapeMode || pendingSplit || drawPoints.length < 2) return;
@@ -1333,20 +1334,34 @@ const MAP = (() => {
       }
     });
 
-    window.addEventListener("mouseup", (e) => {
-      if (blockDrag.active || resizeDrag.active) handleUp(e);
-    });
-
     if (typeof ResizeObserver !== "undefined") {
       new ResizeObserver(() => {
         syncCanvasSize();
-        draw(); 
+
+        // ── RESET TO DEFAULT ON DESKTOP ──
+        if (window.innerWidth > 768) {
+          mapScale = 1;
+          mapX = 0;
+          mapY = 0;
+          applyCameraTransform();
+        }
+
+        draw();
         scheduleDraw();
       }).observe(canvasWrap);
     } else {
       window.addEventListener("resize", () => {
         syncCanvasSize();
-        draw(); 
+
+        // ── RESET TO DEFAULT ON DESKTOP ──
+        if (window.innerWidth > 768) {
+          mapScale = 1;
+          mapX = 0;
+          mapY = 0;
+          applyCameraTransform();
+        }
+
+        draw();
         scheduleDraw();
       });
     }
@@ -1369,8 +1384,6 @@ const MAP = (() => {
 
     $("btnSaveMap").addEventListener("click", async () => {
       const btn = $("btnSaveMap");
-
-      // If there are no changes, just exit immediately
       if (!hasUnsavedChanges) {
         exitEditMap();
         return;
@@ -1378,8 +1391,7 @@ const MAP = (() => {
 
       const origHtml = btn.innerHTML;
       btn.disabled = true;
-      btn.innerHTML =
-        '<i class="fas fa-spinner fa-spin" style="margin-right:6px"></i>Saving…';
+      btn.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right:6px"></i>Saving…';
 
       try {
         const result = await persistSaveAsync();
@@ -1393,20 +1405,14 @@ const MAP = (() => {
           return;
         }
 
-        // ── INSTANT UPDATE & EXIT LOGIC ──
-        // 1. Clear all local flags
         blockOrder.forEach((bid) => {
           blocks[bid]._dirty = false;
           blocks[bid].needsPlacement = false;
         });
         hasUnsavedChanges = false;
 
-        // 2. Restore the buttons to normal (this is handled by exitEditMap)
-        // 3. Force a redraw so colors update instantly
         draw();
         updateStatus();
-
-        // 4. Exit edit mode immediately! (This hides Save/Cancel and shows Edit Layout/Add Block)
         exitEditMap();
 
         if (window.showAlertTOP) showAlertTOP("Map saved.", "success");
@@ -1414,16 +1420,12 @@ const MAP = (() => {
         console.error("Save failed:", err);
         btn.disabled = false;
         btn.innerHTML = origHtml;
-        if (window.showAlertTOP)
-          showAlertTOP("Save failed — check your connection.", "error");
+        if (window.showAlertTOP) showAlertTOP("Save failed — check your connection.", "error");
       }
     });
 
     $("btnAddBlock").addEventListener("click", openAddBlockModal);
-
-    $("modalOverlay").addEventListener("click", function (e) {
-      if (e.target === this) closeModal();
-    });
+    $("modalOverlay").addEventListener("click", function (e) { if (e.target === this) closeModal(); });
   }
 
   function enterEditMap() {
@@ -1451,9 +1453,7 @@ const MAP = (() => {
     mapEditMode = false;
     hasUnsavedChanges = false;
     hoveredBlock = null;
-    blockOrder.forEach((bid) => {
-      blocks[bid]._dirty = false;
-    });
+    blockOrder.forEach((bid) => { blocks[bid]._dirty = false; });
 
     canvasWrap.style.cursor = "default";
     $("btnEditMap").style.display = "";
@@ -1471,9 +1471,7 @@ const MAP = (() => {
     draw();
   }
 
-  // ── RESHAPE TOOLBAR STATE ────────────────────────────────────────────────
-  const RESHAPE_HINT =
-    "DRAW LINE: click an edge, add waypoints, then click another edge to divide the block.";
+  const RESHAPE_HINT = "DRAW LINE: click an edge, add waypoints, then click another edge to divide the block.";
 
   function enterReshapeMode(bid) {
     reshapeMode = true;
@@ -1494,9 +1492,7 @@ const MAP = (() => {
     _clearReshape();
     if (mapEditMode) $("btnSaveMap").style.display = "";
     canvasWrap.style.cursor = "default";
-    setHint(
-      "Click a block to change its shape, drag to move, or grab the corner dot to resize.",
-    );
+    setHint("Click a block to change its shape, drag to move, or grab the corner dot to resize.");
     draw();
   }
 
@@ -1508,10 +1504,7 @@ const MAP = (() => {
     show("btnKeepSide", choosing);
     show("btnSwapSide", choosing);
     show("btnDoneReshape", reshapeMode && !choosing);
-    show(
-      "btnUndoReshape",
-      reshapeMode && !choosing && reshapeHistory.length > 0,
-    );
+    show("btnUndoReshape", reshapeMode && !choosing && reshapeHistory.length > 0);
   }
 
   function _clearReshape() {
@@ -1523,23 +1516,10 @@ const MAP = (() => {
     updateReshapeToolbar();
   }
 
-  // ── MODAL SYSTEM ─────────────────────────────────────────────────────────
-  const BLOCK_TYPES = [
-    "Niche",
-    "Bone Chamber",
-    "Lawn/Grounds",
-    "Unmapped Area",
-    "Private",
-    "Mausoleum",
-    "Mass Grave",
-    "Cluster",
-    "Block",
-  ];
+  const BLOCK_TYPES = ["Niche", "Bone Chamber", "Lawn/Grounds", "Unmapped Area", "Private", "Mausoleum", "Mass Grave", "Cluster", "Block"];
 
   function nameTaken(name, exceptBid) {
-    return blockOrder.some(
-      (bid) => bid !== exceptBid && blocks[bid].block_name === name,
-    );
+    return blockOrder.some((bid) => bid !== exceptBid && blocks[bid].block_name === name);
   }
 
   function setFieldError(id, msg) {
@@ -1571,12 +1551,9 @@ const MAP = (() => {
   }
 
   function nextBlockPosition(bw, bh) {
-    const step = CELL * 2,
-      perRow = 6,
-      i = blockOrder.length;
+    const step = CELL * 2, perRow = 6, i = blockOrder.length;
     let bx = 60 + (i % perRow) * step;
     let by = 60 + Math.floor(i / perRow) * step;
-
     const maxBx = Math.max(1, MAP_W - bw - 8);
     const maxBy = Math.max(1, MAP_H - bh - 8);
     bx = Math.max(1, Math.min(maxBx, bx));
@@ -1590,15 +1567,10 @@ const MAP = (() => {
       <label>Block Name</label>
       <input type="text" id="fBn" placeholder="e.g. Block A">
       <p id="fBnErr" class="modalNote" style="display:none;color:#ef4444;margin-top:4px"></p>
-      
       <label style="margin-top:10px">Block Type</label>
-      <select id="fBt">
-        ${BLOCK_TYPES.map((t) => `<option value="${t}">${t}</option>`).join("")}
-      </select>
-      
+      <select id="fBt">${BLOCK_TYPES.map((t) => `<option value="${t}">${t}</option>`).join("")}</select>
       <label style="margin-top:10px">Image URL</label>
       <input type="text" id="fBImg" placeholder="https://example.com/image.jpg (optional)">
-      
       <label style="margin-top:10px">Rows / Cols (grave grid)</label>
       <div class="modalRowPair" style="margin-top:6px">
         <div><label>Rows</label><input type="number" id="fBr" min="0" max="30" value="4"></div>
@@ -1614,85 +1586,44 @@ const MAP = (() => {
     $("modalConfirm").onclick = async () => {
       const name = validatedName("fBn", "fBnErr");
       if (!name) return;
-
       const rows = Math.max(0, parseInt($("fBr").value, 10) || 0);
       const cols = Math.max(0, parseInt($("fBc").value, 10) || 0);
       const blockType = $("fBt").value;
       const imageUrl = normalizeImageUrl($("fBImg").value);
-
-      // If you enter 0 rows/cols, it creates a 20x20 block instead of 88x88
       const bw = cols > 0 ? cols * CELL : 20;
       const bh = rows > 0 ? rows * CELL : 20;
       const { bx, by } = nextBlockPosition(bw, bh);
       const points = rectToPoints(bx, by, bw, bh);
-
-      const payload = {
-        block_name: name,
-        block_type: blockType,
-        image_link: imageUrl,
-        coordinates: JSON.stringify(points),
-        rows,
-        cols,
-      };
+      const payload = { block_name: name, block_type: blockType, image_link: imageUrl, coordinates: JSON.stringify(points), rows, cols };
 
       setModalBusy(true);
       try {
-        const res = await fetch(API_BLOCKS, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        }).then((r) => r.json());
-
+        const res = await fetch(API_BLOCKS, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).then((r) => r.json());
         if (res.success === false) {
           setModalBusy(false);
-          if (window.showAlertTOP) {
-            showAlertTOP(
-              "Failed: " + (res.message || "unknown error"),
-              "error",
-            );
-          }
+          if (window.showAlertTOP) showAlertTOP("Failed: " + (res.message || "unknown error"), "error");
           return;
         }
-
         const serverId = res.data && res.data.block_id;
         const newBid = serverId ? "b" + serverId : uid();
 
         blocks[newBid] = {
-          block_id: serverId || null,
-          block_name: name,
-          block_type: blockType,
-          image_link: imageUrl,
-          coordinates: points,
-          rows,
-          cols,
-          remarks: null,
-          x: bx,
-          y: by,
-          w: bw,
-          h: bh,
-          total_graves: rows * cols,
-          vacant_count: rows * cols,
-          occupied_count: 0,
-          _dirty: false,
+          block_id: serverId || null, block_name: name, block_type: blockType, image_link: imageUrl,
+          coordinates: points, rows, cols, remarks: null, x: bx, y: by, w: bw, h: bh,
+          total_graves: rows * cols, vacant_count: rows * cols, occupied_count: 0, _dirty: false,
         };
         blockOrder.push(newBid);
 
         closeModal();
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => {
-            syncCanvasSize();
-            draw();
-            updateStatus();
-            setHint('Block added! Use "Edit Layout" to move or edit it.');
-            if (window.showAlertTOP) showAlertTOP("Block added.", "success");
-          }),
-        );
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          syncCanvasSize(); draw(); updateStatus();
+          setHint('Block added! Use "Edit Layout" to move or edit it.');
+          if (window.showAlertTOP) showAlertTOP("Block added.", "success");
+        }));
       } catch (err) {
         console.error("Add block failed:", err);
         setModalBusy(false);
-        if (window.showAlertTOP) {
-          showAlertTOP("Save failed — check your connection.", "error");
-        }
+        if (window.showAlertTOP) showAlertTOP("Save failed — check your connection.", "error");
       }
     };
 
@@ -1707,12 +1638,10 @@ const MAP = (() => {
     curBlock = bid;
     const b = blocks[bid];
     $("modalTitle").textContent = b.block_name;
-
     $("modalBody").innerHTML = `
       <p style="font-size:12px;color:#94a3b8;margin-top:-4px;margin-bottom:14px">What would you like to do?</p>
       <button class="reshapeModalBtn" style="background:#eff6ff;color:#3b82f6;border-color:#bfdbfe;margin-bottom:8px" onclick="MAP.closeModal();MAP.openBlockDetailsModal('${bid}')">&#128065; View Block</button>
       <button class="reshapeModalBtn" style="background:#f0fdf4;color:#16a34a;border-color:#bbf7d0;margin-bottom:0" onclick="MAP.closeModal();MAP.openBlockEditModal('${bid}')">&#9998; Edit Block</button>`;
-
     $("modalConfirm").style.display = "none";
     $("modalCancel").textContent = "Close";
     $("modalCancel").onclick = closeModal;
@@ -1723,7 +1652,6 @@ const MAP = (() => {
     const b = blocks[bid];
     const { occ, res, avail, total } = blockStats(b);
     const imgId = `blockImgPreview_${bid}`;
-
     const imgHtml = b.image_link
       ? `<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:8px;margin-bottom:12px;text-align:center">
            <img id="${imgId}" src="${escHtml(b.image_link)}" alt="${escHtml(b.block_name)}" referrerpolicy="no-referrer" style="display:block;max-width:100%;max-height:60vh;width:auto;height:auto;margin:0 auto;border-radius:4px" onerror="this.style.display='none';document.getElementById('${imgId}Err').style.display='block';">
@@ -1732,36 +1660,20 @@ const MAP = (() => {
       : `<div class="viewInfoBox" style="text-align:center;color:#94a3b8;margin-bottom:12px">No image uploaded.</div>`;
 
     $("modalTitle").textContent = `${b.block_name} — Block Details`;
-
     $("modalBody").innerHTML = `
       ${imgHtml}
       <div class="viewInfoBox">
         <p><strong>${escHtml(b.block_name)}</strong></p>
         <p>${escHtml(b.block_type || "Block")} &middot; ${b.rows}\u00d7${b.cols}</p>
       </div>
-      
       <div class="modalRowPair" style="margin-top:10px">
-        <div class="viewInfoBox" style="text-align:center">
-          <p style="font-size:11px;color:#94a3b8;margin:0">Vacant</p>
-          <p id="statVacant-${bid}" style="font-size:18px;font-weight:700;color:#0f172a;margin:2px 0 0">${avail}</p>
-        </div>
-        <div class="viewInfoBox" style="text-align:center">
-          <p style="font-size:11px;color:#94a3b8;margin:0">Occupied</p>
-          <p id="statOccupied-${bid}" style="font-size:18px;font-weight:700;color:#166534;margin:2px 0 0">${occ}</p>
-        </div>
+        <div class="viewInfoBox" style="text-align:center"><p style="font-size:11px;color:#94a3b8;margin:0">Vacant</p><p id="statVacant-${bid}" style="font-size:18px;font-weight:700;color:#0f172a;margin:2px 0 0">${avail}</p></div>
+        <div class="viewInfoBox" style="text-align:center"><p style="font-size:11px;color:#94a3b8;margin:0">Occupied</p><p id="statOccupied-${bid}" style="font-size:18px;font-weight:700;color:#166534;margin:2px 0 0">${occ}</p></div>
       </div>
-      
       <div class="modalRowPair" style="margin-top:10px">
-        <div class="viewInfoBox" style="text-align:center">
-          <p style="font-size:11px;color:#94a3b8;margin:0">Other</p>
-          <p id="statOther-${bid}" style="font-size:16px;font-weight:600;color:#1e40af;margin:2px 0 0">${res}</p>
-        </div>
-        <div class="viewInfoBox" style="text-align:center;background:#f8fafc">
-          <p style="font-size:11px;color:#94a3b8;margin:0">Capacity</p>
-          <p id="statCapacity-${bid}" style="font-size:18px;font-weight:700;color:#0f172a;margin:2px 0 0">${total}</p>
-        </div>
+        <div class="viewInfoBox" style="text-align:center"><p style="font-size:11px;color:#94a3b8;margin:0">Other</p><p id="statOther-${bid}" style="font-size:16px;font-weight:600;color:#1e40af;margin:2px 0 0">${res}</p></div>
+        <div class="viewInfoBox" style="text-align:center;background:#f8fafc"><p style="font-size:11px;color:#94a3b8;margin:0">Capacity</p><p id="statCapacity-${bid}" style="font-size:18px;font-weight:700;color:#0f172a;margin:2px 0 0">${total}</p></div>
       </div>
-      
       <div id="gravesContainer" class="grave-grid-container">
         <div class="grave-grid-header"><span>Graves Information</span></div>
         <div style="text-align:center; color:#94a3b8; font-size:12px; padding:10px;">Loading graves...</div>
@@ -1775,23 +1687,16 @@ const MAP = (() => {
     fetch(`${API_BLOCKS}/${b.block_id}`)
       .then((res) => res.json())
       .then((res) => {
-        if (!res.success || !res.data || !res.data.graves) {
-          throw new Error("Failed to load graves");
-        }
-        const graves = res.data.graves,
-          container = $("gravesContainer");
-
+        if (!res.success || !res.data || !res.data.graves) throw new Error("Failed to load graves");
+        const graves = res.data.graves, container = $("gravesContainer");
         if (graves.length === 0) {
-          container.innerHTML = `
-            <div class="grave-grid-header"><span>Graves Information</span></div>
-            <div style="text-align:center; color:#94a3b8; font-size:12px; padding:10px;">No graves created for this block yet.</div>`;
+          container.innerHTML = `<div class="grave-grid-header"><span>Graves Information</span></div><div style="text-align:center; color:#94a3b8; font-size:12px; padding:10px;">No graves created for this block yet.</div>`;
           return;
         }
 
         let gridHtml = `
           <div class="grave-grid-header" style="display:flex; justify-content:space-between; align-items:center;">
             <span>Graves Information <span style="font-size:11px; font-weight:400; color:#64748b">(${graves.length} total)</span></span>
-            
             <div style="position:relative; width:260px; display:flex; align-items:center;">
               <i class="fas fa-search" style="position:absolute; left:10px; color:#64748b; font-size:12px;"></i>
               <input type="text" id="graveSearchInput" placeholder="Search..." oninput="MAP.toggleClearBtn(this.value); MAP.filterGraves(this.value)" style="width:100%; padding: 6px 28px 6px 30px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 12px; outline: none; font-family: inherit; transition: border-color 0.2s;" onfocus="this.style.borderColor='#3b82f6'" onblur="this.style.borderColor='#cbd5e1'">
@@ -1801,49 +1706,32 @@ const MAP = (() => {
           <div class="grave-grid" id="graveGridContainer">`;
 
         graves.forEach((g) => {
-          const occG =
-            g.occupants && g.occupants.length > 0 ? g.occupants[0] : null;
+          const occG = g.occupants && g.occupants.length > 0 ? g.occupants[0] : null;
           const occName = occG ? occG.deceased_name : null;
           const dob = occG ? formatDate(occG.deceased_date_of_birth) : "--";
           const dod = occG ? formatDate(occG.deceased_date_of_death) : "--";
           const buried = occG ? formatDate(occG.date_buried) : "--";
           const expiry = occG ? formatDate(occG.lease_expiration_date) : "--";
-
           const statusClass = g.status.toLowerCase();
-          const searchData =
-            `${g.grave_code} ${occName || ""} ${g.remarks || ""}`.toLowerCase();
+          const searchData = `${g.grave_code} ${occName || ""} ${g.remarks || ""}`.toLowerCase();
           const oldRemarks = (g.remarks || "").toLowerCase();
+          const isEditable = g.status === "Vacant" || g.status === "Other" || (g.status === "Occupied" && !occName);
 
-          const isEditable =
-            g.status === "Vacant" ||
-            g.status === "Other" ||
-            (g.status === "Occupied" && !occName);
-
-          let statusColor =
-            "background-color: #dcfce7; color: #166534; border: 1px solid #86efac;";
-          if (g.status === "Occupied") {
-            statusColor =
-              "background-color: #fee2e2; color: #991b1b; border: 1px solid #fca5a5;";
-          } else if (g.status === "Other") {
-            statusColor =
-              "background-color: #f1f5f9; color: #475569; border: 1px solid #cbd5e1;";
-          }
+          let statusColor = "background-color: #dcfce7; color: #166534; border: 1px solid #86efac;";
+          if (g.status === "Occupied") statusColor = "background-color: #fee2e2; color: #991b1b; border: 1px solid #fca5a5;";
+          else if (g.status === "Other") statusColor = "background-color: #f1f5f9; color: #475569; border: 1px solid #cbd5e1;";
 
           gridHtml += `
             <div class="grave-card" data-search="${escHtml(searchData)}" data-old-remarks="${escHtml(oldRemarks)}" id="grave-card-${g.grave_id}">
-              
               <div class="grave-card-header" style="display:flex; justify-content:space-between; align-items:flex-start; border-bottom:1px dashed #cbd5e1; padding-bottom:6px; margin-bottom:2px;">
                 <div>
                   <div class="grave-code">${escHtml(b.block_name)}-${row_letter ? getRowLetter(g.row_num) : g.row_num}-${col_letter ? getRowLetter(g.col_num) : g.col_num}</div>
-                  <div class="grave-meta">Row ${getRowLetter(g.row_num)} &middot; Col ${g.col_num}</div>
+                  <div class="grave-meta">Row ${row_letter ? getRowLetter(g.row_num) : g.row_num} &middot; Col ${col_letter ? getRowLetter(g.col_num) : g.col_num}</div>
                 </div>
-                
                 <div style="text-align:right;">
-                  ${isEditable
-              ? `
+                  ${isEditable ? `
                     <div style="display:flex; align-items:center; gap:6px;">
                       <span id="badge-${g.grave_id}" class="grave-status ${statusClass}" style="${statusColor}">${escHtml(g.status)}</span>
-                      
                       <div id="edit-wrap-${g.grave_id}" style="display:none; position:relative; align-items:center; ${statusColor} border-radius:4px; padding:2px 6px;">
                         <select id="select-${g.grave_id}" onchange="MAP.updateDraftStatus(${g.grave_id}, this.value)" style="background: transparent; border: none; outline: none; cursor: pointer; appearance: none; -webkit-appearance: none; font-weight: 700; text-transform: uppercase; font-size: 10px; color: inherit; padding-right: 14px; width: 65px; text-align: center;">
                           <option value="Vacant" ${g.status === "Vacant" ? "selected" : ""}>Vacant</option>
@@ -1852,42 +1740,32 @@ const MAP = (() => {
                         </select>
                         <i class="fas fa-chevron-down" style="position: absolute; right: 4px; pointer-events: none; font-size: 8px; color: inherit; opacity: 0.7;"></i>
                       </div>
-                      
                       <button id="btn-edit-${g.grave_id}" onclick="MAP.enableGraveEdit(${g.grave_id})" class="btn" style="background:#eff6ff; color:#3b82f6; border:1px solid #bfdbfe; padding:2px 6px; border-radius:4px; cursor:pointer; font-size:10px;" title="Edit"><i class="fas fa-pen"></i></button>
                       <button id="btn-save-${g.grave_id}" onclick="MAP.saveGraveEdits(${g.grave_id}, '${bid}')" class="btn" style="display:none; background:#f0fdf4; color:#16a34a; border:1px solid #bbf7d0; padding:2px 6px; border-radius:4px; cursor:pointer; font-size:10px;" title="Save"><i class="fas fa-save"></i></button>
-                    </div>`
-              : `
-                    <span class="grave-status ${statusClass}" style="${statusColor}">${escHtml(g.status)}</span>`
-            }
+                    </div>` : `<span class="grave-status ${statusClass}" style="${statusColor}">${escHtml(g.status)}</span>`}
                 </div>
               </div>
-              
               <div style="font-size:12px; color:#0f172a; font-weight:600; margin-top:4px;">
                 ${occName ? `👤 ${escHtml(occName)}` : `<span style="color:#94a3b8; font-weight:400;">Vacant</span>`}
               </div>
-              
               <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; font-size:10px; color:#64748b; margin-top:6px;">
                 <div><span style="font-weight:600;">Date of Birth:</span> ${dob}</div>
                 <div><span style="font-weight:600;">Date of Death:</span> ${dod}</div>
                 <div><span style="font-weight:600;">Date Buried:</span> ${buried}</div>
                 <div><span style="font-weight:600;">Expiry:</span> ${expiry}</div>
               </div>
-              
               <div style="margin-top:8px;">
                 <div id="remarks-view-${g.grave_id}" style="font-size:11px; color:#475569; font-style:italic;">${escHtml(g.remarks || "No remarks")}</div>
                 <input type="text" id="remarks-input-${g.grave_id}" style="display:none; width:100%; font-size:11px; padding:4px 6px; border:1px solid #e2e8f0; border-radius:4px; outline:none; font-family:inherit;" value="${escHtml(g.remarks || "")}">
               </div>
-              
             </div>`;
         });
-
         gridHtml += `</div>`;
         container.innerHTML = gridHtml;
       })
       .catch((err) => {
         console.error("Grave load error:", err);
-        $("gravesContainer").innerHTML =
-          `<div class="grave-grid-header">Graves Information</div><div style="color:#ef4444; font-size:12px; padding:10px; text-align:center;">Failed to load graves.</div>`;
+        $("gravesContainer").innerHTML = `<div class="grave-grid-header">Graves Information</div><div style="color:#ef4444; font-size:12px; padding:10px; text-align:center;">Failed to load graves.</div>`;
       });
   }
 
@@ -1905,25 +1783,15 @@ const MAP = (() => {
     set(`statCapacity-${bid}`, s.total);
   }
 
-  // ── GRAVE EDIT HELPERS ───────────────────────────────────────────────────
   const graveDrafts = {};
-
   function updateDraftStatus(id, val) {
     if (!graveDrafts[id]) graveDrafts[id] = {};
     graveDrafts[id].status = val;
-
     const wrapper = document.getElementById(`edit-wrap-${id}`);
     if (wrapper) {
-      if (val === "Vacant") {
-        wrapper.style.cssText =
-          "display:inline-flex; position:relative; align-items:center; background-color: #dcfce7; color: #166534; border: 1px solid #86efac; border-radius:4px; padding:2px 6px;";
-      } else if (val === "Occupied") {
-        wrapper.style.cssText =
-          "display:inline-flex; position:relative; align-items:center; background-color: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; border-radius:4px; padding:2px 6px;";
-      } else {
-        wrapper.style.cssText =
-          "display:inline-flex; position:relative; align-items:center; background-color: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; border-radius:4px; padding:2px 6px;";
-      }
+      if (val === "Vacant") wrapper.style.cssText = "display:inline-flex; position:relative; align-items:center; background-color: #dcfce7; color: #166534; border: 1px solid #86efac; border-radius:4px; padding:2px 6px;";
+      else if (val === "Occupied") wrapper.style.cssText = "display:inline-flex; position:relative; align-items:center; background-color: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; border-radius:4px; padding:2px 6px;";
+      else wrapper.style.cssText = "display:inline-flex; position:relative; align-items:center; background-color: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; border-radius:4px; padding:2px 6px;";
     }
   }
 
@@ -1934,16 +1802,12 @@ const MAP = (() => {
     const btnSave = document.getElementById(`btn-save-${id}`);
     const viewRemarks = document.getElementById(`remarks-view-${id}`);
     const inputRemarks = document.getElementById(`remarks-input-${id}`);
-
     if (badge) badge.style.display = "none";
     if (editWrap) editWrap.style.display = "inline-flex";
     if (btnEdit) btnEdit.style.display = "none";
     if (btnSave) btnSave.style.display = "inline-block";
     if (viewRemarks) viewRemarks.style.display = "none";
-    if (inputRemarks) {
-      inputRemarks.style.display = "block";
-      inputRemarks.focus();
-    }
+    if (inputRemarks) { inputRemarks.style.display = "block"; inputRemarks.focus(); }
   }
 
   async function saveGraveEdits(id, bid) {
@@ -1956,10 +1820,7 @@ const MAP = (() => {
     const oldStatus = badge ? badge.textContent.trim() : null;
     const newStatus = select ? select.value : null;
     const newRemarks = inputRemarks ? inputRemarks.value.trim() : "";
-    const finalStatus =
-      graveDrafts[id] && graveDrafts[id].status
-        ? graveDrafts[id].status
-        : newStatus;
+    const finalStatus = graveDrafts[id] && graveDrafts[id].status ? graveDrafts[id].status : newStatus;
 
     if (select) select.disabled = true;
     if (inputRemarks) inputRemarks.disabled = true;
@@ -1974,12 +1835,7 @@ const MAP = (() => {
       }).then((r) => r.json());
 
       if (res.success === false) {
-        if (window.showAlertTOP) {
-          showAlertTOP(
-            "Failed to save: " + (res.message || "Unknown error"),
-            "error",
-          );
-        }
+        if (window.showAlertTOP) showAlertTOP("Failed to save: " + (res.message || "Unknown error"), "error");
         btnSave.innerHTML = '<i class="fas fa-save"></i>';
         btnSave.disabled = false;
         if (select) select.disabled = false;
@@ -1987,7 +1843,6 @@ const MAP = (() => {
         return;
       }
 
-      // ── Update view mode ──
       const editWrap = document.getElementById(`edit-wrap-${id}`);
       const btnEdit = document.getElementById(`btn-edit-${id}`);
       const viewRemarks = document.getElementById(`remarks-view-${id}`);
@@ -1995,24 +1850,15 @@ const MAP = (() => {
       if (badge) {
         badge.textContent = finalStatus;
         badge.className = `grave-status ${finalStatus.toLowerCase()}`;
-        let colorStr =
-          "background-color: #dcfce7; color: #166534; border: 1px solid #86efac;";
-        if (finalStatus === "Occupied") {
-          colorStr =
-            "background-color: #fee2e2; color: #991b1b; border: 1px solid #fca5a5;";
-        } else if (finalStatus === "Other") {
-          colorStr =
-            "background-color: #f1f5f9; color: #475569; border: 1px solid #cbd5e1;";
-        }
+        let colorStr = "background-color: #dcfce7; color: #166534; border: 1px solid #86efac;";
+        if (finalStatus === "Occupied") colorStr = "background-color: #fee2e2; color: #991b1b; border: 1px solid #fca5a5;";
+        else if (finalStatus === "Other") colorStr = "background-color: #f1f5f9; color: #475569; border: 1px solid #cbd5e1;";
         badge.style.cssText = colorStr;
         badge.style.display = "inline-block";
       }
       if (editWrap) editWrap.style.display = "none";
       if (btnEdit) btnEdit.style.display = "inline-block";
-      if (viewRemarks) {
-        viewRemarks.textContent = newRemarks || "No remarks";
-        viewRemarks.style.display = "block";
-      }
+      if (viewRemarks) { viewRemarks.textContent = newRemarks || "No remarks"; viewRemarks.style.display = "block"; }
       if (inputRemarks) inputRemarks.style.display = "none";
       if (select) select.disabled = false;
 
@@ -2022,37 +1868,22 @@ const MAP = (() => {
 
       delete graveDrafts[id];
 
-      // ── Update parent block counts ──
       if (bid && blocks[bid] && oldStatus && oldStatus !== finalStatus) {
         const b = blocks[bid];
         b.vacant_count = b.vacant_count || 0;
         b.occupied_count = b.occupied_count || 0;
-
-        if (oldStatus === "Vacant")
-          b.vacant_count = Math.max(0, b.vacant_count - 1);
-        else if (oldStatus === "Occupied")
-          b.occupied_count = Math.max(0, b.occupied_count - 1);
-
+        if (oldStatus === "Vacant") b.vacant_count = Math.max(0, b.vacant_count - 1);
+        else if (oldStatus === "Occupied") b.occupied_count = Math.max(0, b.occupied_count - 1);
         if (finalStatus === "Vacant") b.vacant_count += 1;
         else if (finalStatus === "Occupied") b.occupied_count += 1;
-
-        draw();
-        updateStatus();
-        updateModalStats(bid);
+        draw(); updateStatus(); updateModalStats(bid);
       }
 
-      // ── Update search data on the card ──
       const card = document.getElementById(`grave-card-${id}`);
       if (card) {
         const oldR = card.dataset.oldRemarks || "";
         let searchData = card.dataset.search || "";
-        if (oldR) {
-          searchData = searchData
-            .split(oldR)
-            .join("")
-            .replace(/\s+/g, " ")
-            .trim();
-        }
+        if (oldR) searchData = searchData.split(oldR).join("").replace(/\s+/g, " ").trim();
         const newLower = newRemarks.toLowerCase();
         if (newLower) searchData = (searchData + " " + newLower).trim();
         card.dataset.search = searchData;
@@ -2060,8 +1891,7 @@ const MAP = (() => {
       }
     } catch (err) {
       console.error("Grave save error:", err);
-      if (window.showAlertTOP)
-        showAlertTOP("Connection error while saving.", "error");
+      if (window.showAlertTOP) showAlertTOP("Connection error while saving.", "error");
       btnSave.innerHTML = '<i class="fas fa-save"></i>';
       btnSave.disabled = false;
       if (select) select.disabled = false;
@@ -2093,37 +1923,28 @@ const MAP = (() => {
     });
   }
 
-  // ── EDIT BLOCK MODAL ─────────────────────────────────────────────────────
   function openBlockEditModal(bid) {
     curBlock = bid;
     const b = blocks[bid];
     const hasGraves = (b.total_graves || 0) > 0;
-
     $("modalTitle").textContent = `Edit block — ${b.block_name}`;
 
     $("modalBody").innerHTML = `
     <label>Block Name</label>
     <input type="text" id="fEn" value="${escHtml(b.block_name)}">
     <p id="fEnErr" class="modalNote" style="display:none;color:#ef4444;margin-top:4px"></p>
-    
     <p id="fEnWarn" class="modalNote" style="color:#b45309;background:#fffbeb;border:1px solid #fcd34d;border-radius:6px;padding:6px 8px;margin-top:6px;font-size:11px;line-height:1.4;display:${hasGraves ? "block" : "none"}">
       &#9888; This block has ${b.total_graves || 0} grave(s). Renaming will also rewrite every grave code's prefix.
     </p>
-    
     <label style="margin-top:10px">Block Type</label>
-    <select id="fEt">
-      ${BLOCK_TYPES.map((t) => `<option value="${t}" ${b.block_type === t ? "selected" : ""}>${t}</option>`).join("")}
-    </select>
-    
+    <select id="fEt">${BLOCK_TYPES.map((t) => `<option value="${t}" ${b.block_type === t ? "selected" : ""}>${t}</option>`).join("")}</select>
     <label style="margin-top:10px">Image URL</label>
     <input type="text" id="fEImg" value="${escHtml(b.image_link || "")}" placeholder="https://example.com/image.jpg (optional)">
-    
     <label style="margin-top:10px">Rows / Cols (changing these adjusts the grave grid)</label>
     <div class="modalRowPair" style="margin-top:6px">
       <div><label>Rows</label><input type="number" id="fEr" min="0" max="30" value="${b.rows}"></div>
       <div><label>Cols</label><input type="number" id="fEc" min="0" max="30" value="${b.cols}"></div>
     </div>
-    
     <hr class="modalDivider">
     <button class="warnBtn" style="margin-top:10px;background:#fff;color:#ef4444;border-color:#fca5a5" onclick="MAP.deleteBlock('${bid}')">Delete block</button>`;
 
@@ -2136,99 +1957,59 @@ const MAP = (() => {
       const name = validatedName("fEn", "fEnErr", bid);
       if (!name) return;
 
-      // Live check — not the captured `hasGraves` — so repeated saves in the
-      // same open modal still correctly prompt when renaming a block that has
-      // gained graves via this same modal.
       if ((b.total_graves || 0) > 0 && name !== b.block_name) {
-        const proceed = await confirm_ui(
-          `"${b.block_name}" has ${b.total_graves} grave record(s).\n\nRenaming will update every grave code to start with "${name}-" so reports stay consistent.\n\nContinue?`,
-          {
-            title: "Rename block?",
-            confirmText: "Continue",
-            cancelText: "Cancel",
-          },
-        );
+        const proceed = await confirm_ui(`"${b.block_name}" has ${b.total_graves} grave record(s).\n\nRenaming will update every grave code to start with "${name}-" so reports stay consistent.\n\nContinue?`, { title: "Rename block?", confirmText: "Continue", cancelText: "Cancel" });
         if (!proceed) return;
       }
 
       const blk = blocks[bid];
       const payload = {
-        block_name: name,
-        block_type: $("fEt").value,
-        image_link: normalizeImageUrl($("fEImg").value),
-        rows: Math.max(0, parseInt($("fEr").value, 10) || 0),
-        cols: Math.max(0, parseInt($("fEc").value, 10) || 0),
-        // Include geometry so _dirty = false is accurate even if the block
-        // had a pending drag when the modal was opened. Mirrors saveOneBlock().
+        block_name: name, block_type: $("fEt").value, image_link: normalizeImageUrl($("fEImg").value),
+        rows: Math.max(0, parseInt($("fEr").value, 10) || 0), cols: Math.max(0, parseInt($("fEc").value, 10) || 0),
         coordinates: JSON.stringify(blk.coordinates),
       };
 
       setModalBusy(true);
       try {
         const res = await fetch(`${API_BLOCKS}/${blk.block_id}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
         }).then((r) => r.json());
 
         if (res.success === false) {
           setModalBusy(false);
           setHint("Save failed: " + (res.message || "unknown error"));
-          if (window.showAlertTOP) {
-            showAlertTOP(
-              "Save failed: " + (res.message || "unknown error"),
-              "error",
-            );
-          }
+          if (window.showAlertTOP) showAlertTOP("Save failed: " + (res.message || "unknown error"), "error");
           return;
         }
 
-        blk.block_name = name;
-        blk.block_type = payload.block_type;
-        blk.image_link = payload.image_link;
-        blk.rows = payload.rows;
-        blk.cols = payload.cols;
-        blk._dirty = false;
+        blk.block_name = name; blk.block_type = payload.block_type; blk.image_link = payload.image_link;
+        blk.rows = payload.rows; blk.cols = payload.cols; blk._dirty = false;
 
-        // ── INSTANT STATS UPDATE ──
         if (res.data) {
-          // Trust the server's new numbers
           blk.total_graves = res.data.total_graves;
           blk.vacant_count = res.data.vacant;
           blk.occupied_count = res.data.occupied;
         } else {
-          // Fallback calculation if API doesn't return counts
           blk.total_graves = payload.rows * payload.cols;
           blk.vacant_count = blk.total_graves - (blk.occupied_count || 0);
         }
 
-        // ── Keep the modal open; refresh only the parts that changed. ──
         $("modalTitle").textContent = `Edit block — ${name}`;
-
         const warnEl = $("fEnWarn");
         if (warnEl) {
           const n = blk.total_graves || 0;
-          if (n > 0) {
-            warnEl.innerHTML = `&#9888; This block has ${n} grave(s). Renaming will also rewrite every grave code's prefix.`;
-            warnEl.style.display = "block";
-          } else {
-            warnEl.style.display = "none";
-          }
+          if (n > 0) { warnEl.innerHTML = `&#9888; This block has ${n} grave(s). Renaming will also rewrite every grave code's prefix.`; warnEl.style.display = "block"; }
+          else { warnEl.style.display = "none"; }
         }
 
         setModalBusy(false);
-        draw();
-        updateStatus();
-        updateModalStats(bid);
-        closeModal();
+        draw(); updateStatus(); updateModalStats(bid); closeModal();
         if (window.showAlertTOP) showAlertTOP("Block updated.", "success");
       } catch (err) {
         console.error("Block edit failed:", err);
         setModalBusy(false);
         setHint("Save failed — check your connection.");
-        if (window.showAlertTOP) {
-          showAlertTOP("Save failed — check your connection.", "error");
-        }
+        if (window.showAlertTOP) showAlertTOP("Save failed — check your connection.", "error");
       }
     };
 
@@ -2242,89 +2023,51 @@ const MAP = (() => {
   function openBlockLayoutModal(bid) {
     curBlock = bid;
     const b = blocks[bid];
-
     $("modalTitle").textContent = `Edit layout — ${b.block_name}`;
-
     $("modalBody").innerHTML = `
       <hr class="modalDivider" style="border-top:none; margin-top:0;">
       <button class="reshapeModalBtn" style="margin-top:0" onclick="MAP.enterReshapeMode('${bid}')">&#9998; Reshape block (draw a line)</button>
       <p class="modalNote" style="margin-top:10px">Reshaping draws a line across the block and lets you keep either side. Drag the block on the canvas to move it.</p>`;
-
     $("modalConfirm").style.display = "none";
     $("modalCancel").textContent = "Close";
     $("modalCancel").onclick = closeModal;
     showModal();
   }
 
-  // ── DELETE BLOCK ─────────────────────────────────────────────────────────
   async function deleteBlock(bid) {
     const b = blocks[bid];
     if (!b) return;
 
     if (!b.block_id) {
-      const ok = await confirm_ui(
-        `Remove "${b.block_name}"? It has not been saved to the server yet.`,
-        {
-          title: "Remove block?",
-          confirmText: "Remove",
-          cancelText: "Cancel",
-          danger: true,
-        },
-      );
+      const ok = await confirm_ui(`Remove "${b.block_name}"? It has not been saved to the server yet.`, { title: "Remove block?", confirmText: "Remove", cancelText: "Cancel", danger: true });
       if (!ok) return;
       blockOrder = blockOrder.filter((id) => id !== bid);
       delete blocks[bid];
       if (curBlock === bid) curBlock = null;
       if (reshapeBid === bid) _clearReshape();
-      closeModal();
-      draw();
-      updateStatus();
+      closeModal(); draw(); updateStatus();
       return;
     }
 
-    const msg =
-      (b.total_graves || 0) > 0
-        ? `Delete "${b.block_name}"?\n\nThis block contains ${b.total_graves} grave record(s). Deleting the block will also soft-delete all of its graves. Existing interment records that reference those graves will keep working, but the graves will no longer appear in any list.\n\nContinue?`
-        : `Delete "${b.block_name}"?\n\nThis cannot be undone from the map.`;
+    const msg = (b.total_graves || 0) > 0
+      ? `Delete "${b.block_name}"?\n\nThis block contains ${b.total_graves} grave record(s). Deleting the block will also soft-delete all of its graves. Existing interment records that reference those graves will keep working, but the graves will no longer appear in any list.\n\nContinue?`
+      : `Delete "${b.block_name}"?\n\nThis cannot be undone from the map.`;
 
-    const ok = await confirm_ui(msg, {
-      title: "Delete block?",
-      confirmText: "Delete",
-      cancelText: "Cancel",
-      danger: true,
-    });
+    const ok = await confirm_ui(msg, { title: "Delete block?", confirmText: "Delete", cancelText: "Cancel", danger: true });
     if (!ok) return;
 
     const deleteBtn = document.querySelector("button.warnBtn");
-    if (deleteBtn) {
-      deleteBtn.disabled = true;
-      deleteBtn.innerHTML =
-        '<i class="fas fa-spinner fa-spin" style="margin-right:6px"></i>Deleting…';
-    }
-    const cb = $("modalConfirm"),
-      cc = $("modalCancel");
-    if (cb) cb.disabled = true;
-    if (cc) cc.disabled = true;
+    if (deleteBtn) { deleteBtn.disabled = true; deleteBtn.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right:6px"></i>Deleting…'; }
+    const cb = $("modalConfirm"), cc = $("modalCancel");
+    if (cb) cb.disabled = true; if (cc) cc.disabled = true;
 
     try {
-      const res = await fetch(`${API_BLOCKS}/${b.block_id}`, {
-        method: "DELETE",
-      }).then((r) => r.json());
-
+      const res = await fetch(`${API_BLOCKS}/${b.block_id}`, { method: "DELETE" }).then((r) => r.json());
       if (res.success === false) {
-        if (deleteBtn) {
-          deleteBtn.disabled = false;
-          deleteBtn.textContent = "Delete block";
-        }
-        if (cb) cb.disabled = false;
-        if (cc) cc.disabled = false;
+        if (deleteBtn) { deleteBtn.disabled = false; deleteBtn.textContent = "Delete block"; }
+        if (cb) cb.disabled = false; if (cc) cc.disabled = false;
         setHint("Delete failed: " + (res.message || "unknown error"));
-        if (window.showAlertTOP) {
-          showAlertTOP(
-            "Delete failed: " + (res.message || "unknown error"),
-            "error",
-          );
-        }
+        if (window.showAlertTOP) showAlertTOP("Delete failed: " + (res.message || "unknown error"), "error");
         return;
       }
 
@@ -2333,58 +2076,35 @@ const MAP = (() => {
       if (curBlock === bid) curBlock = null;
       if (reshapeBid === bid) _clearReshape();
 
-      closeModal();
-      draw();
-      updateStatus();
-      setHint("Block deleted.");
+      closeModal(); draw(); updateStatus(); setHint("Block deleted.");
       if (window.showAlertTOP) showAlertTOP("Block deleted.", "success");
     } catch (err) {
       console.error("Delete failed:", err);
-      if (deleteBtn) {
-        deleteBtn.disabled = false;
-        deleteBtn.textContent = "Delete block";
-      }
-      if (cb) cb.disabled = false;
-      if (cc) cc.disabled = false;
+      if (deleteBtn) { deleteBtn.disabled = false; deleteBtn.textContent = "Delete block"; }
+      if (cb) cb.disabled = false; if (cc) cc.disabled = false;
       setHint("Delete failed — check your connection.");
-      if (window.showAlertTOP) {
-        showAlertTOP("Delete failed — check your connection.", "error");
-      }
+      if (window.showAlertTOP) showAlertTOP("Delete failed — check your connection.", "error");
     }
   }
 
-  // ── GLOBAL MODAL OVERLAY ─────────────────────────────────────────────────
-  function showModal() {
-    $("modalOverlay").classList.add("open");
-  }
+  function showModal() { $("modalOverlay").classList.add("open"); }
 
   function closeModal() {
     const overlay = $("modalOverlay");
     if (!overlay) return;
     overlay.classList.remove("open");
-
-    const cb = $("modalConfirm"),
-      cc = $("modalCancel");
+    const cb = $("modalConfirm"), cc = $("modalCancel");
     if (cb) {
-      if (cb.dataset._orig) {
-        cb.innerHTML = cb.dataset._orig;
-        delete cb.dataset._orig;
-      }
-      cb.disabled = false;
-      cb.style.display = "";
+      if (cb.dataset._orig) { cb.innerHTML = cb.dataset._orig; delete cb.dataset._orig; }
+      cb.disabled = false; cb.style.display = "";
     }
-    if (cc) {
-      cc.disabled = false;
-      cc.textContent = "Cancel";
-      cc.onclick = closeModal;
-    }
+    if (cc) { cc.disabled = false; cc.textContent = "Cancel"; cc.onclick = closeModal; }
     pendingNavHref = null;
   }
 
   function openUnsavedChangesModal(href) {
     pendingNavHref = href;
     $("modalTitle").textContent = "Unsaved changes";
-
     $("modalBody").innerHTML = `
       <p style="font-size:13px;color:#475569;margin-top:4px;line-height:1.5">You're still editing the layout. Save your changes before leaving this page, or they'll be lost.</p>
       <p class="modalNote" style="margin-top:14px"><a href="#" id="discardLeaveLink">Discard changes and leave anyway</a></p>`;
@@ -2402,24 +2122,15 @@ const MAP = (() => {
         if (!result.ok) {
           setModalBusy(false);
           setHint("Save failed: " + (result.message || "unknown error"));
-          if (window.showAlertTOP) {
-            showAlertTOP(
-              "Save failed: " + (result.message || "unknown error"),
-              "error",
-            );
-          }
+          if (window.showAlertTOP) showAlertTOP("Save failed: " + (result.message || "unknown error"), "error");
           return;
         }
-        exitEditMap();
-        pendingNavHref = null;
-        closeModal();
+        exitEditMap(); pendingNavHref = null; closeModal();
         if (dest) window.location.href = dest;
       } catch (err) {
         console.error("Save & leave failed:", err);
         setModalBusy(false);
-        if (window.showAlertTOP) {
-          showAlertTOP("Save failed — check your connection.", "error");
-        }
+        if (window.showAlertTOP) showAlertTOP("Save failed — check your connection.", "error");
       }
     };
 
@@ -2430,9 +2141,7 @@ const MAP = (() => {
     $("discardLeaveLink").onclick = (e) => {
       e.preventDefault();
       const dest = pendingNavHref;
-      exitEditMap();
-      pendingNavHref = null;
-      closeModal();
+      exitEditMap(); pendingNavHref = null; closeModal();
       if (dest) window.location.href = dest;
     };
   }
@@ -2443,69 +2152,52 @@ const MAP = (() => {
       const link = e.target.closest("a[href]");
       if (!link) return;
       const href = link.getAttribute("href");
-      if (!href || href.startsWith("#") || href.startsWith("javascript:"))
-        return;
+      if (!href || href.startsWith("#") || href.startsWith("javascript:")) return;
       e.preventDefault();
       openUnsavedChangesModal(href);
     });
 
     window.addEventListener("beforeunload", (e) => {
-      if (mapEditMode) {
-        e.preventDefault();
-        e.returnValue = "";
-      }
+      if (mapEditMode) { e.preventDefault(); e.returnValue = ""; }
     });
   }
 
-  // ── STATUS BAR ───────────────────────────────────────────────────────────
   function updateStatus() {
-    let total = 0,
-      occ = 0,
-      other = 0;
+    let total = 0, occ = 0, other = 0;
     blockOrder.forEach((bid) => {
       const s = blockStats(blocks[bid]);
-      total += s.total;
-      occ += s.occ;
-      other += s.res;
+      total += s.total; occ += s.occ; other += s.res;
     });
-    $("mapStatus").textContent =
-      `${blockOrder.length} block(s) \u00b7 Total: ${total} \u00b7 Occupied: ${occ} \u00b7 Other: ${other} \u00b7 Vacant: ${total - occ - other}`;
+    $("mapStatus").textContent = `${blockOrder.length} block(s) \u00b7 Total: ${total} \u00b7 Occupied: ${occ} \u00b7 Other: ${other} \u00b7 Vacant: ${total - occ - other}`;
   }
 
-  // ── INITIALIZATION ───────────────────────────────────────────────────────
   document.addEventListener("DOMContentLoaded", () => {
     canvasWrap = $("mapCanvas");
     cv = $("mapCvs");
     ctx = cv.getContext("2d");
 
     syncCanvasSize();
+
+    // Zoom in automatically on mobile
+    if (window.innerWidth < 768) {
+      mapScale = 1.6;
+      mapX = (cvW - (cvW * mapScale)) / 2;
+      mapY = (cvH - (cvH * mapScale)) / 2;
+      applyCameraTransform();
+    } else {
+      applyCameraTransform();
+    }
+
     initButtons();
     initCanvasEvents();
     initNavGuard();
     persistLoad();
   });
 
-  // Expose public methods to the global MAP object (for HTML onclick handlers)
   return {
-    enterEditMap,
-    exitEditMap,
-    openAddBlockModal,
-    enterReshapeMode,
-    exitReshapeMode,
-    keepSplitSide,
-    swapSplitSide,
-    cancelSplit,
-    undoReshape,
-    openBlockDetailsModal,
-    openBlockEditModal,
-    openBlockLayoutModal,
-    deleteBlock,
-    closeModal,
-    filterGraves,
-    toggleClearBtn,
-    clearSearch,
-    updateDraftStatus,
-    enableGraveEdit,
-    saveGraveEdits,
+    enterEditMap, exitEditMap, openAddBlockModal, enterReshapeMode, exitReshapeMode,
+    keepSplitSide, swapSplitSide, cancelSplit, undoReshape, openBlockDetailsModal,
+    openBlockEditModal, openBlockLayoutModal, deleteBlock, closeModal, filterGraves,
+    toggleClearBtn, clearSearch, updateDraftStatus, enableGraveEdit, saveGraveEdits,
   };
 })();

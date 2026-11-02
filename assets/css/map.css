@@ -145,47 +145,31 @@
 .mapCanvas {
   width: calc(100% - 48px) !important;
   margin: 0 auto !important;
-  height: 100%;
-  min-height: 450px;
-  flex: 1;
+  height: 500px;
   background-color: #e2e8f0;
   position: relative !important;
   overflow: hidden !important; 
   isolation: isolate !important;
   border-radius: 12px;
-  touch-action: pan-y; 
+  touch-action: none; /* or pan-y depending on scroll preference */
 }
 
-
-/* Background Image */
 #cemetery_map_image {
   position: absolute !important;
-  top: 0 !important;
-  left: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
   object-fit: fill !important;
-  object-position: center center !important;
   z-index: 0 !important;
   pointer-events: none !important;
-  user-select: none !important;
-  -webkit-user-drag: none;
-
-  /* ADD THIS LINE: Stops the browser from blurring the image */
   image-rendering: pixelated;
+  /* DO NOT PUT width: 100% HERE */
 }
 
-/* Canvas */
 .mapCanvas canvas,
 #mapCvs {
   position: absolute !important;
-  top: 0 !important;
-  left: 0 !important;
   display: block;
   background: transparent !important;
   z-index: 1 !important;
-  width: 100%;
-  height: 100%;
+  /* DO NOT PUT width: 100% HERE */
 }
 
 .mapHint {
@@ -469,10 +453,10 @@
 
 @media (max-width: 600px) {
   .mapCanvas {
-    width: calc (100%-48px) !important;
-    margin: 0 24px!important;
-    border-radius: 12 !important;
-    touch-action: pan-y; /* Allows vertical scrolling */
+    width: calc(100% - 48px) !important; /* Keep the width */
+    margin: 0 24px !important;
+    border-radius: 12px !important;
+    touch-action: pan-y;
   }
   .grave-grid {
     grid-template-columns: 1fr;
@@ -500,6 +484,11 @@
   flex-shrink: 0;
   pointer-events: none;
   z-index: 10;
+}
+
+#blockSearchResults {
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 /* Mobile Auto-Zoom for Public Map */

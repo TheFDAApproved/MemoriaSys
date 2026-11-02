@@ -10,6 +10,7 @@ const PUBLIC_MAP = (() => {
   let blocks = {}; 
   let blockOrder = []; 
   let hoveredBlock = null;
+  let highlightedBlock = null; 
   let rafPending = false;
   let loadingEl = null;
   let modalEl = null;
@@ -37,7 +38,6 @@ const PUBLIC_MAP = (() => {
       mapX = Math.max(minX, Math.min(maxX, mapX));
       mapY = Math.max(minY, Math.min(maxY, mapY));
 
-      // Apply the transform
       camera.style.transform = `translate(${mapX}px, ${mapY}px) scale(${mapScale})`;
     }
   }
@@ -156,6 +156,7 @@ const PUBLIC_MAP = (() => {
       const b = blocks[bid];
       const pts = b.points;
       const hov = hoveredBlock === bid;
+      const isHighlighted = highlightedBlock === bid;
 
       const bounds = polyBounds(pts);
       const cx = bounds.x + bounds.w / 2;
@@ -177,12 +178,25 @@ const PUBLIC_MAP = (() => {
 
       ctx.globalAlpha = 0.8;
 
-      ctx.fillStyle = hov ? "#bfdbfe" : "#dbeafe";
-      ctx.strokeStyle = hov ? "#1d4ed8" : "#3b82f6";
-      ctx.lineWidth = hov ? 3 : 2;
+      // Highlight logic
+      if (isHighlighted) {
+        ctx.fillStyle = "#fef08a"; // Bright yellow
+        ctx.strokeStyle = "#eab308"; // Gold border
+        ctx.lineWidth = 6; 
+        ctx.shadowColor = "#eab308"; // Glow effect
+        ctx.shadowBlur = 15;
+      } else {
+        ctx.fillStyle = hov ? "#bfdbfe" : "#dbeafe";
+        ctx.strokeStyle = hov ? "#1d4ed8" : "#3b82f6";
+        ctx.lineWidth = hov ? 3 : 2;
+        ctx.shadowBlur = 0;
+      }
+
       ctx.fill();
       ctx.stroke();
-
+      
+      // Reset shadow
+      ctx.shadowBlur = 0;
       ctx.globalAlpha = 1.0;
 
       const bnds = b.bounds;
@@ -207,9 +221,7 @@ const PUBLIC_MAP = (() => {
   }
 
   // ── EVENTS ────────────────────────────────────────────────
-  // THE DEFINITIVE FIX: We use the pointer event's offsetX/Y
   function getXY(e) {
-    // For mouse events, offsetX/offsetY automatically accounts for CSS transforms!
     if (e.offsetX !== undefined) {
       return {
         x: e.offsetX * (MAP_W / cvW),
@@ -217,7 +229,6 @@ const PUBLIC_MAP = (() => {
       };
     }
     
-    // Fallback for touch events (which don't have offsetX)
     const r = cv.getBoundingClientRect();
     const s = e.touches ? e.touches[0] : e;
     const screenX = s.clientX - r.left;
@@ -357,6 +368,112 @@ const PUBLIC_MAP = (() => {
       const bid = getHitBlock(x, y);
       if (bid) openImageModal(blocks[bid]);
     });
+
+    // ── ZOOM CONTROLS ──
+    const btnZoomIn = document.getElementById("btnZoomIn");
+    const btnZoomOut = document.getElementById("btnZoomOut");
+
+    if (btnZoomIn) {
+      btnZoomIn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        mapScale = Math.min(4, mapScale + 0.5);
+        applyCameraTransform();
+      });
+    }
+
+    if (btnZoomOut) {
+      btnZoomOut.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        mapScale = Math.max(1, mapScale - 0.5);
+        applyCameraTransform();
+      });
+    }
+
+    // ── BLOCK SEARCH ──
+    const searchInput = document.getElementById("blockSearchInput");
+    const searchResults = document.getElementById("blockSearchResults");
+    const clearSearchBtn = document.getElementById("clearSearchBtn");
+
+    if (searchInput && searchResults) {
+      // Don't let map dragging happen when typing in the search bar
+      searchInput.addEventListener("mousedown", (e) => e.stopPropagation());
+      searchInput.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: false });
+      searchInput.addEventListener("click", (e) => e.stopPropagation());
+
+      searchInput.addEventListener("input", (e) => {
+        const query = e.target.value.toLowerCase().trim();
+        searchResults.innerHTML = "";
+
+        // Show/hide the X button
+        if (clearSearchBtn) {
+          clearSearchBtn.style.display = query.length > 0 ? "flex" : "none";
+        }
+
+        if (query.length < 1) {
+          searchResults.style.display = "none";
+          return;
+        }
+
+        const matches = blockOrder
+          .map(id => blocks[id])
+          .filter(b => b.block_name.toLowerCase().includes(query));
+
+        if (matches.length === 0) {
+          searchResults.innerHTML = `<div style="padding:10px; font-size:12px; color:#64748b; text-align:center;">No blocks found.</div>`;
+          searchResults.style.display = "block";
+          return;
+        }
+
+        matches.forEach(m => {
+          const item = document.createElement("div");
+          item.style.cssText = "padding:10px 14px; border-bottom:1px solid #f1f5f9; cursor:pointer; font-size:13px; color:#0f172a; transition:background 0.2s;";
+          item.textContent = m.block_name;
+          item.onmouseenter = () => item.style.background = "#f8fafc";
+          item.onmouseleave = () => item.style.background = "transparent";
+          
+          item.addEventListener("click", () => {
+            // 1. Highlight the block
+            highlightedBlock = "b" + m.block_id;
+            scheduleDraw();
+
+            // 2. Remove the highlight after 3 seconds
+            setTimeout(() => {
+              highlightedBlock = null;
+              scheduleDraw();
+            }, 3000);
+
+            // 3. Clear the search
+            searchInput.value = "";
+            if (clearSearchBtn) clearSearchBtn.style.display = "none";
+            searchResults.style.display = "none";
+          });
+          searchResults.appendChild(item);
+        });
+
+        searchResults.style.display = "block";
+      });
+
+      // Clear search button
+      if (clearSearchBtn) {
+        clearSearchBtn.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          searchInput.value = "";
+          clearSearchBtn.style.display = "none";
+          searchResults.style.display = "none";
+          searchInput.focus();
+        });
+      }
+
+      // Close search results when clicking outside
+      document.addEventListener("click", (e) => {
+        if (!searchInput.contains(e.target) && !searchResults.contains(e.target)) {
+          searchResults.style.display = "none";
+        }
+      });
+    }
   }
 
   // ── MODAL ─────────────────────────────────────────────────
@@ -425,7 +542,14 @@ const PUBLIC_MAP = (() => {
     if (document.getElementById("pubMapStyle")) return;
     const s = document.createElement("style");
     s.id = "pubMapStyle";
-    s.textContent = `@keyframes pubMapSpin { to { transform: rotate(360deg); } }`;
+    s.textContent = `
+      @keyframes pubMapSpin { to { transform: rotate(360deg); } }
+      .search-wrapper { position:relative; width: 100%; display: flex; align-items: center; }
+      .search-icon { position: absolute; left: 12px; color: #64748b; font-size: 14px; }
+      .search-input { width:100%; padding:10px 34px 10px 34px; border-radius:20px; border:none; outline:none; box-shadow:0 4px 12px rgba(0,0,0,0.15); font-family:inherit; font-size:13px; }
+      .clear-icon { position: absolute; right: 12px; color: #94a3b8; font-size: 14px; cursor: pointer; display: none; }
+      .clear-icon:hover { color: #475569; }
+    `;
     document.head.appendChild(s);
   }
 
@@ -473,6 +597,26 @@ const PUBLIC_MAP = (() => {
         </div>
         
         <div id="publicMapLoading" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:#f1f5f9;z-index:10"></div>
+
+        <!-- Zoom Controls -->
+        <div class="map-zoom-controls" style="position:absolute; bottom:20px; right:20px; display:flex; flex-direction:column; gap:6px; z-index:20;">
+          <button id="btnZoomIn" style="width:36px; height:36px; border-radius:50%; border:none; background:#fff; color:#0f172a; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(0,0,0,0.15); transition: background 0.2s;">
+            <i class="fas fa-search-plus" style="font-size:16px;"></i>
+          </button>
+          <button id="btnZoomOut" style="width:36px; height:36px; border-radius:50%; border:none; background:#fff; color:#0f172a; cursor:pointer; display:flex; align-items:center; justify-content:center; box-shadow:0 4px 12px rgba(0,0,0,0.15); transition: background 0.2s;">
+            <i class="fas fa-search-minus" style="font-size:16px;"></i>
+          </button>
+        </div>
+
+        <!-- Block Search -->
+        <div style="position:absolute; top:20px; left:50%; transform:translateX(-50%); width:250px; z-index:20;">
+          <div class="search-wrapper">
+            <i class="fas fa-search search-icon"></i>
+            <input type="text" id="blockSearchInput" class="search-input" placeholder="Search for a block...">
+            <i class="fas fa-times clear-icon" id="clearSearchBtn"></i>
+          </div>
+          <div id="blockSearchResults" style="position:absolute; top:44px; left:0; width:100%; background:#fff; border-radius:12px; box-shadow:0 8px 24px rgba(0,0,0,0.15); max-height:200px; overflow-y:auto; display:none;"></div>
+        </div>
       </div>
 
       <div id="pubMapImageModal" style="display:none;position:absolute;inset:0;z-index:50;background:rgba(15,23,42,0.8);align-items:center;justify-content:center;padding:20px">

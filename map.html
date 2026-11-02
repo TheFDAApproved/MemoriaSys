@@ -129,17 +129,57 @@
             <div class="mapStatus" id="mapStatus"></div>
           </div>
 
-        <div class="mapCanvas" id="mapCanvas">
-          <img
-            id="cemetery_map_image"
-            src="api/images/cemetery_map_image.png"
-            onerror="this.onerror = null; this.src = 'assets/images/cemetery_map_image.png';"
-            alt="Cemetery Map Image"
-          />
-          <canvas id="mapCvs"></canvas>
-          <div class="mapHint" id="mapHint"></div>
-          <div class="mapLoading" id="mapLoading">Loading map&hellip;</div>
-        </div>
+          <div class="mapCanvas" id="mapCanvas">
+            <!-- The camera wrapper handles zoom and pan -->
+            <div
+              id="mapCamera"
+              style="
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                transform-origin: 0 0;
+                will-change: transform;
+              "
+            >
+              <img
+                id="cemetery_map_image"
+                src="api/images/cemetery_map_image.png"
+                onerror="
+                  this.onerror = null;
+                  this.src = 'assets/images/cemetery_map_image.png';
+                  console.error(
+                    'Failed to load dynamic logo. Using default logo.',
+                  );
+                "
+                alt="Cemetery Map Image"
+                style="
+                  position: absolute;
+                  top: 0;
+                  left: 0;
+                  object-fit: fill;
+                  z-index: 0;
+                  pointer-events: none;
+                  user-select: none;
+                "
+              />
+              <canvas
+                id="mapCvs"
+                style="
+                  position: absolute;
+                  top: 0;
+                  left: 0;
+                  display: block;
+                  background: transparent;
+                  z-index: 1;
+                "
+              ></canvas>
+            </div>
+
+            <div class="mapHint" id="mapHint"></div>
+            <div class="mapLoading" id="mapLoading">Loading map&hellip;</div>
+          </div>
 
           <div class="mapLegend">
             <div class="legendItem">
