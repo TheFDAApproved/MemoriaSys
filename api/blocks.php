@@ -66,14 +66,14 @@ function buildGraveCode(string $blockName, int $row, int $col): string
 function getBlockCounts(PDO $pdo, int $blockId): array
 {
     $stmt = $pdo->prepare("
-SELECT
-COUNT(*)                 AS total,
-COALESCE(SUM(status = 'Vacant'),   0) AS vacant,
-COALESCE(SUM(status = 'Occupied'), 0) AS occupied,
-COALESCE(SUM(status = 'Other'),    0) AS other
-FROM graves
-WHERE block_id = ? AND deleted_at IS NULL
-");
+        SELECT
+            COUNT(*)                              AS total,
+            COALESCE(SUM(status = 'Vacant'),   0) AS vacant,
+            COALESCE(SUM(status = 'Occupied'), 0) AS occupied,
+            COALESCE(SUM(status = 'Other'),    0) AS other
+        FROM graves
+        WHERE block_id = ? AND deleted_at IS NULL
+    ");
     $stmt->execute([$blockId]);
     $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
@@ -119,20 +119,20 @@ function findUnsafeGraves(PDO $pdo, int $blockId, ?int $maxRow = null, ?int $max
     }
 
     $sql = "
-SELECT
-g.grave_id, g.grave_code, g.row_num, g.col_num, g.status,
-EXISTS (SELECT 1 FROM interments i
-WHERE i.current_grave_id = g.grave_id) AS has_interment,
-EXISTS (SELECT 1 FROM reservations r
-WHERE r.reservation_state = 'Active'
-AND (r.target_grave_id  = g.grave_id
-OR r.old_new_grave_id = g.grave_id)) AS has_plan,
-EXISTS (SELECT 1 FROM placement_history ph
-WHERE ph.from_grave_id = g.grave_id
-OR ph.to_grave_id   = g.grave_id) AS has_event
-FROM graves g
-WHERE $where
-";
+        SELECT
+            g.grave_id, g.grave_code, g.row_num, g.col_num, g.status,
+            EXISTS (SELECT 1 FROM interments i
+                    WHERE i.current_grave_id = g.grave_id) AS has_interment,
+            EXISTS (SELECT 1 FROM reservations r
+                    WHERE r.reservation_state = 'Active'
+                      AND (r.target_grave_id  = g.grave_id
+                        OR r.old_new_grave_id = g.grave_id)) AS has_plan,
+            EXISTS (SELECT 1 FROM placement_history ph
+                    WHERE ph.from_grave_id = g.grave_id
+                       OR ph.to_grave_id   = g.grave_id) AS has_event
+        FROM graves g
+        WHERE $where
+    ";
     $stmt = $pdo->prepare($sql);
     $stmt->execute($params);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -256,23 +256,23 @@ function failWithDbError(PDOException $e, string $context): void
     Response::error($msg, $code);
 }
 
-// GET
+// GET (view)
 if ($method === 'GET') {
 
     if (is_numeric($resourceId)) {
         if ($isAdminOffice) {
             $blockStmt = $pdo->prepare("
-SELECT * FROM blocks
-WHERE block_id = ? AND deleted_at IS NULL
-");
+                SELECT * FROM blocks
+                WHERE block_id = ? AND deleted_at IS NULL
+            ");
         } else {
             // Public / Grounds: rendering fields. No remarks, no audit columns
             $blockStmt = $pdo->prepare("
-SELECT block_id, block_name, block_type, coordinates,
-image_link, `rows`, `cols`, rotation
-FROM blocks
-WHERE block_id = ? AND deleted_at IS NULL
-");
+                SELECT block_id, block_name, block_type, coordinates,
+                       image_link, `rows`, `cols`, rotation
+                FROM blocks
+                WHERE block_id = ? AND deleted_at IS NULL
+            ");
         }
         $blockStmt->execute([$resourceId]);
         $block = $blockStmt->fetch(PDO::FETCH_ASSOC);
@@ -287,9 +287,9 @@ WHERE block_id = ? AND deleted_at IS NULL
         $page  = max(1, $page);
 
         $countStmt = $pdo->prepare("
-SELECT COUNT(*) FROM graves
-WHERE block_id = ? AND deleted_at IS NULL
-");
+            SELECT COUNT(*) FROM graves
+            WHERE block_id = ? AND deleted_at IS NULL
+        ");
         $countStmt->execute([$resourceId]);
         $totalRecords = (int) $countStmt->fetchColumn();
         $totalPages   = (int) ceil($totalRecords / $limit);
@@ -298,12 +298,12 @@ WHERE block_id = ? AND deleted_at IS NULL
 
         if ($isAdminOffice) {
             $graveIdStmt = $pdo->prepare("
-SELECT grave_id
-FROM graves
-WHERE block_id = ? AND deleted_at IS NULL
-ORDER BY row_num, col_num
-LIMIT ? OFFSET ?
-");
+                SELECT grave_id
+                FROM graves
+                WHERE block_id = ? AND deleted_at IS NULL
+                ORDER BY row_num, col_num
+                LIMIT ? OFFSET ?
+            ");
             $graveIdStmt->execute([$resourceId, $limit, $offset]);
             $graveIds = $graveIdStmt->fetchAll(PDO::FETCH_COLUMN);
 
@@ -312,21 +312,21 @@ LIMIT ? OFFSET ?
             } else {
                 $placeholders = implode(',', array_fill(0, count($graveIds), '?'));
                 $graveSql = "
-SELECT
-g.grave_id, g.grave_code, g.row_num, g.col_num, g.status, g.remarks,
-i.interment_id, i.control_number, i.deceased_name,
-i.deceased_date_of_birth, i.deceased_date_of_death,
-i.last_known_address, i.date_buried, i.lease_expiration_date,
-i.contact_person_name, i.contact_person_phone_number,
-i.contact_person_email, i.contact_person_address
-FROM graves g
-LEFT JOIN interments i
-ON g.grave_id = i.current_grave_id
-AND i.status = 'Active'
-AND i.deleted_at IS NULL
-WHERE g.grave_id IN ($placeholders)
-ORDER BY g.row_num, g.col_num, i.interment_id
-";
+                    SELECT
+                        g.grave_id, g.grave_code, g.row_num, g.col_num, g.status, g.remarks,
+                        i.interment_id, i.control_number, i.deceased_name,
+                        i.deceased_date_of_birth, i.deceased_date_of_death,
+                        i.last_known_address, i.date_buried, i.lease_expiration_date,
+                        i.contact_person_name, i.contact_person_phone_number,
+                        i.contact_person_email, i.contact_person_address
+                    FROM graves g
+                    LEFT JOIN interments i
+                        ON g.grave_id = i.current_grave_id
+                       AND i.status = 'Active'
+                       AND i.deleted_at IS NULL
+                    WHERE g.grave_id IN ($placeholders)
+                    ORDER BY g.row_num, g.col_num, i.interment_id
+                ";
                 $graveStmt = $pdo->prepare($graveSql);
                 $graveStmt->execute($graveIds);
                 $rows = $graveStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -366,12 +366,12 @@ ORDER BY g.row_num, g.col_num, i.interment_id
             }
         } else {
             $graveSql = "
-SELECT grave_id, grave_code, row_num, col_num
-FROM graves
-WHERE block_id = ? AND deleted_at IS NULL
-ORDER BY row_num, col_num
-LIMIT ? OFFSET ?
-";
+                SELECT grave_id, grave_code, row_num, col_num
+                FROM graves
+                WHERE block_id = ? AND deleted_at IS NULL
+                ORDER BY row_num, col_num
+                LIMIT ? OFFSET ?
+            ";
             $graveStmt = $pdo->prepare($graveSql);
             $graveStmt->execute([$resourceId, $limit, $offset]);
             $graves = $graveStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -426,33 +426,53 @@ LIMIT ? OFFSET ?
         $searchSQL = ' AND (' . implode(' OR ', $parts) . ')';
     }
 
+    // Pagination for the block list
+    $blockLimit = isset($_GET['limit']) ? (int) $_GET['limit'] : 100;
+    $blockLimit = max(1, min($blockLimit, 500));
+    $blockPage  = isset($_GET['page'])  ? (int) $_GET['page']  : 1;
+    $blockPage  = max(1, $blockPage);
+
+    $blockCountStmt = $pdo->prepare("
+        SELECT COUNT(*)
+        FROM blocks b
+        WHERE b.deleted_at IS NULL
+        $searchSQL
+    ");
+    $blockCountStmt->execute($searchParams);
+    $blockTotalRecords = (int) $blockCountStmt->fetchColumn();
+    $blockTotalPages   = (int) ceil($blockTotalRecords / $blockLimit);
+    $blockPage         = min($blockPage, $blockTotalPages ?: 1);
+    $blockOffset       = ($blockPage - 1) * $blockLimit;
+
     if ($isAdminOffice) {
         $sql = "
-SELECT b.*,
-(SELECT COUNT(*) FROM graves WHERE block_id = b.block_id AND deleted_at IS NULL)                         AS total_graves,
-(SELECT COUNT(*) FROM graves WHERE block_id = b.block_id AND status = 'Vacant'   AND deleted_at IS NULL) AS vacant,
-(SELECT COUNT(*) FROM graves WHERE block_id = b.block_id AND status = 'Occupied' AND deleted_at IS NULL) AS occupied,
-(SELECT COUNT(*) FROM graves WHERE block_id = b.block_id AND status = 'Other'    AND deleted_at IS NULL) AS other
-FROM blocks b
-WHERE b.deleted_at IS NULL
-$searchSQL
-ORDER BY b.block_id
-";
+            SELECT b.*,
+                (SELECT COUNT(*) FROM graves WHERE block_id = b.block_id AND deleted_at IS NULL)                         AS total_graves,
+                (SELECT COUNT(*) FROM graves WHERE block_id = b.block_id AND status = 'Vacant'   AND deleted_at IS NULL) AS vacant,
+                (SELECT COUNT(*) FROM graves WHERE block_id = b.block_id AND status = 'Occupied' AND deleted_at IS NULL) AS occupied,
+                (SELECT COUNT(*) FROM graves WHERE block_id = b.block_id AND status = 'Other'    AND deleted_at IS NULL) AS other
+            FROM blocks b
+            WHERE b.deleted_at IS NULL
+            $searchSQL
+            ORDER BY b.block_id
+            LIMIT ? OFFSET ?
+        ";
     } else {
         // Public / Grounds: rendering fields only for the UI/Map
         $sql = "
-SELECT
-b.block_id, b.block_name, b.block_type, b.coordinates,
-b.image_link, b.`rows`, b.`cols`, b.rotation
-FROM blocks b
-WHERE b.deleted_at IS NULL
-$searchSQL
-ORDER BY b.block_id
-";
+            SELECT
+                b.block_id, b.block_name, b.block_type, b.coordinates,
+                b.image_link, b.`rows`, b.`cols`, b.rotation
+            FROM blocks b
+            WHERE b.deleted_at IS NULL
+            $searchSQL
+            ORDER BY b.block_id
+            LIMIT ? OFFSET ?
+        ";
     }
 
     $stmt = $pdo->prepare($sql);
-    $stmt->execute($searchParams);
+    $stmt->execute(array_merge($searchParams, [$blockLimit, $blockOffset]));
     $blocks = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     $withCounts = $isAdminOffice;
@@ -461,14 +481,21 @@ ORDER BY b.block_id
     }
     unset($b);
 
-    if ($searchTerm === '') {
-        Response::success("Blocks retrieved.", $blocks);
-    } else {
-        Response::success("Blocks retrieved.", [
-            'blocks'      => $blocks,
-            'search_term' => $searchTerm,
-        ]);
+    $response = [
+        'blocks'     => $blocks,
+        'pagination' => [
+            'current_page'  => $blockPage,
+            'per_page'      => $blockLimit,
+            'total_records' => $blockTotalRecords,
+            'total_pages'   => $blockTotalPages,
+        ],
+    ];
+
+    if ($searchTerm !== '') {
+        $response['search_term'] = $searchTerm;
     }
+
+    Response::success("Blocks retrieved.", $response);
 }
 
 // Everything below is Admin / Office only
@@ -505,9 +532,9 @@ if ($method === 'POST') {
     }
 
     $check = $pdo->prepare("
-SELECT block_id FROM blocks
-WHERE block_name = ? AND deleted_at IS NULL
-");
+        SELECT block_id FROM blocks
+        WHERE block_name = ? AND deleted_at IS NULL
+    ");
     $check->execute([$blockName]);
     if ($check->fetch()) {
         Response::error("Block name already exists.", 409);
@@ -538,11 +565,11 @@ WHERE block_name = ? AND deleted_at IS NULL
     $pdo->beginTransaction();
     try {
         $stmt = $pdo->prepare("
-INSERT INTO blocks
-(block_name, block_type, coordinates, remarks, image_link,
-`rows`, `cols`, rotation, created_by, updated_by)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-");
+            INSERT INTO blocks
+                (block_name, block_type, coordinates, remarks, image_link,
+                 `rows`, `cols`, rotation, created_by, updated_by)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ");
         $stmt->execute([
             $blockName,
             $blockType,
@@ -619,10 +646,10 @@ if ($method === 'PUT') {
 
     try {
         $lockBlock = $pdo->prepare("
-SELECT * FROM blocks
-WHERE block_id = ? AND deleted_at IS NULL
-FOR UPDATE
-");
+            SELECT * FROM blocks
+            WHERE block_id = ? AND deleted_at IS NULL
+            FOR UPDATE
+        ");
         $lockBlock->execute([$blockId]);
         $current = $lockBlock->fetch(PDO::FETCH_ASSOC);
         if (!$current) {
@@ -671,9 +698,9 @@ FOR UPDATE
             }
             if ($newName !== $currentName) {
                 $check = $pdo->prepare("
-SELECT block_id FROM blocks
-WHERE block_name = ? AND block_id != ? AND deleted_at IS NULL
-");
+                    SELECT block_id FROM blocks
+                    WHERE block_name = ? AND block_id != ? AND deleted_at IS NULL
+                ");
                 $check->execute([$newName, $blockId]);
                 if ($check->fetch()) {
                     $pdo->rollBack();
@@ -686,12 +713,12 @@ WHERE block_name = ? AND block_id != ? AND deleted_at IS NULL
 
         if ($willShrink) {
             $lockGraves = $pdo->prepare("
-SELECT grave_id FROM graves
-WHERE block_id = ?
-AND deleted_at IS NULL
-AND (row_num > ? OR col_num > ?)
-FOR UPDATE
-");
+                SELECT grave_id FROM graves
+                WHERE block_id = ?
+                  AND deleted_at IS NULL
+                  AND (row_num > ? OR col_num > ?)
+                FOR UPDATE
+            ");
             $lockGraves->execute([$blockId, $targetRows, $targetCols]);
             $lockGraves->fetchAll(PDO::FETCH_COLUMN);
 
@@ -715,26 +742,26 @@ FOR UPDATE
 
         if ($renameFrom !== null) {
             $upd = $pdo->prepare("
-UPDATE blocks SET block_name = ?, updated_by = ?
-WHERE block_id = ?
-");
+                UPDATE blocks SET block_name = ?, updated_by = ?
+                WHERE block_id = ?
+            ");
             $upd->execute([$renameTo, $userData['user_id'], $blockId]);
 
             // Keep this SQL in sync with buildGraveCode().
             // Format: {block_name}-{row}-{col}
             // IF(flag, letters, number) — flag passed as 1/0.
             $graveUpd = $pdo->prepare("
-UPDATE graves
-SET grave_code = CONCAT(
-    ?,
-    '-',
-    IF(?, CHAR(64 + row_num), CAST(row_num AS CHAR)),
-    '-',
-    IF(?, CHAR(64 + col_num), CAST(col_num AS CHAR))
-),
-updated_by = ?
-WHERE block_id = ? AND deleted_at IS NULL
-");
+                UPDATE graves
+                SET grave_code = CONCAT(
+                        ?,
+                        '-',
+                        IF(?, CHAR(64 + row_num), CAST(row_num AS CHAR)),
+                        '-',
+                        IF(?, CHAR(64 + col_num), CAST(col_num AS CHAR))
+                    ),
+                    updated_by = ?
+                WHERE block_id = ? AND deleted_at IS NULL
+            ");
             $graveUpd->execute([
                 $renameTo,
                 ROW_LETTER ? 1 : 0,
@@ -754,11 +781,11 @@ WHERE block_id = ? AND deleted_at IS NULL
         }
         if ($newRows !== null) {
             $updates[] = "`rows` = ?";
-            $params[] = $targetRows;
+            $params[]  = $targetRows;
         }
         if ($newCols !== null) {
             $updates[] = "`cols` = ?";
-            $params[] = $targetCols;
+            $params[]  = $targetCols;
         }
 
         if (!empty($updates)) {
@@ -772,12 +799,12 @@ WHERE block_id = ? AND deleted_at IS NULL
 
         if ($willShrink) {
             $del = $pdo->prepare("
-UPDATE graves
-SET deleted_at = NOW(), updated_by = ?
-WHERE block_id = ?
-AND deleted_at IS NULL
-AND (row_num > ? OR col_num > ?)
-");
+                UPDATE graves
+                SET deleted_at = NOW(), updated_by = ?
+                WHERE block_id = ?
+                  AND deleted_at IS NULL
+                  AND (row_num > ? OR col_num > ?)
+            ");
             $del->execute([$userData['user_id'], $blockId, $targetRows, $targetCols]);
         }
 
@@ -785,20 +812,20 @@ AND (row_num > ? OR col_num > ?)
             $blockName = $renameTo ?? $currentName;
 
             $softFind = $pdo->prepare("
-SELECT grave_id FROM graves
-WHERE block_id = ? AND row_num = ? AND col_num = ?
-AND deleted_at IS NOT NULL
-ORDER BY grave_id DESC
-LIMIT 1
-");
+                SELECT grave_id FROM graves
+                WHERE block_id = ? AND row_num = ? AND col_num = ?
+                  AND deleted_at IS NOT NULL
+                ORDER BY grave_id DESC
+                LIMIT 1
+            ");
             $softRestore = $pdo->prepare("
-UPDATE graves
-SET deleted_at = NULL,
-grave_code = ?,
-status     = 'Vacant',
-updated_by = ?
-WHERE grave_id = ?
-");
+                UPDATE graves
+                SET deleted_at = NULL,
+                    grave_code = ?,
+                    status     = 'Vacant',
+                    updated_by = ?
+                WHERE grave_id = ?
+            ");
 
             $toInsert = [];
 
@@ -852,10 +879,10 @@ if ($method === 'DELETE') {
 
     try {
         $lockBlock = $pdo->prepare("
-SELECT block_id FROM blocks
-WHERE block_id = ? AND deleted_at IS NULL
-FOR UPDATE
-");
+            SELECT block_id FROM blocks
+            WHERE block_id = ? AND deleted_at IS NULL
+            FOR UPDATE
+        ");
         $lockBlock->execute([$blockId]);
         if (!$lockBlock->fetch()) {
             $pdo->rollBack();
@@ -863,10 +890,10 @@ FOR UPDATE
         }
 
         $lockGraves = $pdo->prepare("
-SELECT grave_id FROM graves
-WHERE block_id = ? AND deleted_at IS NULL
-FOR UPDATE
-");
+            SELECT grave_id FROM graves
+            WHERE block_id = ? AND deleted_at IS NULL
+            FOR UPDATE
+        ");
         $lockGraves->execute([$blockId]);
         $lockGraves->fetchAll(PDO::FETCH_COLUMN);
 
@@ -888,17 +915,17 @@ FOR UPDATE
         }
 
         $delGraves = $pdo->prepare("
-UPDATE graves
-SET deleted_at = NOW(), updated_by = ?
-WHERE block_id = ? AND deleted_at IS NULL
-");
+            UPDATE graves
+            SET deleted_at = NOW(), updated_by = ?
+            WHERE block_id = ? AND deleted_at IS NULL
+        ");
         $delGraves->execute([$userData['user_id'], $blockId]);
 
         $delBlock = $pdo->prepare("
-UPDATE blocks
-SET deleted_at = NOW(), updated_by = ?
-WHERE block_id = ? AND deleted_at IS NULL
-");
+            UPDATE blocks
+            SET deleted_at = NOW(), updated_by = ?
+            WHERE block_id = ? AND deleted_at IS NULL
+        ");
         $delBlock->execute([$userData['user_id'], $blockId]);
 
         $pdo->commit();
