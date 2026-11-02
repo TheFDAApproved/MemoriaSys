@@ -1209,3 +1209,237 @@ body {
         gap: 16px 12px;
     }
 }
+
+.dropdownWrapper,
+.customSelectTrigger,
+.selectedOptionDisplay,
+.optionContent,
+.optionText,
+.filterPanelHeader,
+.paginationBar,
+.paginationInfo,
+.paginationControl,
+.paymentSummaryCell,
+.docAppliedFilters,
+.bulletItem,
+.itemDetailBlock,
+.docBody,
+.docSection,
+.controlWorkspaceDeck,
+.reportCard {
+    min-width: 0;
+}
+
+.selectedOptionDisplay {
+    flex: 1 1 auto;
+}
+
+.optionText,
+.paymentSummaryCell,
+.docAppliedFilters,
+.bulletItem,
+.itemDetailBlock {
+    overflow-wrap: anywhere;
+}
+
+.filterPanelHeader {
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+img,
+canvas,
+table {
+    max-width: 100%;
+}
+
+@media screen and (max-width: 900px) {
+    .printPdfBtn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .customSelectTrigger {
+        font-size: 14.5px;
+    }
+}
+
+@media screen and (max-width: 700px) {
+    .paymentSummaryGrid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    /* Capacity charts stack vertically */
+    #capacity-content>div[style*="display: flex"] {
+        flex-direction: column;
+    }
+
+    #capacity-content>div[style*="display: flex"]>div {
+        flex: 1 1 auto !important;
+        width: 100%;
+        max-width: 100%;
+    }
+
+    #capacity-content .cleanTable {
+        display: block;
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+        font-size: 12px;
+    }
+
+    #capacity-content .cleanTable thead {
+        display: none;
+    }
+
+    #capacity-content .cleanTable tbody {
+        display: block;
+        width: 100%;
+    }
+
+    #capacity-content .cleanTable tr {
+        display: block;
+        width: 100%;
+        margin: 0 0 10px;
+        padding: 8px 10px;
+        border: 1px solid var(--border-light);
+        border-radius: 6px;
+        background: var(--bg-card);
+        page-break-inside: avoid;
+    }
+
+    #capacity-content .cleanTable td {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        width: 100%;
+        padding: 6px 0;
+        border-bottom: 1px solid var(--bg-active);
+        text-align: right;
+    }
+
+    #capacity-content .cleanTable td:last-child {
+        border-bottom: none;
+    }
+
+    #capacity-content .cleanTable td::before {
+        flex: 0 0 46%;
+        max-width: 46%;
+        font-weight: 600;
+        color: var(--text-light);
+        text-align: left;
+        white-space: normal;
+    }
+
+    #capacity-content .cleanTable td[colspan] {
+        display: block;
+        text-align: center;
+    }
+
+    #capacity-content .cleanTable td[colspan]::before {
+        display: none;
+        content: none;
+    }
+
+    /* First capacity table labels */
+    #capacity-content .cleanTable:nth-of-type(1) td:nth-child(1)::before {
+        content: "Metric";
+    }
+
+    #capacity-content .cleanTable:nth-of-type(1) td:nth-child(2)::before {
+        content: "Count";
+    }
+
+    #capacity-content .cleanTable:nth-of-type(1) td:nth-child(3)::before {
+        content: "Share";
+    }
+
+    /* Second capacity table labels */
+    #capacity-content .cleanTable:nth-of-type(2) td:nth-child(1)::before {
+        content: "Block";
+    }
+
+    #capacity-content .cleanTable:nth-of-type(2) td:nth-child(2)::before {
+        content: "Type";
+    }
+
+    #capacity-content .cleanTable:nth-of-type(2) td:nth-child(3)::before {
+        content: "Total";
+    }
+
+    #capacity-content .cleanTable:nth-of-type(2) td:nth-child(4)::before {
+        content: "Occupied";
+    }
+
+    #capacity-content .cleanTable:nth-of-type(2) td:nth-child(5)::before {
+        content: "Vacant";
+    }
+
+    #capacity-content .cleanTable:nth-of-type(2) td:nth-child(6)::before {
+        content: "Expiring";
+    }
+
+    #capacity-content .cleanTable:nth-of-type(2) td:nth-child(7)::before {
+        content: "Expired";
+    }
+
+    #capacity-content .cleanTable:nth-of-type(2) td:nth-child(8)::before {
+        content: "Reserved";
+    }
+
+    #capacity-content .cleanTable:nth-of-type(2) td:nth-child(9)::before {
+        content: "Other";
+    }
+
+    .docSection {
+        overflow-x: hidden;
+    }
+}
+
+@media screen and (max-width: 600px) {
+    .paymentSummaryGrid {
+        grid-template-columns: 1fr;
+    }
+
+    .signatorySection {
+        grid-template-columns: 1fr;
+    }
+
+    .paginationBar {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .paginationInfo,
+    .paginationControl {
+        justify-content: center;
+    }
+
+    .paginationControl {
+        flex-wrap: wrap;
+    }
+
+    .docContentTitle {
+        font-size: 18px;
+    }
+}
+
+@media screen and (max-width: 480px) {
+    .deckTopBar {
+        gap: 12px;
+    }
+
+    .customSelectTrigger,
+    .printPdfBtn {
+        height: 44px;
+    }
+
+    .rangeRow {
+        gap: 8px;
+    }
+
+    .paginationControl {
+        gap: 6px;
+    }
+}
