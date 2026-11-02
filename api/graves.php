@@ -1,54 +1,6 @@
 <?php
 
-/**
- * graves.php – Manage individual graves within a block
- *
- * GET : List graves (filter by block_id, status, search term) or get a
- *       specific grave with its occupants.
- *
- *       Admin/Office see the full grave record: status, remarks, occupants,
- *       and can filter by status. Public sees only grave geometry
- *       (grave_id, grave_code, row_num, col_num) plus the parent block's
- *       id and name — no status, no remarks, no occupants, no status filter.
- *
- *       When filtering by status=vacant (Admin/Office only), graves that
- *       are referenced by an Active reservation (as target or as O's
- *       destination) are excluded — they are effectively reserved and not
- *       truly available.
- *
- * PUT : Update a grave's `status` or `remarks` ONLY (Admin/Office only).
- *
- *       `row_num` and `col_num` are intentionally NOT editable here.
- *       Those coordinates are part of the block's grid and are owned by
- *       blocks.php. Allowing them here would break `grave_code`,
- *       duplicate-position invariants, and the shrink/enlarge contract.
- *
- *       There is NO DELETE endpoint. A grave is either Vacant, Occupied,
- *       or Other. To retire a grave, set status = 'Other' with a remark.
- *       To remove graves entirely, shrink or delete the parent block.
- *
- * STATUS RULES:
- *   Vacant or Other -> reject if an Active interment currently lives here.
- *   Occupied        -> always allowed (manual occupation / maintenance).
- *   Any status change is also rejected while an Active reservation targets
- *   this grave, because the grave is locked by the reservation workflow.
- *   Remarks changes are ALWAYS allowed.
- *
- * CONCURRENCY:
- *   PUT opens a transaction, sets READ COMMITTED isolation, then locks
- *   the grave row with SELECT ... FOR UPDATE. Concurrent PUTs on the
- *   same grave (or a blocks.php shrink/delete that would touch it) are
- *   serialized: the second request waits, then sees the first request's
- *   committed state. Lock wait / deadlock exceptions are mapped to 409
- *   with a retry-friendly message.
- *
- * ERROR HANDLING:
- *   Every write path catches PDOException and maps MySQL error codes to
- *   friendly HTTP responses via friendlyDbError(). The raw exception is
- *   always logged so the real cause is never lost.
- *
- * All operations exclude soft-deleted rows (deleted_at IS NULL).
- */
+// graves.php
 
 define('ITS_ME_JUSTTOVERIFY', true);
 
@@ -71,14 +23,6 @@ $rawData = array_merge(
     $_POST ?? []
 );
 
-// -----------------------------------------------------------------------------
-// HELPERS
-// -----------------------------------------------------------------------------
-
-/**
- * Returns the interment_id of the Active interment on this grave, or null.
- * "Active" means physically present in the cemetery.
- */
 function findActiveInterment(PDO $pdo, int $graveId): ?int
 {
     $stmt = $pdo->prepare("
@@ -93,12 +37,6 @@ function findActiveInterment(PDO $pdo, int $graveId): ?int
     return $id !== false ? (int) $id : null;
 }
 
-/**
- * Returns the reservation_id of an Active reservation targeting this grave,
- * or null.  An Active reservation locks the grave while it awaits
- * Confirm/Cancel.  A grave is "targeted" if it's the incoming occupant's
- * target OR the old occupant's destination.
- */
 function findActivePlanOnGrave(PDO $pdo, int $graveId): ?int
 {
     $stmt = $pdo->prepare("
@@ -112,10 +50,6 @@ function findActivePlanOnGrave(PDO $pdo, int $graveId): ?int
     return $id !== false ? (int) $id : null;
 }
 
-/**
- * Map a PDOException to (user_message, http_status).
- * Every MySQL error we can meaningfully handle gets a friendly message.
- */
 function friendlyDbError(PDOException $e, string $context = 'operation'): array
 {
     $mysqlCode = $e->errorInfo[1] ?? null;
@@ -156,9 +90,6 @@ function friendlyDbError(PDOException $e, string $context = 'operation'): array
     }
 }
 
-/**
- * Log the raw error, then send the friendly one. Never returns.
- */
 function failWithDbError(PDOException $e, string $context): void
 {
     [$msg, $code] = friendlyDbError($e, $context);
@@ -166,12 +97,10 @@ function failWithDbError(PDOException $e, string $context): void
     Response::error($msg, $code);
 }
 
-// -----------------------------------------------------------------------------
 // GET – List graves or a single grave
-// -----------------------------------------------------------------------------
 if ($method === 'GET') {
 
-    // ---- Single grave (with occupants for Admin/Office) ------------------
+    // Single grave (with occupants for Admin/Office)
     if (is_numeric($resourceId)) {
         $graveId = (int) $resourceId;
 
@@ -179,7 +108,7 @@ if ($method === 'GET') {
             $sql = "
                 SELECT
                     g.grave_id, g.grave_code, g.row_num, g.col_num, g.status, g.remarks,
-                    b.block_id, b.block_name, b.block_type,
+                    b.block_id, b.block_name, b.block_type, b.coordinates, b.rotation,
                     i.interment_id,
                     i.control_number,
                     i.deceased_name,
@@ -204,7 +133,7 @@ if ($method === 'GET') {
             $sql = "
                 SELECT
                     g.grave_id, g.grave_code, g.row_num, g.col_num,
-                    b.block_id, b.block_name
+                    b.block_id, b.block_name, b.coordinates, b.rotation
                 FROM graves g
                 LEFT JOIN blocks b ON g.block_id = b.block_id AND b.deleted_at IS NULL
                 WHERE g.grave_id = ? AND g.deleted_at IS NULL
@@ -233,6 +162,8 @@ if ($method === 'GET') {
                         'block_id'   => $row['block_id'],
                         'block_name' => $row['block_name'],
                         'block_type' => $row['block_type'],
+                        'coordinates' => $row['coordinates'],
+                        'rotation'  => $row['rotation']
                     ];
                 }
                 if ($row['interment_id']) {
@@ -252,7 +183,7 @@ if ($method === 'GET') {
             }
             $grave['occupants'] = $occupants;
 
-            // Backward-compat: mirror first occupant's fields onto the grave.
+            // Backward-compat: mirror first occupant's fields onto the grave
             if (!empty($occupants)) {
                 $first = $occupants[0];
                 $grave['occupant_interment_id']       = $first['interment_id'];
@@ -278,13 +209,13 @@ if ($method === 'GET') {
                 $grave['occupant_contact_address']    = null;
             }
 
-            Response::success("Grave retrieved.", ['grave' => $grave]);
+            Response::success("Grave retrieved.", $grave);
         } else {
-            Response::success("Grave retrieved.", ['grave' => $rows[0]]);
+            Response::success("Grave retrieved.", $rows[0]);
         }
     }
 
-    // ---- List graves ------------------------------------------------------
+    // List graves
     $blockId    = isset($_GET['block_id']) ? (int) $_GET['block_id'] : null;
     $searchTerm = isset($_GET['search_term']) ? trim((string) $_GET['search_term']) : '';
     if ($searchTerm !== '' && mb_strlen($searchTerm) < 3) {
@@ -294,9 +225,8 @@ if ($method === 'GET') {
     $limit = max(1, min((int) ($_GET['limit'] ?? 100), 500));
     $page  = max(1, (int) ($_GET['page'] ?? 1));
 
-    // ---- Status filter (Admin/Office only) -------------------------------
-    // Public cannot see `status` in responses, so filtering by it would
-    // leak which graves are vacant / occupied / other. Reject it outright.
+    // Status filter (Admin/Office only)
+    // Public cannot see `status` in responses, so filtering by it would leak which graves are vacant / occupied / other. Reject it outright.
     $statusRaw = $_GET['status'] ?? '';
     if (is_array($statusRaw)) {
         $statusRaw = implode(',', $statusRaw);
@@ -325,7 +255,6 @@ if ($method === 'GET') {
         }
     }
 
-    // ---- Build WHERE + params --------------------------------------------
     $where  = "g.deleted_at IS NULL";
     $params = [];
 
@@ -343,11 +272,7 @@ if ($method === 'GET') {
             $params[] = $s;
         }
 
-        // When the client asks for 'vacant', exclude graves that are
-        // effectively reserved: an Active reservation already references
-        // them, either as the incoming occupant's target or as the old
-        // occupant's destination.  A "vacant" grave that is about to be
-        // occupied is not truly available.
+        // For 'vacant', skip graves already reserved by an Active reservation, since a grave about to be occupied is not truly available
         if (in_array('vacant', $wantedStatuses, true)) {
             $where .= "
                 AND NOT EXISTS (
@@ -399,7 +324,7 @@ if ($method === 'GET') {
         $where .= ' AND (' . implode(' OR ', $parts) . ')';
     }
 
-    // ---- COUNT matching graves -------------------------------------------
+    // COUNT matching graves
     $countSql = "
         SELECT COUNT(*)
         FROM graves g
@@ -414,7 +339,7 @@ if ($method === 'GET') {
     $page       = min($page, max(1, $totalPages));
     $offset     = ($page - 1) * $limit;
 
-    // ---- Step 1: paged grave IDs (stable order) --------------------------
+    // paged grave IDs (stable order)
     $idsSql = "
         SELECT g.grave_id
         FROM graves g
@@ -427,7 +352,7 @@ if ($method === 'GET') {
     $idsStmt->execute($params);
     $graveIds = $idsStmt->fetchAll(PDO::FETCH_COLUMN);
 
-    // ---- Step 2: fetch full data for those IDs ---------------------------
+    // fetch full data for those IDs
     $graves = [];
     if (!empty($graveIds)) {
         $placeholders = implode(',', array_fill(0, count($graveIds), '?'));
@@ -538,25 +463,16 @@ if ($method === 'GET') {
     Response::success("Graves retrieved.", $payload);
 }
 
-// -----------------------------------------------------------------------------
-// Everything below requires Admin or Office
-// -----------------------------------------------------------------------------
+// Everything below requires Admin or Office (POST only so far)
 if (!$isAdminOffice) {
     Response::error("Forbidden. Only Admin and Office can update graves.", 403);
 }
 
-// -----------------------------------------------------------------------------
-// PUT – Update a single grave's status or remarks
-//
-// Editable fields:  status, remarks
-// NOT editable:     row_num, col_num (owned by blocks.php)
-//
-// Status rules:
-//   Vacant or Other -> blocked if an Active interment is on this grave.
-//   Occupied        -> always allowed.
-//   Any status change is blocked while an Active reservation targets
-//   the grave.  Remarks changes are ALWAYS allowed.
-// -----------------------------------------------------------------------------
+// PUT – Update a single grave's status or remarks (only)
+// rules:
+// Vacant or Other blocked if an Active interment is on this grave
+// Occupied: always allowed
+// Any status change is blocked while an Active reservation targets the grave.  Remarks changes are ALWAYS allowed.
 if ($method === 'PUT') {
 
     if (!is_numeric($resourceId)) {
@@ -564,7 +480,7 @@ if ($method === 'PUT') {
     }
     $graveId = (int) $resourceId;
 
-    // ---- Reject edits to fields we don't allow (no DB needed) ------------
+    // Reject edits to fields only status and remarks
     $forbiddenFields = ['row_num', 'col_num', 'grave_code', 'block_id'];
     foreach ($forbiddenFields as $f) {
         if (array_key_exists($f, $rawData)) {
@@ -594,16 +510,12 @@ if ($method === 'PUT') {
         );
     }
 
-    // ---- Locked transaction ----------------------------------------------
+    // Locked transaction
     $pdo->exec("SET TRANSACTION ISOLATION LEVEL READ COMMITTED");
     $pdo->beginTransaction();
 
     try {
-        // Lock the grave row. This is the single serialization point:
-        //   * concurrent PUTs on the same grave block here;
-        //   * blocks.php shrink/delete also locks grave rows with FOR UPDATE,
-        //     so a shrink cannot race against a status edit on a grave
-        //     that's about to be removed.
+        // Lock the grave row: blocks.php shrink/delete also locks it with FOR UPDATE, so a shrink cannot conflict with a status change on a grave about to be removed
         $lockStmt = $pdo->prepare("
             SELECT * FROM graves
             WHERE grave_id = ? AND deleted_at IS NULL
@@ -623,10 +535,9 @@ if ($method === 'PUT') {
 
         $statusChanged = $statusProvided && $finalStatus !== $currentStatus;
 
-        // ---- Status transition guards ------------------------------------
+        // Status transition guards
         if ($statusChanged) {
-            // 1) Active reservation locks the grave while it awaits
-            //    Confirm/Cancel.
+            // Active reservation locks the grave while it awaits Confirm/Cancel.
             $activePlanId = findActivePlanOnGrave($pdo, $graveId);
             if ($activePlanId !== null) {
                 $pdo->rollBack();
@@ -637,7 +548,7 @@ if ($method === 'PUT') {
                 );
             }
 
-            // 2) Moving to Vacant or Other requires no Active interment.
+            // Moving to Vacant or Other requires no Active interment
             if ($finalStatus === 'Vacant' || $finalStatus === 'Other') {
                 $activeIntermentId = findActiveInterment($pdo, $graveId);
                 if ($activeIntermentId !== null) {
@@ -650,11 +561,9 @@ if ($method === 'PUT') {
                 }
             }
 
-            // 'Occupied' is always allowed. Manual occupation is intentional
-            // (maintenance, reserved, physical marker, etc.) — use remarks.
+            // 'Occupied' is always allowed. Manual occupation is intentional (maintenance, reserved, physical marker, etc.) — use remarks.
         }
 
-        // ---- Build and execute the update --------------------------------
         $updates = [];
         $params  = [];
 
@@ -692,7 +601,5 @@ if ($method === 'PUT') {
     }
 }
 
-// -----------------------------------------------------------------------------
-// Method not allowed
-// -----------------------------------------------------------------------------
+// Fallback
 Response::error("Method Not Allowed", 405);
