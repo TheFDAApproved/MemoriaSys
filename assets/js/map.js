@@ -416,7 +416,6 @@ const MAP = (() => {
     const containerH = canvasWrap.clientHeight;
     if (!containerW || !containerH) return;
 
-    // Fill the entire container
     const displayW = containerW;
     const displayH = containerH;
 
@@ -426,7 +425,7 @@ const MAP = (() => {
 
     const bw = Math.round(displayW * dpr);
     const bh = Math.round(displayH * dpr);
-
+    
     if (cv.width !== bw || cv.height !== bh) {
       cv.width = bw;
       cv.height = bh;
@@ -443,7 +442,7 @@ const MAP = (() => {
       bg.style.height = `${displayH}px`;
       bg.style.left = `0px`;
       bg.style.top = `0px`;
-      bg.style.objectFit = "fill"; // Forces the image to stretch exactly like the canvas
+      bg.style.objectFit = "fill"; 
     }
   }
 

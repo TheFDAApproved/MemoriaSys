@@ -129,8 +129,8 @@
             <div class="mapStatus" id="mapStatus"></div>
           </div>
 
+          <!-- The mapCanvas now uses flex: 1 to grow safely -->
           <div class="mapCanvas" id="mapCanvas">
-            <!-- The camera wrapper handles zoom and pan -->
             <div
               id="mapCamera"
               style="
@@ -181,20 +181,21 @@
             <div class="mapLoading" id="mapLoading">Loading map&hellip;</div>
           </div>
 
+          <!-- Legend sits safely at the bottom -->
           <div class="mapLegend">
             <div class="legendItem">
               <div
                 class="legendDot"
                 style="background: #dbeafe; border-color: #3b82f6"
               ></div>
-              Empty Block
+              Block is Empty
             </div>
             <div class="legendItem">
               <div
                 class="legendDot"
                 style="background: #fef9c3; border-color: #eab308"
               ></div>
-              Block that has occupied graves
+              Block is Occupied
             </div>
             <div class="legendItem">
               <div
