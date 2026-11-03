@@ -1218,6 +1218,7 @@ document.addEventListener("DOMContentLoaded", () => {
         document.body.appendChild(a);
         a.click();
         a.remove();
+        showAlertTOP("Database downloaded successfully.", "success");
     });
 
     restoreBtn?.addEventListener("click", () => {
