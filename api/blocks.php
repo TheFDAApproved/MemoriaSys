@@ -47,7 +47,6 @@ const MAX_GRAVES_PER_BLOCK = MAX_ROWS * MAX_COLS;
 const BLOCK_NAME_MAX     = 42;
 const GRAVE_INSERT_CHUNK = 1000;
 
-/* ---------- Helpers ---------- */
 
 // Renders an axis coordinate as a letter or number
 function renderAxis(int $n, bool $asLetter): string
@@ -623,7 +622,7 @@ if ($method === 'PUT') {
     }
     $blockId = (int) $resourceId;
 
-    // ---- Pre-transaction validation (needs no DB state) -------------------
+    // Pre-transaction validation (needs no DB state)
     $newRows = isset($rawData['rows']) ? (int) $rawData['rows'] : null;
     $newCols = isset($rawData['cols']) ? (int) $rawData['cols'] : null;
 
