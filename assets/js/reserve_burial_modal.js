@@ -763,7 +763,7 @@ const ReserveBurialModal = (() => {
         });
         if (!res.ok) throw new Error("HTTP " + res.status);
         const json = await res.json();
-        return json.data;
+        return json.data.blocks;
     }
 
     async function loadBlocks() {
