@@ -477,6 +477,11 @@
                     }
                     return item;
                 })
+                //sort list, show active first then inactive
+                .sort((a, b) => {
+                    const rank = (s) => String(s || '').toLowerCase().trim() === 'active' ? 0 : 1;
+                    return rank(a.status) - rank(b.status);
+                })
             : [];
 
         state.page = Number(pagination.current_page) || state.page;
