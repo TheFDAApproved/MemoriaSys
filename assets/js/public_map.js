@@ -29,14 +29,12 @@ const PUBLIC_MAP = (() => {
   let camAnimStartTime = null;
   let camStartX = 0, camStartY = 0;
   let camTargetX = 0, camTargetY = 0;
-  let camDuration = 600; // milliseconds
+  let camDuration = 600;
   
   // ── HIGHLIGHT STATE ──
-  // Store highlights by block ID so multiple can glow independently
   let activeHighlights = {}; 
   let highlightPulseId = null;
 
-  // Applies the camera transform and clamps panning to map bounds
   function applyCameraTransform() {
     const camera = document.getElementById("publicMapCamera");
     if (camera) {
@@ -54,7 +52,6 @@ const PUBLIC_MAP = (() => {
     }
   }
 
-  // Animates the camera to target coordinates smoothly using cubic easing
   function animateCameraTo(targetX, targetY) {
     const containerW = canvasWrap.clientWidth;
     const containerH = canvasWrap.clientHeight;
@@ -64,7 +61,6 @@ const PUBLIC_MAP = (() => {
     const minY = containerH - (MAP_H * mapScale);
     const maxY = 0;
 
-    // Clamp targets to prevent showing the grey background
     camTargetX = Math.max(minX, Math.min(maxX, targetX));
     camTargetY = Math.max(minY, Math.min(maxY, targetY));
 
@@ -100,7 +96,6 @@ const PUBLIC_MAP = (() => {
   }
 
   // ── GEOMETRY ──────────────────────────────────────────────
-  // Parses and validates a JSON or array coordinate string
   function parseCoordinates(c) {
     if (!c) return null;
     if (Array.isArray(c)) return c.length >= 3 ? c : null;
@@ -112,7 +107,6 @@ const PUBLIC_MAP = (() => {
     }
   }
 
-  // Calculates the bounding box of a polygon
   function polyBounds(pts) {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (let i = 0; i < pts.length; i++) {
@@ -125,7 +119,6 @@ const PUBLIC_MAP = (() => {
     return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
   }
 
-  // Checks if a point lies inside a polygon using ray casting
   function pointInPoly(px, py, pts) {
     let inside = false;
     for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
@@ -138,7 +131,6 @@ const PUBLIC_MAP = (() => {
   }
 
   // ── CANVAS ────────────────────────────────────────────────
-  // Synchronizes the canvas logical and physical display sizes
   function syncCanvasSize() {
     const containerW = canvasWrap.clientWidth;
     const containerH = canvasWrap.clientHeight;
@@ -171,7 +163,6 @@ const PUBLIC_MAP = (() => {
     }
   } 
 
-  // Schedules a canvas redraw using requestAnimationFrame
   function scheduleDraw() {
     if (rafPending) return;
     rafPending = true;
@@ -182,7 +173,6 @@ const PUBLIC_MAP = (() => {
   }
 
   // ── DRAW ──────────────────────────────────────────────────
-  // Renders the public cemetery map, blocks, and highlights
   function draw() {
     if (!ctx) return;
     if (!cvW || !cvH) {
@@ -214,12 +204,12 @@ const PUBLIC_MAP = (() => {
 
     const now = Date.now();
 
+    // Pass 1: Render all block polygons and fills
     for (const bid of blockOrder) {
       const b = blocks[bid];
       const pts = b.points;
       const hov = hoveredBlock === bid;
       
-      // Check if this specific block has an active highlight
       const highlightData = activeHighlights[bid];
       const isHighlighted = !!highlightData;
 
@@ -243,7 +233,6 @@ const PUBLIC_MAP = (() => {
       ctx.globalAlpha = 0.8;
 
       if (isHighlighted) {
-        // Use this block's specific start time for the pulse
         const elapsed = now - highlightData.startTime;
         const pulse = Math.sin(elapsed / 150) * 10 + 20; 
         
@@ -264,30 +253,47 @@ const PUBLIC_MAP = (() => {
       
       ctx.shadowBlur = 0;
       ctx.globalAlpha = 1.0;
+      ctx.restore();
+    }
 
-      const bnds = b.bounds;
-      const tcx = bnds.x + bnds.w / 2;
-      const tcy = bnds.y + bnds.h / 2;
+    // Pass 2: Render all block text labels on top with background glow
+    for (const bid of blockOrder) {
+      const b = blocks[bid];
+      const bounds = b.bounds;
+      const cx = bounds.x + bounds.w / 2;
+      const cy = bounds.y + bounds.h / 2;
+      const rotation = b.rotation || 0;
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(rotation);
+      ctx.translate(-cx, -cy);
+
+      const tcx = bounds.x + bounds.w / 2;
+      const tcy = bounds.y + bounds.h / 2;
 
       const isMobile = canvasWrap.clientWidth < 600;
       const finalFontSize = isMobile ? 10 : 13; 
 
       ctx.imageSmoothingEnabled = false;
 
+      ctx.shadowColor = "rgba(255, 255, 255, 0.9)";
+      ctx.shadowBlur = 4;
+
       ctx.fillStyle = "#1e3a5f";
       ctx.font = `600 ${finalFontSize}px Inter, sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(b.block_name, tcx, tcy);
-      ctx.textBaseline = "alphabetic";
 
+      ctx.shadowBlur = 0;
+      ctx.textBaseline = "alphabetic";
       ctx.imageSmoothingEnabled = true; 
       ctx.restore();
     }
   }
 
   // ── EVENTS ────────────────────────────────────────────────
-  // Gets the correct logical map coordinates from a mouse or touch event
   function getXY(e) {
     if (e.offsetX !== undefined) {
       return {
@@ -306,7 +312,6 @@ const PUBLIC_MAP = (() => {
     };
   }
 
-  // Finds the topmost block hit by mouse or touch coordinates
   function getHitBlock(x, y) {
     return blockOrder
       .slice()
@@ -314,7 +319,6 @@ const PUBLIC_MAP = (() => {
       .find((id) => pointInPoly(x, y, blocks[id].points));
   }
 
-  // Initializes all mouse, touch, wheel, zoom, search, and resize event listeners
   function initEvents() {
     let pointerStartX = 0;
     let pointerStartY = 0;
@@ -497,16 +501,13 @@ const PUBLIC_MAP = (() => {
           item.addEventListener("click", () => {
             const bid = "b" + m.block_id;
             
-            // 1. Set a FRESH start time just for this block
             activeHighlights[bid] = { startTime: Date.now() };
 
-            // 2. Ensure the pulse loop is running
             if (!highlightPulseId) {
               const pulseLoop = () => {
                 const now = Date.now();
                 let anyActive = false;
 
-                // Remove expired highlights (older than 3 seconds)
                 for (const hBid in activeHighlights) {
                   if (now - activeHighlights[hBid].startTime > 3000) {
                     delete activeHighlights[hBid];
@@ -515,19 +516,18 @@ const PUBLIC_MAP = (() => {
                   }
                 }
 
-                draw(); // Redraw canvas with current pulse states
+                draw();
 
                 if (anyActive || Object.keys(activeHighlights).length > 0) {
                   highlightPulseId = requestAnimationFrame(pulseLoop);
                 } else {
                   highlightPulseId = null;
-                  draw(); // One final draw to clear the glow completely
+                  draw();
                 }
               };
               highlightPulseId = requestAnimationFrame(pulseLoop);
             }
 
-            // 3. Center the camera
             const bnds = m.bounds;
             const blockCenterX = bnds.x + bnds.w / 2;
             const blockCenterY = bnds.y + bnds.h / 2;
@@ -540,7 +540,6 @@ const PUBLIC_MAP = (() => {
 
             animateCameraTo(targetX, targetY);
 
-            // 4. Clear search UI
             searchInput.value = "";
             if (clearSearchBtn) clearSearchBtn.style.display = "none";
             searchResults.style.display = "none";
@@ -571,7 +570,6 @@ const PUBLIC_MAP = (() => {
   }
 
   // ── MODAL ─────────────────────────────────────────────────
-  // Opens the image modal dialog for a selected block
   function openImageModal(b) {
     if (!modalEl) return;
     const titleEl = document.getElementById("pubMapModalTitle");
@@ -602,21 +600,18 @@ const PUBLIC_MAP = (() => {
     modalEl.style.display = "flex";
   }
 
-  // Closes the image modal dialog
   function closeImageModal() {
     if (!modalEl) return;
     modalEl.style.display = "none";
   }
 
   // ── LOADING ───────────────────────────────────────────────
-  // Sets the custom HTML content for the loading indicator
   function setLoadingHTML(html) {
     if (!loadingEl) return;
     loadingEl.innerHTML = html;
     loadingEl.style.display = "flex";
   }
 
-  // Shows the loading spinner
   function showLoading() {
     setLoadingHTML(`
       <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
@@ -626,19 +621,16 @@ const PUBLIC_MAP = (() => {
     `);
   }
 
-  // Shows an error message in the loading container
   function showError(msg) {
     setLoadingHTML(
       `<div style="text-align:center;padding:20px;color:#ef4444;font-size:13px">${msg}</div>`,
     );
   }
 
-  // Hides the loading container
   function hideLoading() {
     if (loadingEl) loadingEl.style.display = "none";
   }
 
-  // Injects dynamic CSS styles for the public map UI
   function injectStyle() {
     if (document.getElementById("pubMapStyle")) return;
     const s = document.createElement("style");
@@ -655,7 +647,6 @@ const PUBLIC_MAP = (() => {
   }
 
   // ── PLACEHOLDER WAIT ──────────────────────────────────────
-  // Waits for the map container placeholder element to appear in the DOM
   function waitForPlaceholder(maxWaitMs) {
     return new Promise((resolve) => {
       const start = Date.now();

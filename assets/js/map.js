@@ -11,6 +11,7 @@ const MAP = (() => {
   const MAP_W = 1000;
   const MAP_H = 500;
 
+  // ── CAMERA STATE ──
   let mapScale = 1;
   let mapX = 0;
   let mapY = 0;
@@ -45,6 +46,7 @@ const MAP = (() => {
     return rowNum;
   }
 
+  // ── EDITOR & INTERACTION STATE ──
   let mapEditMode = false;
   let hasUnsavedChanges = false;
   let reshapeMode = false;
@@ -61,6 +63,7 @@ const MAP = (() => {
   let blocks = {};
   let blockOrder = [];
 
+  // ── DRAG & TRANSFORM STATES ──
   let blockDrag = {
     active: false,
     bid: null,
@@ -94,6 +97,7 @@ const MAP = (() => {
   const $ = (id) => document.getElementById(id);
   let canvasWrap, cv, ctx;
 
+  // ── GEOMETRY & MATH HELPERS ──────────────────────────────────────────────
   function getDistToRotatedPoint(mx, my, px, py, cx, cy, rotation) {
     const dx = mx - cx;
     const dy = my - cy;
@@ -120,12 +124,21 @@ const MAP = (() => {
   }
 
   function setSaveBtnDirty() {
-    const btn = $("btnSaveMap");
-    if (!btn) return;
-    btn.textContent = "Save Changes";
-    btn.style.background = "#22c55e";
-    btn.style.color = "#ffffff";
-    btn.style.border = "none";
+    const saveBtn = $("btnSaveMap");
+    const cancelBtn = $("btnCancelEdit");
+    
+    if (saveBtn) {
+      saveBtn.textContent = "Save Changes";
+      saveBtn.style.background = "#22c55e"; 
+      saveBtn.style.color = "#ffffff";
+      saveBtn.style.border = "none";
+      saveBtn.style.display = "inline-block"; 
+      saveBtn.disabled = false;
+    }
+
+    if (cancelBtn) {
+      cancelBtn.style.display = "inline-block";
+    }
   }
 
   function setModalBusy(busy) {
@@ -405,6 +418,7 @@ const MAP = (() => {
     return { newW, newH };
   }
 
+  // ── CANVAS & RENDERING ────────────────────────────────────────────────
   function syncCanvasSize() {
     const containerW = canvasWrap.clientWidth;
     const containerH = canvasWrap.clientHeight;
@@ -633,6 +647,7 @@ const MAP = (() => {
       return;
     }
 
+    // ── PASS 1: DRAW ALL BLOCKS & SHAPES ──
     blockOrder.forEach((bid) => {
       const b = blocks[bid];
       const pts = ensurePolygon(b);
@@ -748,6 +763,29 @@ const MAP = (() => {
         }
       }
 
+      ctx.restore();
+      ctx.globalAlpha = 1;
+    });
+
+    // ── PASS 2: DRAW ALL TEXT LABELS ON TOP ──
+    blockOrder.forEach((bid) => {
+      const b = blocks[bid];
+      const pts = ensurePolygon(b);
+      const isDrag = blockDrag.active && blockDrag.bid === bid;
+      const isResize = resizeDrag.active && resizeDrag.bid === bid;
+      const isRotate = rotateDrag.active && rotateDrag.bid === bid;
+      const { total, occ } = blockStats(b);
+
+      const bounds = polyBounds(pts);
+      const cx = bounds.x + bounds.w / 2;
+      const cy = bounds.y + bounds.h / 2;
+      const rotation = b.rotation || 0;
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(rotation);
+      ctx.translate(-cx, -cy);
+
       const label = labelAnchor(pts);
       const roomy = bounds.h >= 56;
       const isMobile = canvasWrap.clientWidth < 600;
@@ -756,8 +794,12 @@ const MAP = (() => {
 
       ctx.imageSmoothingEnabled = false;
 
+      // Crisp white background glow for readability
+      ctx.shadowColor = "rgba(255, 255, 255, 0.9)";
+      ctx.shadowBlur = 4;
+
       ctx.fillStyle = "#1e3a5f";
-      ctx.font = `500 ${titleSize}px Inter, sans-serif`;
+      ctx.font = `600 ${titleSize}px Inter, sans-serif`;
       ctx.textAlign = "center";
       ctx.fillText(b.block_name, label.x, roomy ? label.y - 14 : label.y + 4);
 
@@ -776,22 +818,9 @@ const MAP = (() => {
         ctx.fillText(mapEditMode ? "click to reshape \u00b7 drag to move" : "click to view", label.x, hintY);
       }
 
+      ctx.shadowBlur = 0;
       ctx.imageSmoothingEnabled = true;
-
-      if (isDrag) {
-        const gx = snap(blockDrag.dx) - blockDrag.dx;
-        const gy = snap(blockDrag.dy) - blockDrag.dy;
-        if (gx || gy) {
-          ctx.beginPath();
-          pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x + gx, p.y + gy) : ctx.lineTo(p.x + gx, p.y + gy));
-          ctx.closePath();
-          ctx.strokeStyle = "#8b5cf6"; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
-          ctx.stroke(); ctx.setLineDash([]);
-        }
-      }
-
       ctx.restore();
-      ctx.globalAlpha = 1;
     });
   }
 
@@ -994,6 +1023,7 @@ const MAP = (() => {
     draw();
   }
 
+  // ── EVENTS ────────────────────────────────────────────────────────────
   function initCanvasEvents() {
     let pointerStartX = 0;
     let pointerStartY = 0;
@@ -1086,7 +1116,7 @@ const MAP = (() => {
           const bounds = polyBounds(ensurePolygon(blk));
           const cx = bounds.x + bounds.w / 2;
           const cy = bounds.y + bounds.h / 2;
-          const rotation = blk.rotation || 0;
+          const rotation = b.rotation || 0;
 
           mousePos = screenToUnrotated(x, y, cx, cy, rotation);
         } else {
@@ -1217,33 +1247,42 @@ const MAP = (() => {
 
       if (blockDrag.active) {
         const bid = blockDrag.bid, blk = blocks[bid];
-        const isClick = Math.hypot(blockDrag.dx, blockDrag.dy) < 5;
-        if (isClick) {
+        const rawDist = Math.hypot(blockDrag.startX - getXY(e).x, blockDrag.startY - getXY(e).y);
+        
+        if (rawDist < 5) {
           blk.coordinates = blockDrag.origPts;
+          syncBounds(blk);
+          blockDrag.active = false;
+          canvasWrap.style.cursor = "grab";
+          setHint("Click a block to change its shape, or drag it to move it.");
+          draw();
+          openBlockLayoutModal(bid);
         } else {
           const b = polyBounds(blockDrag.origPts);
           const dx = snap(blockDrag.dx), dy = snap(blockDrag.dy);
           const { dx: fdx, dy: fdy } = clampTranslate(b, dx, dy);
+          
           blk.coordinates = blockDrag.origPts.map((p) => ({
             x: p.x + fdx, y: p.y + fdy,
           }));
+          
           hasUnsavedChanges = true;
           blk._dirty = true;
           setSaveBtnDirty();
+          
+          syncBounds(blk);
+          blockDrag.active = false;
+          canvasWrap.style.cursor = "grab";
+          setHint("Click a block to change its shape, or drag it to move it.");
+          draw();
         }
-        syncBounds(blk);
-        blockDrag.active = false;
-        canvasWrap.style.cursor = "grab";
-        setHint("Click a block to change its shape, or drag it to move it.");
-        draw();
-        if (isClick) openBlockLayoutModal(bid);
         return;
       }
     };
 
     cv.addEventListener("touchstart", (e) => {
       if (!isMobile()) return;
-
+      
       if (e.touches.length === 2) {
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
@@ -1263,15 +1302,15 @@ const MAP = (() => {
 
     cv.addEventListener("touchmove", (e) => {
       if (!isMobile()) return;
-
+      
       if (e.touches.length === 2) {
         if (e.cancelable) e.preventDefault();
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         const distance = Math.hypot(dx, dy);
-
+        
         const minFitScale = Math.max(canvasWrap.clientWidth / MAP_W, canvasWrap.clientHeight / MAP_H);
-
+        
         mapScale = Math.max(minFitScale, Math.min(4, initialScale * (distance / initialPinchDistance)));
         applyCameraTransform();
       } else if (e.touches.length === 1 && isPanning) {
@@ -1300,9 +1339,9 @@ const MAP = (() => {
       if (mapEditMode) return;
       if (e.cancelable) e.preventDefault();
       const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
-
+      
       const minFitScale = Math.max(canvasWrap.clientWidth / MAP_W, canvasWrap.clientHeight / MAP_H);
-
+      
       mapScale = Math.max(minFitScale, Math.min(4, mapScale * zoomFactor));
       applyCameraTransform();
     }, { passive: false });
@@ -1322,9 +1361,9 @@ const MAP = (() => {
         if (window.innerWidth > 768) {
           const cW = canvasWrap.clientWidth;
           const cH = canvasWrap.clientHeight;
-
+          
           mapScale = Math.max(cW / MAP_W, cH / MAP_H);
-
+          
           mapX = (cW - (MAP_W * mapScale)) / 2;
           mapY = (cH - (MAP_H * mapScale)) / 2;
           applyCameraTransform();
@@ -1340,9 +1379,9 @@ const MAP = (() => {
         if (window.innerWidth > 768) {
           const cW = canvasWrap.clientWidth;
           const cH = canvasWrap.clientHeight;
-
+          
           mapScale = Math.max(cW / MAP_W, cH / MAP_H);
-
+          
           mapX = (cW - (MAP_W * mapScale)) / 2;
           mapY = (cH - (MAP_H * mapScale)) / 2;
           applyCameraTransform();
@@ -1366,68 +1405,93 @@ const MAP = (() => {
   }
 
   function initButtons() {
-    $("btnEditMap").addEventListener("click", enterEditMap);
+    const btnEdit = $("btnEditMap");
+    const btnSave = $("btnSaveMap");
+    const btnCancel = $("btnCancelEdit");
+    const btnAdd = $("btnAddBlock");
+    const overlay = $("modalOverlay");
 
-    $("btnSaveMap").addEventListener("click", async () => {
-      const btn = $("btnSaveMap");
-      if (!hasUnsavedChanges) {
-        exitEditMap();
-        return;
-      }
+    if (btnEdit) btnEdit.addEventListener("click", enterEditMap);
 
-      const origHtml = btn.innerHTML;
-      btn.disabled = true;
-      btn.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right:6px"></i>Saving…';
-
-      try {
-        const result = await persistSaveAsync();
-        if (!result.ok) {
-          btn.disabled = false;
-          btn.innerHTML = origHtml;
-          setHint("Save failed: " + (result.message || "unknown error"));
-          if (window.showAlertTOP) {
-            showAlertTOP("Save failed: " + (result.message || "unknown error"), "error");
-          }
+    if (btnSave) {
+      btnSave.addEventListener("click", async () => {
+        if (!hasUnsavedChanges) {
+          exitEditMap();
           return;
         }
 
-        blockOrder.forEach((bid) => {
-          blocks[bid]._dirty = false;
-          blocks[bid].needsPlacement = false;
-        });
+        const origHtml = btnSave.innerHTML;
+        btnSave.disabled = true;
+        btnSave.innerHTML = '<i class="fas fa-spinner fa-spin" style="margin-right:6px"></i>Saving…';
+
+        try {
+          const result = await persistSaveAsync();
+          if (!result.ok) {
+            btnSave.disabled = false;
+            btnSave.innerHTML = origHtml;
+            setHint("Save failed: " + (result.message || "unknown error"));
+            if (window.showAlertTOP) showAlertTOP("Save failed: " + (result.message || "unknown error"), "error");
+            return;
+          }
+
+          blockOrder.forEach((bid) => {
+            blocks[bid]._dirty = false;
+            blocks[bid].needsPlacement = false;
+          });
+          hasUnsavedChanges = false;
+
+          draw();
+          updateStatus();
+          exitEditMap();
+          if (window.showAlertTOP) showAlertTOP("Map saved.", "success");
+        } catch (err) {
+          console.error("Save failed:", err);
+          btnSave.disabled = false;
+          btnSave.innerHTML = origHtml;
+          if (window.showAlertTOP) showAlertTOP("Save failed — check your connection.", "error");
+        }
+      });
+    }
+
+    if (btnCancel) {
+      btnCancel.addEventListener("click", async () => {
+        if (!hasUnsavedChanges) {
+          exitEditMap();
+          return;
+        }
+
+        const shouldDiscard = await confirm_ui(
+          "You have unsaved changes to the map layout. Do you want to discard them and exit?",
+          { title: "Discard changes?", confirmText: "Discard & Exit", cancelText: "Keep Editing", danger: true }
+        );
+
+        if (!shouldDiscard) return;
+
         hasUnsavedChanges = false;
-
-        draw();
-        updateStatus();
         exitEditMap();
+        persistLoad();
+      });
+    }
 
-        if (window.showAlertTOP) showAlertTOP("Map saved.", "success");
-      } catch (err) {
-        console.error("Save failed:", err);
-        btn.disabled = false;
-        btn.innerHTML = origHtml;
-        if (window.showAlertTOP) showAlertTOP("Save failed — check your connection.", "error");
-      }
-    });
-
-    $("btnAddBlock").addEventListener("click", openAddBlockModal);
-    $("modalOverlay").addEventListener("click", function (e) { if (e.target === this) closeModal(); });
+    if (btnAdd) btnAdd.addEventListener("click", openAddBlockModal);
+    if (overlay) overlay.addEventListener("click", function (e) { if (e.target === this) closeModal(); });
   }
 
   function enterEditMap() {
     mapEditMode = true;
     hasUnsavedChanges = false;
-    $("btnEditMap").style.display = "none";
+    
+    if ($("btnEditMap")) $("btnEditMap").style.display = "none";
+    if ($("btnAddBlock")) $("btnAddBlock").style.display = "none";
 
     const saveBtn = $("btnSaveMap");
-    saveBtn.textContent = "Cancel Edit";
-    saveBtn.style.background = "#f1f5f9";
-    saveBtn.style.color = "#475569";
-    saveBtn.style.border = "1px solid #cbd5e1";
-    saveBtn.style.display = "";
-    saveBtn.disabled = false;
+    if (saveBtn) saveBtn.style.display = "none"; 
 
-    $("btnAddBlock").style.display = "none";
+    const cancelBtn = $("btnCancelEdit");
+    if (cancelBtn) {
+      cancelBtn.style.display = "inline-block";
+    }
+
     setHint("Click a block to move it. Drag the corner dots to resize or rotate.");
     draw();
   }
@@ -1442,17 +1506,13 @@ const MAP = (() => {
     blockOrder.forEach((bid) => { blocks[bid]._dirty = false; });
 
     canvasWrap.style.cursor = "default";
-    $("btnEditMap").style.display = "";
-    $("btnSaveMap").style.display = "none";
+    
+    if ($("btnEditMap")) $("btnEditMap").style.display = "";
+    if ($("btnAddBlock")) $("btnAddBlock").style.display = "";
+    
+    if ($("btnSaveMap")) $("btnSaveMap").style.display = "none";
+    if ($("btnCancelEdit")) $("btnCancelEdit").style.display = "none";
 
-    const saveBtn = $("btnSaveMap");
-    saveBtn.textContent = "Save Layout";
-    saveBtn.style.background = "#22c55e";
-    saveBtn.style.color = "#ffffff";
-    saveBtn.style.border = "none";
-    saveBtn.disabled = false;
-
-    $("btnAddBlock").style.display = "";
     setHint("");
     draw();
   }
@@ -1547,6 +1607,7 @@ const MAP = (() => {
     return { bx, by };
   }
 
+  // ── MODALS & FORMS ────────────────────────────────────────────────────
   function openAddBlockModal() {
     $("modalTitle").textContent = "Add New Block";
     $("modalBody").innerHTML = `
