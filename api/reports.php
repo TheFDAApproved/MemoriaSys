@@ -527,6 +527,7 @@ function handle_interments(PDO $pdo): void
     $address   = rr_str('address');
     $genders   = rr_enum_list('gender', ['Male', 'Female', 'Unknown']);
     $barangays = rr_csv_list('barangay');
+    $statuses  = rr_enum_list('status', ['Active', 'Inactive', 'Pending']);
     $contact   = rr_enum('contact', ['has_contact', 'no_contact']);
     $startDate = rr_iso_date('start_date');
     $endDate   = rr_iso_date('end_date');
@@ -569,6 +570,16 @@ function handle_interments(PDO $pdo): void
             $phrases[] = "i.contact_person_address_barangay LIKE {$ph}";
         }
         $whereClauses[] = "(" . implode(" OR ", $phrases) . ")";
+    }
+
+    if (!empty($statuses)) {
+        $phs = [];
+        foreach ($statuses as $i => $s) {
+            $ph = ":intstatus_" . $i;
+            $phs[] = $ph;
+            $params[$ph] = $s;
+        }
+        $whereClauses[] = "i.status IN (" . implode(", ", $phs) . ")";
     }
 
     if ($contact === 'has_contact') {
@@ -677,6 +688,7 @@ function handle_interments(PDO $pdo): void
             'end_date'   => $endDate,
             'genders'    => $genders,
             'barangays'  => $barangays,
+            'statuses'   => $statuses,
         ],
         'rows'             => $mapped,
         'total_records'    => $total,

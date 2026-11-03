@@ -114,6 +114,9 @@
                     <button type="button" class="filterPill" data-filter="gender" onclick="toggleFilter('interments', 'gender')">
                         <i class="fas fa-venus-mars"></i> Gender
                     </button>
+                    <button type="button" class="filterPill" data-filter="status" onclick="toggleFilter('interments', 'status')">
+                        <i class="fas fa-toggle-on"></i> Status
+                    </button>
                     <button type="button" class="filterPill" data-filter="barangay" onclick="toggleFilter('interments', 'barangay')">
                         <i class="fas fa-map-pin"></i> Barangay
                     </button>
@@ -150,6 +153,26 @@
                             <label class="checkboxItem">
                                 <input type="checkbox" value="Unknown" onchange="onIntermentsGenderChange()">
                                 <span>Unknown</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div id="interments-filter-status" class="filterControlBlock" data-filter="status">
+                        <label class="paramLabel">
+                            Interment Status (check any that apply)
+                        </label>
+                        <div class="checkboxGroup" id="interments-status-checkboxes">
+                            <label class="checkboxItem">
+                                <input type="checkbox" value="Active" onchange="onIntermentsStatusChange()">
+                                <span>Active</span>
+                            </label>
+                            <label class="checkboxItem">
+                                <input type="checkbox" value="Inactive" onchange="onIntermentsStatusChange()">
+                                <span>Inactive</span>
+                            </label>
+                            <label class="checkboxItem">
+                                <input type="checkbox" value="Pending" onchange="onIntermentsStatusChange()">
+                                <span>Pending</span>
                             </label>
                         </div>
                     </div>

@@ -30,6 +30,7 @@ const filterState = {
     interments: {
         address: "",
         gender: "",
+        status: "",
         barangay: "",
         start_date: "",
         end_date: "",
@@ -62,6 +63,7 @@ const FILTER_GROUPS = {
     interments: {
         address: ["address"],
         gender: ["gender"],
+        status: ["status"],
         barangay: ["barangay"],
         date_range: ["start_date", "end_date"],
         contact: ["contact"],
@@ -494,15 +496,15 @@ function onGravesStatusChange() {
     scheduleReload("graves", "status");
 }
 
-function onIntermentsGenderChange() {
-    const grp = document.getElementById("interments-gender-checkboxes");
+function onIntermentsStatusChange() {
+    const grp = document.getElementById("interments-status-checkboxes");
     if (!grp) return;
     const checked = Array.from(
         grp.querySelectorAll('input[type="checkbox"]:checked'),
     ).map((el) => el.value);
-    filterState.interments.gender = checked.join(",");
+    filterState.interments.status = checked.join(",");
     resetPage("interments");
-    scheduleReload("interments", "gender");
+    scheduleReload("interments", "status");
 }
 
 function onIntermentsBarangayChange() {
@@ -613,6 +615,11 @@ function buildAppliedFilterParts(scope) {
         if (state.barangay) {
             parts.push(
                 `Barangay: ${state.barangay.split(",").filter(Boolean).join(", ")}`,
+            );
+        }
+        if (state.status) {
+            parts.push(
+                `Status: ${state.status.split(",").filter(Boolean).join(", ")}`,
             );
         }
         if (state.start_date || state.end_date) {
