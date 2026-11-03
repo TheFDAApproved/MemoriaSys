@@ -644,7 +644,7 @@
 
         const ok = await confirmDialog({
             title: old ? 'Confirm Reservation' : 'Confirm Interment',
-            message: 'Do you really want to confirm this reservation?',
+            message: 'Do you really want to confirm this action?',
             variant: 'primary',
             confirmText: old ? 'Confirm Transfer' : 'Confirm',
             cancelText: 'Cancel',
@@ -673,7 +673,7 @@
 
         if (!ok) return;
         removeRowLocally(reservation.reservation_id);
-        notify('success', 'Reservation confirmed.');
+        notify('success', 'Burial Confirmed.');
     }
 
     // Cancels a pending reservation. For a transfer, the old occupant stays as-is

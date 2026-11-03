@@ -1841,7 +1841,7 @@ const MonitorBurialModal = (() => {
 
         const ok = await confirmDialog({
             title: old ? 'Confirm Reservation' : 'Confirm Interment',
-            message: 'Do you really want to confirm this reservation?',
+            message: 'Do you really execute this action?',
             variant: 'primary',
             confirmText: old ? 'Confirm Transfer' : 'Confirm',
             cancelText: 'Cancel',
@@ -1904,7 +1904,7 @@ const MonitorBurialModal = (() => {
         }));
 
         if (typeof window.showAlertTOP === 'function') {
-            window.showAlertTOP('Reservation confirmed and executed.', 'success');
+            window.showAlertTOP('Action executed.', 'success');
         }
     }
 
