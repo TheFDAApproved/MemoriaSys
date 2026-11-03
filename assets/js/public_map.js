@@ -230,7 +230,7 @@ const PUBLIC_MAP = (() => {
       }
       ctx.closePath();
 
-      ctx.globalAlpha = 0.8;
+      ctx.globalAlpha = 0.5;
 
       if (isHighlighted) {
         const elapsed = now - highlightData.startTime;
