@@ -480,7 +480,7 @@
     function getStatusLabel(type) {
         switch (type) {
             case "vacant":
-                return "Available";
+                return "Vacant";
             case "expiring":
                 return "Expiring";
             case "expired":
