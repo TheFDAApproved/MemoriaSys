@@ -22,15 +22,27 @@ if (!in_array($userRole, $allowedRoles)) {
 $dashboardData = [];
 
 // TIER 1: everyone sees (Admin, Office, Grounds)
+// Expired/Expiring counts are aligned with reserve.php's eligibility rules:
+//   - grave still exists (graves.deleted_at IS NULL)
+//   - exactly one Active occupant on that grave (co-interment graves excluded)
+//   - no Active reservation already references the grave (target or destination)
+//   - the occupant himself is not already an Active reservation's old_interment_id
+// Graves/occupants that fail these checks still exist, but they cannot be
+// reserved, so they fall into "Occupied" / "Reserved" / "Ineligible" instead
+// of "Expired" / "Expiring". This is what closes the 220 vs 199 gap
 $stmt = $pdo->query("
     SELECT 
         CASE 
-            WHEN min_exp_date IS NOT NULL AND min_exp_date <= CURDATE() THEN 'Expired'
-            WHEN min_exp_date IS NOT NULL 
-                 AND min_exp_date <= DATE_ADD(CURDATE(), INTERVAL 30 DAY) THEN 'Expiring'
-            WHEN min_exp_date IS NOT NULL THEN 'Occupied'
             WHEN has_active_reservation = 1 THEN 'Reserved'
-            WHEN grave_status = 'Vacant' THEN 'Vacant'
+            WHEN active_occupant_count = 0 AND grave_status = 'Vacant' THEN 'Vacant'
+            WHEN active_occupant_count = 1 
+                 AND min_exp_date IS NOT NULL 
+                 AND min_exp_date < CURDATE() THEN 'Expired'
+            WHEN active_occupant_count = 1 
+                 AND min_exp_date IS NOT NULL 
+                 AND min_exp_date <= DATE_ADD(CURDATE(), INTERVAL 1 MONTH) THEN 'Expiring'
+            WHEN active_occupant_count = 1 THEN 'Occupied'
+            WHEN active_occupant_count >= 2 THEN 'Occupied'
             ELSE 'Other'
         END AS category,
         COUNT(*) AS count
@@ -39,10 +51,12 @@ $stmt = $pdo->query("
             g.grave_id,
             g.status AS grave_status,
             MIN(i.lease_expiration_date) AS min_exp_date,
+            COUNT(i.interment_id) AS active_occupant_count,
             EXISTS (
                 SELECT 1 FROM reservations r
-                WHERE r.target_grave_id = g.grave_id
-                  AND r.reservation_state = 'Active'
+                WHERE r.reservation_state = 'Active'
+                  AND (r.target_grave_id = g.grave_id 
+                       OR r.old_new_grave_id = g.grave_id)
             ) AS has_active_reservation
         FROM graves g
         LEFT JOIN interments i 
@@ -73,42 +87,125 @@ while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
 $dashboardData['grave_status_distribution'] = $graveDistribution;
 $dashboardData['available_graves'] = $graveDistribution['Vacant'];
 
+// Lease status by interment. Expired/Expiring use the same eligibility rules
+// as reserve.php. Interments with an expired/expiring lease that fail those
+// rules land in "Ineligible" so the five buckets still sum to Total
 $stmt = $pdo->query("
     SELECT 
-        SUM(lease_expiration_date <= CURDATE()) AS expired,
-        SUM(lease_expiration_date > CURDATE()
-            AND lease_expiration_date <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)) AS expiring,
-        SUM(lease_expiration_date > DATE_ADD(CURDATE(), INTERVAL 30 DAY)) AS occupied,
-        SUM(lease_expiration_date IS NULL) AS unknown,
+        SUM(CASE 
+            WHEN lease_expiration_date < CURDATE() AND is_eligible = 1 
+            THEN 1 ELSE 0 
+        END) AS expired,
+        SUM(CASE 
+            WHEN lease_expiration_date >= CURDATE() 
+             AND lease_expiration_date <= DATE_ADD(CURDATE(), INTERVAL 1 MONTH) 
+             AND is_eligible = 1 
+            THEN 1 ELSE 0 
+        END) AS expiring,
+        SUM(CASE 
+            WHEN lease_expiration_date > DATE_ADD(CURDATE(), INTERVAL 1 MONTH) 
+            THEN 1 ELSE 0 
+        END) AS occupied,
+        SUM(CASE 
+            WHEN lease_expiration_date IS NULL 
+            THEN 1 ELSE 0 
+        END) AS unknown,
+        SUM(CASE 
+            WHEN lease_expiration_date IS NOT NULL 
+             AND lease_expiration_date <= DATE_ADD(CURDATE(), INTERVAL 1 MONTH) 
+             AND is_eligible = 0 
+            THEN 1 ELSE 0 
+        END) AS ineligible,
         COUNT(*) AS total
-    FROM interments
-    WHERE status = 'Active' AND deleted_at IS NULL
+    FROM (
+        SELECT 
+            i.interment_id,
+            i.lease_expiration_date,
+            CASE 
+                WHEN g.grave_id IS NULL THEN 0
+                WHEN (SELECT COUNT(*) FROM interments i2 
+                      WHERE i2.current_grave_id = g.grave_id 
+                        AND i2.status = 'Active' 
+                        AND i2.deleted_at IS NULL) <> 1 THEN 0
+                WHEN EXISTS (SELECT 1 FROM reservations r 
+                             WHERE r.reservation_state = 'Active' 
+                               AND (r.target_grave_id = g.grave_id 
+                                    OR r.old_new_grave_id = g.grave_id)) THEN 0
+                WHEN EXISTS (SELECT 1 FROM reservations r 
+                             WHERE r.reservation_state = 'Active' 
+                               AND r.old_interment_id = i.interment_id) THEN 0
+                ELSE 1
+            END AS is_eligible
+        FROM interments i
+        LEFT JOIN graves g 
+            ON i.current_grave_id = g.grave_id 
+            AND g.deleted_at IS NULL
+        WHERE i.status = 'Active' 
+          AND i.deleted_at IS NULL
+    ) AS sub
 ");
 $row = $stmt->fetch(PDO::FETCH_ASSOC);
 $dashboardData['lease_status_by_interment'] = [
-    'Expired'  => (int)$row['expired'],
-    'Expiring' => (int)$row['expiring'],
-    'Occupied' => (int)$row['occupied'],
-    'Unknown'  => (int)$row['unknown'],
-    'Total'    => (int)$row['total'],
+    'Expired'    => (int)$row['expired'],
+    'Expiring'   => (int)$row['expiring'],
+    'Occupied'   => (int)$row['occupied'],
+    'Unknown'    => (int)$row['unknown'],
+    'Ineligible' => (int)$row['ineligible'],
+    'Total'      => (int)$row['total'],
 ];
 
-// Expiring Leases Count (active interments expiring within 30 days)
+// Expiring Leases Count — eligible only (matches reserve.php's "expiring")
 $stmt = $pdo->query("
-    SELECT COUNT(*) FROM interments 
-    WHERE status = 'Active' 
-      AND deleted_at IS NULL
-      AND lease_expiration_date BETWEEN DATE_ADD(CURDATE(), INTERVAL 1 DAY) 
-                                   AND DATE_ADD(CURDATE(), INTERVAL 30 DAY)
+    SELECT COUNT(*) FROM interments i
+    INNER JOIN graves g 
+        ON i.current_grave_id = g.grave_id 
+        AND g.deleted_at IS NULL
+    WHERE i.status = 'Active' 
+      AND i.deleted_at IS NULL
+      AND i.lease_expiration_date >= CURDATE()
+      AND i.lease_expiration_date <= DATE_ADD(CURDATE(), INTERVAL 1 MONTH)
+      AND (SELECT COUNT(*) FROM interments i2
+           WHERE i2.current_grave_id = g.grave_id
+             AND i2.status = 'Active'
+             AND i2.deleted_at IS NULL) = 1
+      AND NOT EXISTS (
+          SELECT 1 FROM reservations r
+          WHERE r.reservation_state = 'Active'
+            AND (r.target_grave_id = g.grave_id 
+                 OR r.old_new_grave_id = g.grave_id)
+      )
+      AND NOT EXISTS (
+          SELECT 1 FROM reservations r
+          WHERE r.reservation_state = 'Active'
+            AND r.old_interment_id = i.interment_id
+      )
 ");
 $dashboardData['expiring_leases_count'] = (int)$stmt->fetchColumn();
 
-// Expired Leases Count (active interments already past expiration)
+// Expired Leases Count — eligible only (matches reserve.php's "expired")
 $stmt = $pdo->query("
-    SELECT COUNT(*) FROM interments 
-    WHERE status = 'Active' 
-      AND deleted_at IS NULL
-      AND lease_expiration_date <= CURDATE()
+    SELECT COUNT(*) FROM interments i
+    INNER JOIN graves g 
+        ON i.current_grave_id = g.grave_id 
+        AND g.deleted_at IS NULL
+    WHERE i.status = 'Active' 
+      AND i.deleted_at IS NULL
+      AND i.lease_expiration_date < CURDATE()
+      AND (SELECT COUNT(*) FROM interments i2
+           WHERE i2.current_grave_id = g.grave_id
+             AND i2.status = 'Active'
+             AND i2.deleted_at IS NULL) = 1
+      AND NOT EXISTS (
+          SELECT 1 FROM reservations r
+          WHERE r.reservation_state = 'Active'
+            AND (r.target_grave_id = g.grave_id 
+                 OR r.old_new_grave_id = g.grave_id)
+      )
+      AND NOT EXISTS (
+          SELECT 1 FROM reservations r
+          WHERE r.reservation_state = 'Active'
+            AND r.old_interment_id = i.interment_id
+      )
 ");
 $dashboardData['expired_leases_count'] = (int)$stmt->fetchColumn();
 
@@ -148,6 +245,7 @@ $dashboardData['payments_awaiting_my_confirmation'] =
     $userRole === ROLE_OFFICE  ? $awaitingOffice  : ($userRole === ROLE_GROUNDS ? $awaitingGrounds : 0);
 
 // Monthly Lease Expiration (grouped by month for the current year)
+// This is intentionally raw — it's a calendar chart, not a "reservable" count.
 $stmt = $pdo->query("
     SELECT DATE_FORMAT(lease_expiration_date, '%Y-%m') AS exp_month, 
            COUNT(*) AS count 
