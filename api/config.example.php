@@ -3,19 +3,19 @@
 require_once 'notallowed.php';
 
 // api/config.example.php
-define('DB_HOST', 'localhost');
-define('DB_NAME', 'mydatayawa');
-define('DB_USER', 'root');
-define('DB_PASS', '');
+define('DB_HOST', getenv('DB_HOST') ?? 'localhost');
+define('DB_NAME', getenv('DB_NAME') ?? 'memoria_db');
+define('DB_USER', getenv('DB_USER') ?? 'root');
+define('DB_PASS', getenv('DB_PASS') ?? '');
 define('DB_CHARSET', 'utf8mb4');
-define('DB_TIMEZONE', '+08:00');
+define('DB_TIMEZONE',  getenv('DB_TIMEZONE') ?? '+08:00');
 
-define('JWT_SECRET', 'SIR_PAPASARAMIINTAWNPLEASEHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHU');
+define('JWT_SECRET',  getenv('JWT_SECRET') ?? 'SIR_PAPASARAMIINTAWNPLEASEHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHU');
 define('JWT_ALGO', 'HS256');
 define('JWT_EXPIRATION', 18000); //in seconds
-define('APP_URL', 'http://yourdomain.com');
-define('LOG_SECRET_KEY', 'your_log_secret_key');
-define('ENCRYPTION_KEY', 'SIR_PAPASARAMIINTAWNPLEASEHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHU!'); //textbee used to encrypt
+define('APP_URL',  getenv('APP_URL') ?? 'http://yourdomain.com');
+define('LOG_SECRET_KEY',  getenv('LOG_SECRET_KEY') ?? 'your_log_secret_key');
+define('ENCRYPTION_KEY',  getenv('ENCRYPTION_KEY') ?? 'SIR_PAPASARAMIINTAWNPLEASEHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHUHU!'); //textbee used to encrypt
 
 // --- ENUM CONSTANTS ---
 // Manually update these if the database schema ever changes
