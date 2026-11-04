@@ -225,27 +225,39 @@ body {
         animation-delay: 0.2s;
     }
 
-    /* Status Grid */
-    .statsGrid.grid3 {
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
-    }
-
+    /* Status Grid (4 cards max in one line) */
     .statsGrid {
         display: grid;
         grid-template-columns:
-            minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+            minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
         gap: 20px;
         min-height: 0;
         transition: grid-template-columns 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 
-        &.grid4 {
+        /* 4 cards - Admin (and fallback) */
+        &.grid4,
+        &.grid5 {
             grid-template-columns:
                 minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
         }
 
-        &.grid5 {
+        /* 3 cards - Office */
+        &.grid3 {
             grid-template-columns:
-                minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+                minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+        }
+
+        /* 2 cards - Grounds (:where keeps specificity low so mobile rules override it) */
+        &.grid2,
+        &.grid3:where(:has(.statCard:nth-child(3)[style*="none"])) {
+            grid-template-columns:
+                minmax(0, 1fr) minmax(0, 1fr);
+        }
+
+        /* 1 card fallback */
+        &.grid1,
+        &.grid3:where(:has(.statCard:nth-child(2)[style*="none"])) {
+            grid-template-columns: minmax(0, 1fr);
         }
 
         /* Individual stat card */
@@ -543,11 +555,39 @@ body {
     }
 }
 
-
 /* Hover Expand */
 @media (min-width: 901px) and (max-width: 1400px) {
 
-    /* 3-column grid */
+    /* 4-column grid (Admin / Default) */
+    .dashboardContent .statsGrid:has(.statCard:nth-child(1):hover),
+    .dashboardContent .statsGrid.grid4:has(.statCard:nth-child(1):hover),
+    .dashboardContent .statsGrid.grid5:has(.statCard:nth-child(1):hover) {
+        grid-template-columns:
+            minmax(0, 1.8fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .dashboardContent .statsGrid:has(.statCard:nth-child(2):hover),
+    .dashboardContent .statsGrid.grid4:has(.statCard:nth-child(2):hover),
+    .dashboardContent .statsGrid.grid5:has(.statCard:nth-child(2):hover) {
+        grid-template-columns:
+            minmax(0, 1fr) minmax(0, 1.8fr) minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .dashboardContent .statsGrid:has(.statCard:nth-child(3):hover),
+    .dashboardContent .statsGrid.grid4:has(.statCard:nth-child(3):hover),
+    .dashboardContent .statsGrid.grid5:has(.statCard:nth-child(3):hover) {
+        grid-template-columns:
+            minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.8fr) minmax(0, 1fr);
+    }
+
+    .dashboardContent .statsGrid:has(.statCard:nth-child(4):hover),
+    .dashboardContent .statsGrid.grid4:has(.statCard:nth-child(4):hover),
+    .dashboardContent .statsGrid.grid5:has(.statCard:nth-child(4):hover) {
+        grid-template-columns:
+            minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.8fr);
+    }
+
+    /* 3-column grid (Office) */
     .dashboardContent .statsGrid.grid3:has(.statCard:nth-child(1):hover) {
         grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr) minmax(0, 1fr);
     }
@@ -560,51 +600,15 @@ body {
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.8fr);
     }
 
-    /* 5-column grid */
-    .dashboardContent .statsGrid:has(.statCard:nth-child(1):hover) {
-        grid-template-columns:
-            minmax(0, 1.8fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
+    /* 2-column grid (Grounds) */
+    .dashboardContent .statsGrid.grid2:has(.statCard:nth-child(1):hover),
+    .dashboardContent .statsGrid.grid3:has(.statCard:nth-child(3)[style*="none"]):has(.statCard:nth-child(1):hover) {
+        grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
     }
 
-    .dashboardContent .statsGrid:has(.statCard:nth-child(2):hover) {
-        grid-template-columns:
-            minmax(0, 1fr) minmax(0, 1.8fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
-    }
-
-    .dashboardContent .statsGrid:has(.statCard:nth-child(3):hover) {
-        grid-template-columns:
-            minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.8fr) minmax(0, 1fr) minmax(0, 1fr);
-    }
-
-    .dashboardContent .statsGrid:has(.statCard:nth-child(4):hover) {
-        grid-template-columns:
-            minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.8fr) minmax(0, 1fr);
-    }
-
-    .dashboardContent .statsGrid:has(.statCard:nth-child(5):hover) {
-        grid-template-columns:
-            minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.8fr);
-    }
-
-    /* 4-column grid */
-    .dashboardContent .statsGrid.grid4:has(.statCard:nth-child(1):hover) {
-        grid-template-columns:
-            minmax(0, 1.8fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr);
-    }
-
-    .dashboardContent .statsGrid.grid4:has(.statCard:nth-child(2):hover) {
-        grid-template-columns:
-            minmax(0, 1fr) minmax(0, 1.8fr) minmax(0, 1fr) minmax(0, 1fr);
-    }
-
-    .dashboardContent .statsGrid.grid4:has(.statCard:nth-child(3):hover) {
-        grid-template-columns:
-            minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.8fr) minmax(0, 1fr);
-    }
-
-    .dashboardContent .statsGrid.grid4:has(.statCard:nth-child(4):hover) {
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0,
-                1.8fr);
+    .dashboardContent .statsGrid.grid2:has(.statCard:nth-child(2):hover),
+    .dashboardContent .statsGrid.grid3:has(.statCard:nth-child(3)[style*="none"]):has(.statCard:nth-child(2):hover) {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr);
     }
 }
 
@@ -655,6 +659,7 @@ body {
     }
 
     .dashboardContent .statsGrid,
+    .dashboardContent .statsGrid.grid2,
     .dashboardContent .statsGrid.grid3,
     .dashboardContent .statsGrid.grid4,
     .dashboardContent .statsGrid.grid5,
@@ -663,6 +668,11 @@ body {
         grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 14px;
         flex-shrink: 0;
+    }
+
+    /* When 3 cards are visible on tablet, let the 3rd card span full width */
+    .dashboardContent .statsGrid.grid3:not(:has(.statCard:nth-child(3)[style*="none"])) .statCard:nth-child(3) {
+        grid-column: 1 / -1;
     }
 
     .dashboardContent .skeletonWideCard {
@@ -723,11 +733,18 @@ body {
 @media (max-width: 600px) {
 
     .dashboardContent .statsGrid,
+    .dashboardContent .statsGrid.grid1,
+    .dashboardContent .statsGrid.grid2,
     .dashboardContent .statsGrid.grid3,
+    .dashboardContent .statsGrid.grid3:where(:has(.statCard:nth-child(3)[style*="none"])),
     .dashboardContent .statsGrid.grid4,
     .dashboardContent .statsGrid.grid5,
     .dashboardContent .skeletonWideCard {
         grid-template-columns: 1fr;
+    }
+
+    .dashboardContent .statsGrid.grid3:not(:has(.statCard:nth-child(3)[style*="none"])) .statCard:nth-child(3) {
+        grid-column: auto;
     }
 
     .dashboardContent .chartsGrid .pieChartCard,

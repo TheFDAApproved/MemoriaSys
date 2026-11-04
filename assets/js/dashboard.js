@@ -111,11 +111,6 @@ document.addEventListener("DOMContentLoaded", function () {
             resolve: (data) => pickKey(data, "available_graves"),
         },
         {
-            cardId: "expiring_leases",
-            statId: "stat_expiring_leases",
-            resolve: (data) => pickKey(data, "expiring_leases_count"),
-        },
-        {
             cardId: "pending_payments",
             statId: "stat_pending_payments",
             resolve: resolvePendingPayments,
@@ -372,24 +367,16 @@ document.addEventListener("DOMContentLoaded", function () {
         // Fixed Y max so the axis doesn't jump when data appears
         const yMax = Math.max(1, Math.ceil(maxValue * 1.2));
 
-        // Highlight the tallest bar
-        const backgroundColors = values.map((v) =>
-            Number(v) === maxValue && maxValue > 0
-                ? COLORS.primary
-                : "rgba(99, 102, 241, 0.55)",
-        );
-
-        const borderColors = values.map((v) =>
-            Number(v) === maxValue && maxValue > 0
-                ? COLORS.primary
-                : "rgba(99, 102, 241, 0.85)",
-        );
+        // Single color used for every bar
+        const BAR_COLOR = "rgba(99, 102, 241, 0.85)";
 
         if (barChart) {
             barChart.data.labels = labels;
             barChart.data.datasets[0].data = values;
-            barChart.data.datasets[0].backgroundColor = backgroundColors;
-            barChart.data.datasets[0].borderColor = borderColors;
+            barChart.data.datasets[0].backgroundColor = BAR_COLOR;
+            barChart.data.datasets[0].borderColor = BAR_COLOR;
+            barChart.data.datasets[0].hoverBackgroundColor = BAR_COLOR;
+            barChart.data.datasets[0].hoverBorderColor = BAR_COLOR;
             barChart.options.scales.y.max = yMax;
             barChart.update();
             return;
@@ -403,14 +390,14 @@ document.addEventListener("DOMContentLoaded", function () {
                     {
                         label: "Expirations",
                         data: labels.map(() => 0),
-                        backgroundColor: backgroundColors,
-                        borderColor: borderColors,
+                        backgroundColor: BAR_COLOR,
+                        borderColor: BAR_COLOR,
                         borderWidth: 1,
                         borderRadius: 6,
                         borderSkipped: false,
                         maxBarThickness: 32,
-                        hoverBackgroundColor: COLORS.primary,
-                        hoverBorderColor: COLORS.primary,
+                        hoverBackgroundColor: BAR_COLOR,
+                        hoverBorderColor: BAR_COLOR,
                     },
                 ],
             },
