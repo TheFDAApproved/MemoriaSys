@@ -340,3 +340,11 @@ function convert_dates($searchTerm)
 
     return $result;
 }
+
+//returns env keys, if none returns default value
+function env(string $key, ?string $default = null): ?string
+{
+    $value = getenv($key);
+
+    return $value === false ? $default : $value;
+}
