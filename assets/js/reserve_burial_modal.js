@@ -28,8 +28,10 @@ const ReserveBurialModal = (() => {
 
     let blockChangeTimer = null;
     let gravesToken = 0;
+    let graveAbort = null;
 
     const BLOCK_CHANGE_DEBOUNCE_MS = 250;
+    const PAGE_LIMIT = 500;
     const BLOCKS_API = "api/blocks.php";
     const GRAVES_API = "api/graves.php";
     const SETTINGS_API = "api/settings";
@@ -822,14 +824,32 @@ const ReserveBurialModal = (() => {
         }
     }
 
+    // paginates through every block page.
     async function fetchBlocks() {
-        const res = await fetch(BLOCKS_API, {
-            headers: { Accept: "application/json" },
-            cache: "no-store",
-        });
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        const json = await res.json();
-        return json.data.blocks;
+        const fetchPage = async (page) => {
+            const url = `${BLOCKS_API}?page=${page}&limit=${PAGE_LIMIT}`;
+            const res = await fetch(url, {
+                headers: { Accept: "application/json" },
+                cache: "no-store",
+            });
+            if (!res.ok) throw new Error("HTTP " + res.status);
+            const json = await res.json();
+            const data = json && typeof json === "object" && "data" in json ? json.data : json;
+            let list = [];
+            if (Array.isArray(data)) list = data;
+            else if (data && Array.isArray(data.blocks)) list = data.blocks;
+            const pagination = (data && !Array.isArray(data) && data.pagination) || {};
+            return { list, pagination };
+        };
+
+        const first = await fetchPage(1);
+        let all = first.list.slice();
+        const totalPages = Math.max(1, Number(first.pagination.total_pages) || 1);
+        for (let p = 2; p <= totalPages; p++) {
+            const next = await fetchPage(p);
+            all = all.concat(next.list);
+        }
+        return all;
     }
 
     async function loadBlocks() {
@@ -929,17 +949,37 @@ const ReserveBurialModal = (() => {
         el.parentNode.replaceChild(select, el);
     }
 
-    async function fetchGravesForBlock(blockId) {
-        const url = `${GRAVES_API}?block_id=${encodeURIComponent(blockId)}&status=vacant`;
-        const res = await fetch(url, {
-            headers: { Accept: "application/json" },
-            cache: "no-store",
-        });
-        if (!res.ok) throw new Error("HTTP " + res.status);
-        const json = await res.json();
-        const data =
-            json && typeof json === "object" && "data" in json ? json.data : json;
-        return data && Array.isArray(data.graves) ? data.graves : [];
+    // paginates through every page, calls onPage with the accumulated
+    // list after each page. Keeps the &status=vacant filter from the original.
+    async function fetchGravesForBlock(blockId, onPage, signal) {
+        const fetchPage = async (page) => {
+            const url = `${GRAVES_API}?block_id=${encodeURIComponent(blockId)}&status=vacant&page=${page}&limit=${PAGE_LIMIT}`;
+            const res = await fetch(url, {
+                headers: { Accept: "application/json" },
+                cache: "no-store",
+                signal,
+            });
+            if (!res.ok) throw new Error("HTTP " + res.status);
+            const json = await res.json();
+            const data =
+                json && typeof json === "object" && "data" in json ? json.data : json;
+            const graves = data && Array.isArray(data.graves) ? data.graves : [];
+            const pagination = (data && data.pagination) || {};
+            return { graves, pagination };
+        };
+
+        const first = await fetchPage(1);
+        const totalPages = Math.max(1, Number(first.pagination.total_pages) || 1);
+        let all = first.graves.slice();
+        if (onPage) onPage(all, first.pagination, 1, totalPages);
+
+        for (let p = 2; p <= totalPages; p++) {
+            if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
+            const next = await fetchPage(p);
+            all = all.concat(next.graves);
+            if (onPage) onPage(all, first.pagination, p, totalPages);
+        }
+        return all;
     }
 
     function renderGraveOptions(graves, selectedGraveId) {
@@ -1034,6 +1074,10 @@ const ReserveBurialModal = (() => {
         setGraveCodeHint("");
     }
 
+    // paginated progressive render, abortable.
+    // view-mode early return, &status=vacant filter (inside
+    // fetchGravesForBlock), the pin logic that treats either grave_id OR
+    // grave_code as already-present, and the final selectGraveByCode call.
     async function loadGraveOptions(
         blockId,
         blockName,
@@ -1045,6 +1089,9 @@ const ReserveBurialModal = (() => {
 
         clearBlockChangeTimer();
         const token = ++gravesToken;
+
+        // Cancel any in-flight paginated fetch from a previous block/type
+        if (graveAbort) { try { graveAbort.abort(); } catch (_) { } graveAbort = null; }
 
         if (currentMode === "view" && wizardMode !== "old") {
             if (pinnedGraveId) {
@@ -1064,6 +1111,10 @@ const ReserveBurialModal = (() => {
             return;
         }
 
+        const controller = new AbortController();
+        graveAbort = controller;
+        const signal = controller.signal;
+
         select.innerHTML = "";
         const loading = document.createElement("option");
         loading.value = "";
@@ -1073,23 +1124,9 @@ const ReserveBurialModal = (() => {
         select.appendChild(loading);
         selectedSlot = null;
 
-        let graves = [];
-        let fetchError = null;
-        try {
-            graves = await fetchGravesForBlock(blockId);
-        } catch (err) {
-            fetchError = err;
-        }
-        if (token !== gravesToken) return;
-
-        if (fetchError) {
-            console.warn("[reserve_modal] Unable to fetch graves:", fetchError);
-            setGraveCodeHint("Unable to load grave codes. Please try again.", true);
-            renderGraveOptions([], null);
-            return;
-        }
-
-        if (pinnedGraveId || pinnedGraveCode) {
+        // Original pin logic: matches by grave_id OR grave_code.
+        const withPinned = (graves) => {
+            if (!pinnedGraveId && !pinnedGraveCode) return graves;
             const pinId = pinnedGraveId != null ? Number(pinnedGraveId) : null;
             const pinCode = String(pinnedGraveCode || "").trim();
             const exists = graves.some((g) => {
@@ -1098,23 +1135,64 @@ const ReserveBurialModal = (() => {
                     return true;
                 return false;
             });
-            if (!exists) {
-                graves.unshift({
+            if (exists) return graves;
+            return [
+                {
                     grave_id: pinId != null ? pinId : null,
                     grave_code: pinCode,
                     status: "occupied",
                     _pinned: true,
-                });
+                },
+                ...graves,
+            ];
+        };
+
+        // Render a partial batch, preserving a selection the user made mid-load.
+        const applyProgressive = (allSoFar) => {
+            const currentValue = select.value;
+            renderGraveOptions(withPinned(allSoFar), pinnedGraveId);
+            if (currentValue && Array.from(select.options).some(o => o.value === currentValue)) {
+                select.value = currentValue;
+                updateSelectedSlotFromGraveSelect();
             }
+        };
+
+        try {
+            const graves = await fetchGravesForBlock(
+                blockId,
+                (allSoFar, pagination, page, totalPages) => {
+                    if (token !== gravesToken) return;
+                    applyProgressive(allSoFar);
+                    if (totalPages > 1 && page < totalPages) {
+                        const total = Number(pagination.total_records) || allSoFar.length;
+                        setGraveCodeHint(
+                            `Loading graves... ${allSoFar.length} / ${total}`,
+                            false,
+                        );
+                    }
+                },
+                signal,
+            );
+
+            if (token !== gravesToken) return;
+
+            if (!graves.length)
+                setGraveCodeHint("No available grave codes in this block.", true);
+            else setGraveCodeHint("");
+
+            // Re-render final so the pinned grave is force-selected, matching
+            // the original end-of-function behavior.
+            renderGraveOptions(withPinned(graves), pinnedGraveId);
+
+            if (pinnedGraveCode) selectGraveByCode(pinnedGraveCode, pinnedGraveId);
+        } catch (err) {
+            if (err.name === "AbortError" || token !== gravesToken) return;
+            console.warn("[reserve_modal] Unable to fetch graves:", err);
+            setGraveCodeHint("Unable to load grave codes. Please try again.", true);
+            renderGraveOptions([], null);
+        } finally {
+            if (graveAbort === controller) graveAbort = null;
         }
-
-        if (!graves.length)
-            setGraveCodeHint("No available grave codes in this block.", true);
-        else setGraveCodeHint("");
-
-        renderGraveOptions(graves, pinnedGraveId);
-
-        if (pinnedGraveCode) selectGraveByCode(pinnedGraveCode, pinnedGraveId);
     }
 
     function onBlockChange() {
@@ -3044,6 +3122,8 @@ const ReserveBurialModal = (() => {
         modalEl.classList.remove("active");
 
         clearBlockChangeTimer();
+        // abort any in-flight paginated grave fetch
+        if (graveAbort) { try { graveAbort.abort(); } catch (_) { } graveAbort = null; }
         gravesToken++;
 
         selectedSlot = null;
