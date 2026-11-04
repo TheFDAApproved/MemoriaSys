@@ -319,6 +319,72 @@ const ReserveBurialModal = (() => {
         expirationInput.value = raw ? addYearsISO(raw, LEASE_YEARS) : "";
     }
 
+    // If the Date of Interment was left identical to the original value, ask the user to confirm they don't want to update it.
+    // Returns true to proceed, false to abort (focus restored to the date field).
+    async function confirmIfIntermentDateUnchanged(intermentEl, originalDate) {
+        if (!intermentEl) return true;
+
+        const current = (intermentEl.value || "").trim();
+        if (!current) return true; // empty is handled by the "required" check
+
+        const orig = sliceDate(originalDate);
+        if (!orig) return true; // nothing to compare against
+
+        if (current !== orig) return true; // it was actually changed
+
+        const message = `Date of Interment is unchanged from the original (${orig}). Are you sure you don't need to update it?`;
+
+        let proceed;
+        if (typeof window.confirm_ui === "function") {
+            proceed = await window.confirm_ui(message, {
+                title: "Date of Interment Not Changed",
+                confirmText: "Yes, keep it",
+                cancelText: "Change date",
+            });
+        } else {
+            proceed = window.confirm(message);
+        }
+
+        if (!proceed) intermentEl.focus();
+        return proceed;
+    }
+
+    // Confirm if the lease end date is in the past or less than 5 years away; return true to continue or false to stop and refocus the date field.
+    async function confirmIfLeaseWillExpireSoon(intermentEl) {
+        if (!intermentEl) return true;
+
+        const dateBuried = (intermentEl.value || "").trim();
+        if (!dateBuried) return true; // let the "required" check handle empties
+
+        recalcExpirationFromInterment();
+        const expirationDate = (getExpirationField()?.value || "").trim();
+        if (!expirationDate) return true;
+
+        const today = todayISO();
+        const expiredToday = expirationDate <= today;
+        const expiresThisYear =
+            expirationDate.slice(0, 4) === today.slice(0, 4);
+        if (!expiredToday && !expiresThisYear) return true;
+
+        const message = expiredToday
+            ? `The lease would expire on ${expirationDate}, which is already in the past. Continue anyway?`
+            : `The lease would expire on ${expirationDate}, which is within this year. Continue anyway?`;
+
+        let proceed;
+        if (typeof window.confirm_ui === "function") {
+            proceed = await window.confirm_ui(message, {
+                title: "Confirm Date of Interment",
+                confirmText: "Yes, continue",
+                cancelText: "Change date",
+            });
+        } else {
+            proceed = window.confirm(message);
+        }
+
+        if (!proceed) intermentEl.focus();
+        return proceed;
+    }
+
     function detectMode(data) {
         if (!data || typeof data !== "object") return "add";
         const type = String(data.type || "").toLowerCase();
@@ -1811,7 +1877,7 @@ const ReserveBurialModal = (() => {
         }
     }
 
-    function handleNextClick() {
+    async function handleNextClick() {
         if (wizardMode !== "old") return;
 
         if (submissionSucceeded) {
@@ -1915,6 +1981,17 @@ const ReserveBurialModal = (() => {
                 return;
             }
         }
+
+        if (
+            !(await confirmIfIntermentDateUnchanged(
+                getIntermentField(),
+                oldOccupantOriginal?.date_buried,
+            ))
+        )
+            return;
+
+        // block "Next" when the auto-computed lease is expired / this-year.
+        if (!(await confirmIfLeaseWillExpireSoon(getIntermentField()))) return;
 
         oldModeSnapshot = readAllFormFields();
 
@@ -2757,7 +2834,7 @@ const ReserveBurialModal = (() => {
         refreshRemarksHint();
     }
 
-    function handleSubmit(event) {
+    async function handleSubmit(event) {
         event.preventDefault();
 
         if (submissionSucceeded) {
@@ -2809,6 +2886,8 @@ const ReserveBurialModal = (() => {
             intermentEl?.focus();
             return;
         }
+
+        if (!(await confirmIfLeaseWillExpireSoon(intermentEl))) return;
 
         const assistRaw = modalEl.querySelector("#assistance_type")?.value || "";
         let assistance = "Other";

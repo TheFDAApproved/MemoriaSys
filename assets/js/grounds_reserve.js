@@ -20,7 +20,7 @@
         requestId: 0,
     };
 
-    // DOM references 
+    // DOM references
     const els = {
         tbody: document.getElementById("reservation"),
         noData: document.getElementById("reservation_no_data"),
@@ -32,17 +32,14 @@
         prevBtn: document.getElementById("prev_page_btn"),
         nextBtn: document.getElementById("next_page_btn"),
         carouselTrack: document.getElementById("carousel_track"),
-        carouselViewport: document.getElementById("carousel_viewport"),
     };
 
-    // Stop if the table body is missing - nothing else can work
     if (!els.tbody) {
         console.error("[grounds_reserve.js] Target tbody #reservation not found.");
         return;
     }
 
     // Data helpers
-    // Converts a raw API item [nested or flat] into a flat shape for rendering
     function flattenItem(raw) {
         if (!raw || typeof raw !== "object") return null;
 
@@ -53,19 +50,53 @@
             ? raw.interment_id != null
             : !!(i && i.interment_id != null);
 
-        const pick = (obj, key) => (obj && obj[key] != null ? obj[key] : null);
+        const pickVal = (obj, key) => (obj && obj[key] != null ? obj[key] : null);
 
         return {
             type: raw.type || null,
-            grave_id: pick(g, "grave_id"),
-            grave_code: pick(g, "grave_code"),
-            block_name: pick(g, "block_name"),
-            grave_status: pick(g, "grave_status"),
+
+            grave_id: pickVal(g, "grave_id"),
+            grave_code: pickVal(g, "grave_code"),
+            row_num: pickVal(g, "row_num"),
+            col_num: pickVal(g, "col_num"),
+            grave_status: pickVal(g, "grave_status"),
+            grave_remarks: pickVal(g, "grave_remarks"),
+            block_id: pickVal(g, "block_id"),
+            block_name: pickVal(g, "block_name"),
+            block_type: pickVal(g, "block_type"),
+
+            interment_id: hasI ? i.interment_id : null,
+            control_number: hasI ? i.control_number : null,
+            deceased_name: hasI ? i.deceased_name : null,
+            deceased_sex: hasI ? i.deceased_sex : null,
+            last_known_address: hasI ? i.last_known_address : null,
+            death_certificate: hasI ? i.death_certificate : null,
+            deceased_date_of_birth: hasI ? i.deceased_date_of_birth : null,
+            deceased_date_of_death: hasI ? i.deceased_date_of_death : null,
+            current_grave_id: hasI ? i.current_grave_id : null,
+            contact_person_name: hasI ? i.contact_person_name : null,
+            contact_person_phone_number: hasI ? i.contact_person_phone_number : null,
+            contact_person_email: hasI ? i.contact_person_email : null,
+            contact_person_address: hasI ? i.contact_person_address : null,
+            contact_person_address_barangay: hasI ? i.contact_person_address_barangay : null,
+            assistance_type: hasI ? i.assistance_type : null,
+            burial_permit_number: hasI ? i.burial_permit_number : null,
+            burial_permit_date: hasI ? i.burial_permit_date : null,
+            transfer_permit_number: hasI ? i.transfer_permit_number : null,
+            transfer_permit_issued_by: hasI ? i.transfer_permit_issued_by : null,
+            transfer_permit_date: hasI ? i.transfer_permit_date : null,
+            exhumation_permit_number: hasI ? i.exhumation_permit_number : null,
+            exhumation_permit_date: hasI ? i.exhumation_permit_date : null,
+            date_buried: hasI ? i.date_buried : null,
+            date_exhumed: hasI ? i.date_exhumed : null,
+            burial_clearance_date: hasI ? i.burial_clearance_date : null,
             lease_expiration_date: hasI ? i.lease_expiration_date : null,
+            interment_status: hasI ? (i.interment_status || i.status) : null,
+            interment_remarks: hasI ? (i.interment_remarks || i.remarks) : null,
         };
     }
 
-    // Returns the display label for a status type
+    // Returns the display label for a status type (used by the status pill)
     function getStatusLabel(type) {
         switch (type) {
             case "vacant":
@@ -90,7 +121,6 @@
             .replace(/'/g, "&#39;");
     };
 
-    // Formats a date string into a readable date, or falls back to "-"
     const formatDate = (value) => {
         if (!value) return "-";
         const d = new Date(value);
@@ -102,10 +132,29 @@
         });
     };
 
+    // Prefers interment remarks, falls back to grave remarks
+    const getRemarks = (item) => {
+        if (item.interment_remarks && String(item.interment_remarks).trim() !== "") {
+            return item.interment_remarks;
+        }
+        if (item.grave_remarks && String(item.grave_remarks).trim() !== "") {
+            return item.grave_remarks;
+        }
+        return "";
+    };
+
+    // Renders the contact number as plain text [no SMS link in the grounds view]
+    function renderPhoneCell(item) {
+        const raw = item ? item.contact_person_phone_number : "";
+        if (raw === null || raw === undefined) return "-";
+        const s = String(raw).trim();
+        if (s === "") return "-";
+        return escapeHtml(s);
+    }
+
     // Error handling
     const GENERIC_ERROR = "Something went wrong. Please try again.";
 
-    // Returns true if a message looks like a raw technical error
     const looksRawMessage = (text) => {
         if (!text) return true;
         const t = String(text).trim();
@@ -131,7 +180,6 @@
         return false;
     };
 
-    // Shows an alert through the global alert helper, or logs as a fallback
     function notify(kind, message) {
         if (!message) return;
         const rawText = String(message);
@@ -155,7 +203,6 @@
         else console.log("[grounds_reserve.js]", rawText);
     }
 
-    // Warns the user that the search term is shorter than the minimum length
     function warnSearchTooShort(value) {
         const min = MIN_SEARCH_LENGTH;
         const len = String(value || "").trim().length;
@@ -167,7 +214,6 @@
     }
 
     // Search clear button
-    // Injects the CSS for the clear-search button once
     function injectSearchClearStyles() {
         if (document.getElementById("groundsReserveSearchStyles")) return;
         const style = document.createElement("style");
@@ -217,7 +263,6 @@
 
     let searchClearBtn = null;
 
-    // Adds a clear (x) button inside the search input
     function setupSearchClearButton() {
         const input = els.searchInput;
         if (!input) return;
@@ -242,14 +287,10 @@
         searchClearBtn.title = "Clear search";
         searchClearBtn.innerHTML = '<i class="fas fa-times"></i>';
 
-        const updateVisibility = () => {
-            searchClearBtn.classList.toggle("is-visible", input.value.length > 0);
-        };
-
         searchClearBtn.addEventListener("click", () => {
             const hadSearch = state.search !== "";
             input.value = "";
-            updateVisibility();
+            toggleSearchClear("");
             if (hadSearch) {
                 state.search = "";
                 state.page = 1;
@@ -258,14 +299,21 @@
             input.focus();
         });
 
-        input.addEventListener("input", updateVisibility);
+        input.addEventListener("input", () => toggleSearchClear(input.value));
 
         parent.appendChild(searchClearBtn);
-        updateVisibility();
+        toggleSearchClear(input.value);
+    }
+
+    function toggleSearchClear(value) {
+        if (!searchClearBtn) return;
+        searchClearBtn.classList.toggle(
+            "is-visible",
+            String(value || "").length > 0,
+        );
     }
 
     // Loading and state helpers
-    // Toggles loading styles and disables navigation while busy
     const setLoading = (isLoading) => {
         state.loading = isLoading;
 
@@ -278,14 +326,12 @@
             els.nextBtn.disabled = isLoading || state.page >= state.totalPages;
     };
 
-    // Shows the "No data found" message inside the table area
     function showEmptyState() {
         if (!els.noData) return;
         els.noData.innerHTML = '<i class="fas fa-inbox"></i> No data found';
         els.noData.style.display = "";
     }
 
-    // Shows an error message inside the table area
     function showError(message) {
         if (!els.noData) return;
         const display =
@@ -295,7 +341,6 @@
     }
 
     // Fetching data
-    // Requests burial spaces from the API using the current state
     async function fetchSpaces() {
         if (state.controller) state.controller.abort();
         state.controller = new AbortController();
@@ -356,17 +401,19 @@
             state.items = [];
             state.totalPages = 1;
             state.totalRecords = 0;
-            renderRows();
-            renderPagination();
+            render();
             showError(loadError.message || "Failed to load burial spaces.");
         } else {
-            renderRows();
-            renderPagination();
+            render();
         }
     }
 
     // Rendering
-    // Builds the table rows from the current items
+    function render() {
+        renderRows();
+        renderPagination();
+    }
+
     function renderRows() {
         els.tbody.innerHTML = "";
 
@@ -390,18 +437,29 @@
             tr.dataset.graveId = item.grave_id;
             tr.dataset.type = item.type;
 
-            const blockCell = escapeHtml(item.block_name || "-");
-            const graveCodeCell = escapeHtml(item.grave_code || "-");
+            const nameCell = escapeHtml(item.deceased_name || "-");
+
+            const blockParts = [item.block_name, item.grave_code].filter(Boolean);
+            const blockCell = blockParts.length
+                ? escapeHtml(blockParts.join(" - "))
+                : "-";
+
             const expirationCell = formatDate(item.lease_expiration_date);
+            const contactPerson = escapeHtml(item.contact_person_name || "-");
+            const phoneCell = renderPhoneCell(item);
+            const remarksCell = escapeHtml(getRemarks(item) || "-");
 
             const statusLabel = getStatusLabel(item.type);
             const statusClass = `statusPill status-${item.type || "unknown"}`;
 
             tr.innerHTML = `
-                <td>${blockCell}</td>
-                <td>${graveCodeCell}</td>
-                <td>${expirationCell}</td>
                 <td><span class="${statusClass}">${escapeHtml(statusLabel)}</span></td>
+                <td>${nameCell}</td>
+                <td>${blockCell}</td>
+                <td>${expirationCell}</td>
+                <td>${contactPerson}</td>
+                <td>${phoneCell}</td>
+                <td class="remarksCell">${remarksCell}</td>
             `;
 
             fragment.appendChild(tr);
@@ -410,7 +468,6 @@
         els.tbody.appendChild(fragment);
     }
 
-    // Draws the page number buttons around the current page
     function renderPagination() {
         els.currentPageLabel.textContent = state.page;
         els.totalPagesLabel.textContent = state.totalPages;
@@ -442,7 +499,6 @@
         }
     }
 
-    // Creates a single page number button
     function makePageBtn(pageNum) {
         const btn = document.createElement("button");
         btn.type = "button";
@@ -454,7 +510,6 @@
         return btn;
     }
 
-    // Creates an ellipsis span used when page numbers are skipped
     function makeEllipsis() {
         const span = document.createElement("span");
         span.className = "pageEllipsis";
@@ -464,7 +519,6 @@
     }
 
     // Page navigation
-
     function goToPage(page) {
         const target = Math.min(Math.max(1, page), state.totalPages);
         if (target === state.page || state.loading) return;
@@ -476,7 +530,6 @@
     let searchTimer = null;
 
     if (els.searchInput) {
-        // Debounced search as the user types
         els.searchInput.addEventListener("input", () => {
             clearTimeout(searchTimer);
             searchTimer = setTimeout(() => {
@@ -500,7 +553,6 @@
             }, SEARCH_DEBOUNCE_MS);
         });
 
-        // Enter key triggers an immediate search
         els.searchInput.addEventListener("keydown", (event) => {
             if (event.key !== "Enter") return;
             event.preventDefault();
@@ -550,10 +602,50 @@
         els.nextBtn.addEventListener("click", () => goToPage(state.page + 1));
     }
 
-    // Initialization
+    // Public API for other scripts
+    window.GroundsReserveTable = {
+        refresh: () => fetchSpaces(),
+        reload: () => fetchSpaces(),
+        setStatus(status) {
+            state.status = status || "all";
+            if (els.statusFilter) els.statusFilter.value = state.status;
+            state.page = 1;
+            return fetchSpaces();
+        },
+        setSearch(term) {
+            state.search = String(term || "").trim();
+            if (els.searchInput) els.searchInput.value = state.search;
+            toggleSearchClear(state.search);
+            state.page = 1;
+            return fetchSpaces();
+        },
+        goToPage,
+        getItem(graveId) {
+            return (
+                state.items.find(
+                    (row) => Number(row.grave_id) === Number(graveId),
+                ) || null
+            );
+        },
+        getState() {
+            return { ...state };
+        },
+    };
 
+    // Initialization
     injectSearchClearStyles();
     setupSearchClearButton();
+
+    if (els.statusFilter && els.statusFilter.value) {
+        state.status = els.statusFilter.value || "all";
+    }
+    if (els.searchInput && els.searchInput.value) {
+        const v = els.searchInput.value.trim();
+        if (v.length === 0 || v.length >= MIN_SEARCH_LENGTH) state.search = v;
+        toggleSearchClear(v);
+    }
+
     if (els.noData) els.noData.style.display = "none";
+
     fetchSpaces();
 })();

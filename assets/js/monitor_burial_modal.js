@@ -428,6 +428,12 @@ const MonitorBurialModal = (() => {
         return `${r.getFullYear()}-${String(r.getMonth() + 1).padStart(2, '0')}-${String(r.getDate()).padStart(2, '0')}`;
     }
 
+    function todayISO() {
+        const now = new Date();
+        const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+        return local.toISOString().split('T')[0];
+    }
+
     function getIntermentField() {
         if (!modalEl) return null;
         for (const id of INTERMENT_FIELD_IDS) {
@@ -451,6 +457,41 @@ const MonitorBurialModal = (() => {
         if (!i || !e) return;
         const raw = (i.value || '').trim();
         e.value = raw ? addYearsISO(raw, LEASE_YEARS) : '';
+    }
+
+    // Asks the user to confirm when the auto-computed lease expiration is already in the past, or falls within the current calendar year.
+    async function confirmIfLeaseWillExpireSoon(intermentEl) {
+        if (!intermentEl) return true;
+
+        const dateBuried = (intermentEl.value || '').trim();
+        if (!dateBuried) return true;
+
+        recalcExpirationFromInterment();
+        const expirationDate = (getExpirationField()?.value || '').trim();
+        if (!expirationDate) return true;
+
+        const today = todayISO();
+        const expiredToday = expirationDate <= today;
+        const expiresThisYear = expirationDate.slice(0, 4) === today.slice(0, 4);
+        if (!expiredToday && !expiresThisYear) return true;
+
+        const message = expiredToday
+            ? `The lease would expire on ${expirationDate}, which is already in the past. Continue anyway?`
+            : `The lease would expire on ${expirationDate}, which is within this year. Continue anyway?`;
+
+        let proceed;
+        if (typeof window.confirm_ui === 'function') {
+            proceed = await window.confirm_ui(message, {
+                title: 'Confirm Date of Interment',
+                confirmText: 'Yes, continue',
+                cancelText: 'Change date',
+            });
+        } else {
+            proceed = window.confirm(message);
+        }
+
+        if (!proceed) intermentEl.focus();
+        return proceed;
     }
 
     function ensureLocationHeader() {
@@ -1684,6 +1725,9 @@ const MonitorBurialModal = (() => {
             return;
         }
 
+        // block "Next" when the auto-computed lease is expired / this-year.
+        if (!(await confirmIfLeaseWillExpireSoon(getIntermentField()))) return;
+
         recalcExpirationFromInterment();
         await enterNewStep();
     }
@@ -1821,6 +1865,9 @@ const MonitorBurialModal = (() => {
             warn('Deceased name is required.');
             return;
         }
+
+        // NEW: block "Save" when the auto-computed lease is expired / this-year.
+        if (!(await confirmIfLeaseWillExpireSoon(getIntermentField()))) return;
 
         const payload = buildPayload();
 
