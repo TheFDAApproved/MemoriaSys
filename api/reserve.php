@@ -44,14 +44,10 @@
 // status is Active and decided by old_new_status
 // date_buried is historical
 // lease_expiration_date is historical
-//
 // ROLE SCOPING
 // ADMIN and OFFICE have full access, GET and POST
 // GROUNDS is view-only, GET only
-// for GROUNDS, sensitive interment data is redacted from responses, that is deceased identity, contacts, addresses, permits, certificates, and dates
-// for GROUNDS, search_term cannot be matched against those fields
-//
-// TIMESTAMPS
+// for GROUNDS, GET responses are identical to ADMIN and OFFICE, with no redaction
 // created_at and updated_at are maintained by the database
 // this file never writes them
 
@@ -130,21 +126,6 @@ $formatItem = function (array $row): array {
             'updated_at'                      => $row['interment_updated_at'],
         ] : null,
     ];
-};
-
-// Strip sensitive interment fields for GROUNDS but keep the response shape so the frontend stays the same
-// To show the deceased's name to grounds, add 'deceased_name' to $keep below
-$redactForGrounds = function (array $item): array {
-    if ($item['interment'] === null) {
-        return $item; // vacant grave, nothing to redact
-    }
-    $keep = ['interment_id', 'current_grave_id', 'status', 'lease_expiration_date'];
-    foreach ($item['interment'] as $k => $v) {
-        if (!in_array($k, $keep, true)) {
-            $item['interment'][$k] = null;
-        }
-    }
-    return $item;
 };
 
 // The two eligibility queries: one for vacant graves, one for single-occupant graves whose lease is ending
@@ -244,9 +225,6 @@ if ($method === 'GET') {
 
         if ($row) {
             $item = $formatItem($row);
-            if ($role === ROLE_GROUNDS) {
-                $item = $redactForGrounds($item);
-            }
             Response::success('Eligible grave retrieved', ['item' => $item]);
         } else {
             Response::error('Grave not found or not eligible for a reservation.', 404);
@@ -305,35 +283,29 @@ if ($method === 'GET') {
         $expiringSearchSQL = '';
         if ($searchTerm !== '') {
             $like = '%' . $searchTerm . '%';
-            if ($role === ROLE_GROUNDS) {
-                // Grounds may only search grave-side fields plus the lease date they can already see
-                // Matching against redacted interment columns would leak that a person exists by name, phone, or email
-                $cols = ['g.grave_code', 'g.status', 'g.remarks', 'b.block_name', 'b.block_type'];
-            } else {
-                $cols = [
-                    'i.control_number',
-                    'i.deceased_name',
-                    'i.deceased_sex',
-                    'i.last_known_address',
-                    'i.death_certificate',
-                    'i.contact_person_name',
-                    'i.contact_person_phone_number',
-                    'i.contact_person_email',
-                    'i.contact_person_address',
-                    'i.contact_person_address_barangay',
-                    'i.assistance_type',
-                    'i.burial_permit_number',
-                    'i.transfer_permit_number',
-                    'i.transfer_permit_issued_by',
-                    'i.exhumation_permit_number',
-                    'i.remarks',
-                    'g.grave_code',
-                    'g.status',
-                    'g.remarks',
-                    'b.block_name',
-                    'b.block_type',
-                ];
-            }
+            $cols = [
+                'i.control_number',
+                'i.deceased_name',
+                'i.deceased_sex',
+                'i.last_known_address',
+                'i.death_certificate',
+                'i.contact_person_name',
+                'i.contact_person_phone_number',
+                'i.contact_person_email',
+                'i.contact_person_address',
+                'i.contact_person_address_barangay',
+                'i.assistance_type',
+                'i.burial_permit_number',
+                'i.transfer_permit_number',
+                'i.transfer_permit_issued_by',
+                'i.exhumation_permit_number',
+                'i.remarks',
+                'g.grave_code',
+                'g.status',
+                'g.remarks',
+                'b.block_name',
+                'b.block_type',
+            ];
             $parts = [];
             foreach ($cols as $c) {
                 $parts[] = "$c LIKE ?";
@@ -343,25 +315,19 @@ if ($method === 'GET') {
             // Date search covers only the columns each role can actually see
             // convert_dates() returns empty arrays for plain text, so a text search adds nothing here
             $dateCriteria = convert_dates($searchTerm);
-            if ($role === ROLE_GROUNDS) {
-                $expiringDateCols = [
-                    'i.lease_expiration_date',
-                ];
-            } else {
-                $expiringDateCols = [
-                    'i.deceased_date_of_birth',
-                    'i.deceased_date_of_death',
-                    'i.burial_permit_date',
-                    'i.transfer_permit_date',
-                    'i.exhumation_permit_date',
-                    'i.date_buried',
-                    'i.date_exhumed',
-                    'i.burial_clearance_date',
-                    'i.lease_expiration_date',
-                    'i.created_at',
-                    'i.updated_at',
-                ];
-            }
+            $expiringDateCols = [
+                'i.deceased_date_of_birth',
+                'i.deceased_date_of_death',
+                'i.burial_permit_date',
+                'i.transfer_permit_date',
+                'i.exhumation_permit_date',
+                'i.date_buried',
+                'i.date_exhumed',
+                'i.burial_clearance_date',
+                'i.lease_expiration_date',
+                'i.created_at',
+                'i.updated_at',
+            ];
             foreach ($dateCriteria['exact_dates'] as $d) {
                 foreach ($expiringDateCols as $col) {
                     $parts[] = "DATE($col) = ?";
@@ -453,9 +419,6 @@ if ($method === 'GET') {
     $rows = $pageStmt->fetchAll(PDO::FETCH_ASSOC);
 
     $items = array_map($formatItem, $rows);
-    if ($role === ROLE_GROUNDS) {
-        $items = array_map($redactForGrounds, $items);
-    }
 
     $payload = [
         'pagination' => [
