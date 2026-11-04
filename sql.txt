@@ -1,6 +1,6 @@
--- DROP DATABASE memoria_db;
--- CREATE DATABASE memoria_db;
--- USE memoria_db;
+DROP DATABASE memoria_db;
+CREATE DATABASE memoria_db;
+USE memoria_db;
 
 --  CEMETERY DATABASE SCHEMA
 --
