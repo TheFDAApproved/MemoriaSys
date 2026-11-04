@@ -7,7 +7,7 @@ document.addEventListener('DOMContentLoaded', function () {
     var SHAKE_HIGHLIGHT_MS = 1500;
 
     // Time the login success message shows before redirecting
-    var LOGIN_SUCCESS_REDIRECT_MS = 3500;
+    var LOGIN_SUCCESS_REDIRECT_MS = 1000;
 
     // Gets the error message from a response, or returns the fallback
     function readErrorMessage(data, fallback) {
