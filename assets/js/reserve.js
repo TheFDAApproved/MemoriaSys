@@ -476,6 +476,20 @@
         renderPagination();
     }
 
+    // Returns the display label for a status type (used by the status pill)
+    function getStatusLabel(type) {
+        switch (type) {
+            case "vacant":
+                return "Available";
+            case "expiring":
+                return "Expiring";
+            case "expired":
+                return "Expired";
+            default:
+                return "-";
+        }
+    }
+
     function renderRows() {
         els.tbody.innerHTML = '';
 
@@ -501,6 +515,8 @@
             tr.classList.add('reserveRow', `type-${item.type || 'unknown'}`);
 
             const nameCell = escapeHtml(item.deceased_name || '-');
+            const statusClass = `statusPill status-${item.type || "unknown"}`;
+            const statusLabel = getStatusLabel(item.type);
 
             const blockParts = [item.block_name, item.grave_code].filter(Boolean);
             const blockCell = blockParts.length ? escapeHtml(blockParts.join(' - ')) : '-';
@@ -542,6 +558,7 @@
             const actionCell = `<div class="actions">${actionButtons}</div>`;
 
             tr.innerHTML = `
+        <td><span class="${statusClass}">${escapeHtml(statusLabel)}</span></td>
         <td>${nameCell}</td>
         <td>${blockCell}</td>
         <td>${expirationCell}</td>

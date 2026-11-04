@@ -888,3 +888,35 @@ body {
         flex: 1 1 100%;
     }
 }
+
+/* Status pill colors */
+.statusPill {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    white-space: nowrap;
+}
+
+.status-vacant {
+    background: #ecfdf5;
+    color: #047857;
+}
+
+.status-expiring {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.status-expired {
+    background: #fee2e2;
+    color: #b91c1c;
+}
+
+.status-unknown {
+    background: #f3f4f6;
+    color: #6b7280;
+}
