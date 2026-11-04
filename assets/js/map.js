@@ -1637,8 +1637,8 @@ const MAP = (() => {
       const cols = Math.max(0, parseInt($("fBc").value, 10) || 0);
       const blockType = $("fBt").value;
       const imageUrl = normalizeImageUrl($("fBImg").value);
-      const bw = cols > 0 ? cols * CELL : 20;
-      const bh = rows > 0 ? rows * CELL : 20;
+      const bw = 4 * CELL;
+      const bh = 4 * CELL;
       const { bx, by } = nextBlockPosition(bw, bh);
       const points = rectToPoints(bx, by, bw, bh);
       const payload = { block_name: name, block_type: blockType, image_link: imageUrl, coordinates: JSON.stringify(points), rows, cols };
