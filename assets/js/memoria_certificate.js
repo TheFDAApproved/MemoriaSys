@@ -1,87 +1,76 @@
-/**
- * Generates and prints a compact, single-page Memoria Certificate.
- * Cross-browser safe (Chrome, Firefox, Safari, Edge).
- * @param {number|string} id - The Interment ID or Record ID.
- */
 async function memoria_certificate(id) {
-  try {
-    // 1. Fetch data in parallel
-    const [recordRes, settingsRes] = await Promise.all([
-      fetch(`api/records/${id}`, { cache: "no-store" }),
-      fetch(`api/settings`, { cache: "no-store" }),
-    ]);
+    try {
+        const [recordRes, settingsRes] = await Promise.all([
+            fetch(`api/records/${id}`, { cache: "no-store" }),
+            fetch(`api/settings`, { cache: "no-store" }),
+        ]);
 
-    if (!recordRes.ok || !settingsRes.ok) {
-      throw new Error("Failed to fetch API data.");
-    }
+        if (!recordRes.ok || !settingsRes.ok) {
+            throw new Error("Failed to fetch API data.");
+        }
 
-    const recordJson = await recordRes.json();
-    const settingsJson = await settingsRes.json();
+        const recordJson = await recordRes.json();
+        const settingsJson = await settingsRes.json();
 
-    if (!recordJson.success || !recordJson.data.interments.length) {
-      alert("Interment record not found.");
-      return;
-    }
+        if (!recordJson.success || !recordJson.data.interments.length) {
+            alert("Interment record not found.");
+            return;
+        }
 
-    // 2. Parse Record Data (fallback to em-dash)
-    const record = recordJson.data.interments[0];
-    const val = (v) => (v !== null && v !== undefined && v !== "" ? v : "—");
+        const record = recordJson.data.interments[0];
+        const val = (v) => (v !== null && v !== undefined && v !== "" ? v : "—");
 
-    // 3. Parse Settings Data
-    const sMap = {};
-    if (settingsJson.success && Array.isArray(settingsJson.data)) {
-      settingsJson.data.forEach((s) => {
-        sMap[s.setting_key] = s.setting_value;
-      });
-    }
-    const cemeteryName =
-      (sMap["cemetery_name"] || "").trim() || "Mandaue City Public Cemetery";
+        const sMap = {};
+        if (settingsJson.success && Array.isArray(settingsJson.data)) {
+            settingsJson.data.forEach((s) => {
+                sMap[s.setting_key] = s.setting_value;
+            });
+        }
+        const cemeteryName =
+            (sMap["cemetery_name"] || "").trim() || "Mandaue City Public Cemetery";
 
-    // 4. Date Formatters
-    const formatDate = (dateStr) => {
-      if (!dateStr || dateStr === "-") return "—";
-      const d = new Date(dateStr);
-      if (Number.isNaN(d.getTime())) return dateStr;
-      return d.toLocaleDateString("en-US", {
-        year: "numeric",
-        month: "long",
-        day: "numeric",
-      });
-    };
+        const formatDate = (dateStr) => {
+            if (!dateStr || dateStr === "-") return "—";
+            const d = new Date(dateStr);
+            if (Number.isNaN(d.getTime())) return dateStr;
+            return d.toLocaleDateString("en-US", {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+            });
+        };
 
-    const today = new Date();
-    const day = today.getDate();
-    const getOrdinal = (n) => {
-      if (n > 3 && n < 21) return "th";
-      switch (n % 10) {
-        case 1:
-          return "st";
-        case 2:
-          return "nd";
-        case 3:
-          return "rd";
-        default:
-          return "th";
-      }
-    };
-    const month = today.toLocaleDateString("en-US", { month: "long" });
-    const year = today.getFullYear();
-    const issuedDateStr = `${day}${getOrdinal(day)} day of ${month}, ${year}`;
+        const today = new Date();
+        const day = today.getDate();
+        const getOrdinal = (n) => {
+            if (n > 3 && n < 21) return "th";
+            switch (n % 10) {
+                case 1:
+                    return "st";
+                case 2:
+                    return "nd";
+                case 3:
+                    return "rd";
+                default:
+                    return "th";
+            }
+        };
+        const month = today.toLocaleDateString("en-US", { month: "long" });
+        const year = today.getFullYear();
+        const issuedDateStr = `${day}${getOrdinal(day)} day of ${month}, ${year}`;
 
-    // 5. Derived / Combined fields
-    const contactAddress =
-      [record.contact_person_address, record.contact_person_address_barangay]
-        .filter(Boolean)
-        .join(", ") || "—";
+        const contactAddress =
+            [record.contact_person_address, record.contact_person_address_barangay]
+                .filter(Boolean)
+                .join(", ") || "—";
 
-    const remarksText =
-      [record.remarks, record.grave_remarks]
-        .map((r) => (r || "").trim())
-        .filter(Boolean)
-        .join(" • ") || "—";
+        const remarksText =
+            [record.remarks, record.grave_remarks]
+                .map((r) => (r || "").trim())
+                .filter(Boolean)
+                .join(" • ") || "—";
 
-    // 6. Permit rows — always shown, every field
-    const extraPermitRows = `
+        const extraPermitRows = `
       <span class="dataLabel">Transfer Permit No.</span>
       <span class="dataValue">${val(record.transfer_permit_number)}</span>
       <span class="dataLabel">Transfer Permit Date</span>
@@ -99,28 +88,26 @@ async function memoria_certificate(id) {
       <span class="dataValue span-3">${formatDate(record.date_exhumed)}</span>
     `;
 
-    // 7. Build signatories
-    const signatories = [1, 2, 3, 4]
-      .map((i) => ({
-        name: (sMap[`people_name_${i}`] || "").trim(),
-        title: (sMap[`people_title_${i}`] || "").trim(),
-      }))
-      .filter((p) => p.name !== "");
+        const signatories = [1, 2, 3, 4]
+            .map((i) => ({
+                name: (sMap[`people_name_${i}`] || "").trim(),
+                title: (sMap[`people_title_${i}`] || "").trim(),
+            }))
+            .filter((p) => p.name !== "");
 
-    const signatoryHtml = signatories.length
-      ? signatories
-        .map(
-          (p) => `
+        const signatoryHtml = signatories.length
+            ? signatories
+                .map(
+                    (p) => `
             <div class="sigContainer">
               <div class="sigName">${p.name}</div>
               <div class="sigTitle">${p.title}</div>
             </div>`,
-        )
-        .join("")
-      : "";
+                )
+                .join("")
+            : "";
 
-    // 8. Build HTML (NO auto-print script inside — parent drives the print)
-    const htmlContent = `
+        const htmlContent = `
       <!DOCTYPE html>
       <html lang="en">
       <head>
@@ -337,10 +324,9 @@ async function memoria_certificate(id) {
                   </p>
 
                   ${signatories.length
-        ? `<p class="certText sigIntro"><strong>Certified by:</strong></p>
+                ? `<p class="certText sigIntro"><strong>Certified by:</strong></p>
                          <div class="signatorySection">${signatoryHtml}</div>`
-        : ""
-      }
+                : ""}
 
                 </div>
               </td>
@@ -358,99 +344,90 @@ async function memoria_certificate(id) {
       </html>
     `;
 
-    // 9. Create hidden iframe — REAL dimensions, parked OFF-SCREEN
-    //    (0x0 iframes are ignored by Firefox's print pipeline)
-    const iframe = document.createElement("iframe");
-    iframe.setAttribute("aria-hidden", "true");
-    iframe.setAttribute("title", "Memoria Certificate Print Frame");
-    iframe.style.cssText =
-      "position:fixed;" +
-      "left:-10000px;" +
-      "top:0;" +
-      "width:8.5in;" +
-      "height:11in;" +
-      "border:0;" +
-      "visibility:hidden;";
-    document.body.appendChild(iframe);
+        const iframe = document.createElement("iframe");
+        iframe.setAttribute("aria-hidden", "true");
+        iframe.setAttribute("title", "Memoria Certificate Print Frame");
+        iframe.style.cssText =
+            "position:fixed;" +
+            "left:-10000px;" +
+            "top:0;" +
+            "width:8.5in;" +
+            "height:11in;" +
+            "border:0;" +
+            "visibility:hidden;";
+        document.body.appendChild(iframe);
 
-    let cleanedUp = false;
-    const cleanup = () => {
-      if (cleanedUp) return;
-      cleanedUp = true;
-      if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
-    };
-
-    // 10. Write content into the iframe
-    const doc = iframe.contentDocument || iframe.contentWindow.document;
-    if (!doc) throw new Error("Unable to access iframe document.");
-
-    doc.open();
-    doc.write(htmlContent);
-    doc.close();
-
-    // 11. Wait for images + fonts, then print
-    const waitForImages = () =>
-      new Promise((resolve) => {
-        const imgs = Array.from(doc.images || []);
-        if (imgs.length === 0) return resolve();
-        let pending = imgs.length;
-        const done = () => {
-          if (--pending <= 0) resolve();
+        let cleanedUp = false;
+        const cleanup = () => {
+            if (cleanedUp) return;
+            cleanedUp = true;
+            if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
         };
-        imgs.forEach((img) => {
-          if (img.complete) done();
-          else {
-            img.addEventListener("load", done, { once: true });
-            img.addEventListener("error", done, { once: true });
-          }
-        });
-        // Safety timeout in case an image hangs
-        setTimeout(resolve, 3000);
-      });
 
-    const waitForFonts = async () => {
-      try {
-        if (doc.fonts && doc.fonts.ready) await doc.fonts.ready;
-      } catch (_) {
-        /* ignore */
-      }
-    };
+        const doc = iframe.contentDocument || iframe.contentWindow.document;
+        if (!doc) throw new Error("Unable to access iframe document.");
 
-    await Promise.all([waitForImages(), waitForFonts()]);
+        doc.open();
+        doc.write(htmlContent);
+        doc.close();
 
-    // 12. Small buffer for layout to settle, then focus + print
-    await new Promise((r) => setTimeout(r, 250));
+        const waitForImages = () =>
+            new Promise((resolve) => {
+                const imgs = Array.from(doc.images || []);
+                if (imgs.length === 0) return resolve();
+                let pending = imgs.length;
+                const done = () => {
+                    if (--pending <= 0) resolve();
+                };
+                imgs.forEach((img) => {
+                    if (img.complete) done();
+                    else {
+                        img.addEventListener("load", done, { once: true });
+                        img.addEventListener("error", done, { once: true });
+                    }
+                });
+                setTimeout(resolve, 3000);
+            });
 
-    const win = iframe.contentWindow;
-    try {
-      win.focus();
-      win.print();
-    } catch (err) {
-      console.error("Iframe print failed, falling back to window print:", err);
-      // Last-resort fallback: open in a new tab-like window
-      const w = window.open("", "_blank");
-      if (w) {
-        w.document.write(htmlContent);
-        w.document.close();
-        w.focus();
-        w.print();
-      }
+        const waitForFonts = async () => {
+            try {
+                if (doc.fonts && doc.fonts.ready) await doc.fonts.ready;
+            } catch (_) {
+            }
+        };
+
+        await Promise.all([waitForImages(), waitForFonts()]);
+
+        await new Promise((r) => setTimeout(r, 250));
+
+        const win = iframe.contentWindow;
+        try {
+            win.focus();
+            win.print();
+        } catch (err) {
+            console.error("Iframe print failed, falling back to window print:", err);
+            const w = window.open("", "_blank");
+            if (w) {
+                w.document.write(htmlContent);
+                w.document.close();
+                w.focus();
+                w.print();
+            }
+        }
+
+        win.addEventListener("afterprint", cleanup, { once: true });
+        setTimeout(cleanup, 120000);
+    } catch (error) {
+        console.error("Error generating Memoria Certificate:", error);
+        if (typeof window.showAlertTOP === "function") {
+            window.showAlertTOP(
+                "An error occurred while generating the certificate. Please try again.",
+                "error",
+            );
+            return;
+        }
+        alert(
+            "An error occurred while generating the certificate. Please try again.",
+        );
     }
-
-    // 13. Cleanup — multiple fallbacks because onafterprint is unreliable
-    win.addEventListener("afterprint", cleanup, { once: true });
-    setTimeout(cleanup, 120000);
-  } catch (error) {
-    console.error("Error generating Memoria Certificate:", error);
-    if (typeof window.showAlertTOP === "function") {
-      window.showAlertTOP(
-        "An error occurred while generating the certificate. Please try again.",
-        "error",
-      );
-      return;
-    }
-    alert(
-      "An error occurred while generating the certificate. Please try again.",
-    );
-  }
 }
