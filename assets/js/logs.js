@@ -6,7 +6,7 @@
     const PER_PAGE = 10;
     const SEARCH_MIN_LEN = 3;
     const SEARCH_DEBOUNCE_MS = 350;
-    const PAGINATION_WINDOW = 5;
+    const PAGINATION_WINDOW = 3;
     const DEBUG = true;
 
     // Application state

@@ -7,7 +7,7 @@
         DEFAULT_LIMIT: 100,
         MIN_SEARCH_LENGTH: 3,
         SEARCH_DEBOUNCE_MS: 350,
-        PAGINATION_WINDOW: 5,
+        PAGINATION_WINDOW: 3,
         REQUEST_TIMEOUT_MS: 30000,
     };
 

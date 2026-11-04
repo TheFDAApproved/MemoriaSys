@@ -5,7 +5,7 @@
     const DEFAULT_LIMIT = 100;
     const MIN_SEARCH_LENGTH = 3;
     const SEARCH_DEBOUNCE_MS = 350;
-    const PAGINATION_WINDOW = 5;
+    const PAGINATION_WINDOW = 3;
 
     const state = {
         page: 1,
