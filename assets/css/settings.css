@@ -534,7 +534,6 @@ body {
         line-height: 1.4;
         color: #4b5563;
 
-        /* ✅ the fix */
         width: max-content;
         max-width: min(280px, calc(100vw - 32px));
 
