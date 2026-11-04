@@ -1,10 +1,8 @@
 -- DROP DATABASE memoria_db;
 -- CREATE DATABASE memoria_db;
 -- USE memoria_db;
--- sample only above, use your database name i guess, also in the config.php so....
---  =====================================================================
+
 --  CEMETERY DATABASE SCHEMA
---  =====================================================================
 --
 --  Three tables, three tenses:
 --
@@ -17,9 +15,8 @@
 --    placement_history   PAST.     Physical placements that happened.
 --                        Append-only.  Full snapshot before and after
 --                        each placement change.
---
+
 --  Lifecycle
---  ---------
 --    RESERVE.php
 --      Creates N (interment, status='Pending', no grave) and a reservation
 --      with reservation_state='Active'.  O's interments row is NOT touched.
@@ -32,15 +29,8 @@
 --                 sets state='Executed'.
 --      Cancel  -> atomic: soft-deletes N, sets state='Cancelled'.
 --                 O is NEVER touched.
---
---    RECORDS.php (Master File)
---      CRUD over current data.  Locks records and graves that are
---      referenced by an Active reservation.  Co-interment (multiple
---      Active occupants in one grave) is allowed here, never through
---      a reservation.
---
+
 --  Edits are NOT history
---  ---------------------
 --    placement_history records PHYSICAL PLACEMENTS only:
 --      Initial  - a body arrives in a grave (NULL -> grave)
 --      Move     - a body relocates (grave -> different grave)
@@ -49,9 +39,8 @@
 --    Pure field edits (name correction, contact update, permit added)
 --    do NOT produce history rows.  They only modify the live interments
 --    row.
---
+
 --  Reservations: two homes for two kinds of data
---  ---------------------------------------------
 --    Dedicated columns: the reservation's OWN fields — target grave,
 --      old occupant's destination and new status, permits for the move,
 --      notes, etc.  These have FK or CHECK constraints and belong in
@@ -63,26 +52,24 @@
 --      Never includes control_number, current_grave_id, status,
 --      date_buried, or lease_expiration_date (those are either locked
 --      or handled by dedicated columns above).
---
+
 --  Invariants
---  ----------
---    * Only one Active reservation may reference a given target grave.
---    * Only one Active reservation may reference a given old occupant.
---    * Only one Active reservation may reference a given incoming person.
---    * If old_interment_id is NULL, all old_new_* fields are NULL.
---    * If old_new_status = 'Inactive', old_new_grave_id must be NULL.
---    * old_new_grave_id must never equal target_grave_id.
---    * A person's current_grave_id respects chk_status_grave.
---    * placement_history is append-only: no updated_at, no deleted_at.
---  =====================================================================
+--    Only one Active reservation may reference a given target grave.
+--    Only one Active reservation may reference a given old occupant.
+--    Only one Active reservation may reference a given incoming person.
+--    If old_interment_id is NULL, all old_new_* fields are NULL.
+--    If old_new_status = 'Inactive', old_new_grave_id must be NULL.
+--    old_new_grave_id must never equal target_grave_id.
+--    A person's current_grave_id respects chk_status_grave.
+--    placement_history is append-only: no updated_at, no deleted_at.
 
 
---  ----------------------------------------------------------------------
 --  USERS (MUST BE FIRST – referenced by all other tables)
---  ----------------------------------------------------------------------
 CREATE TABLE users (
     user_id INT PRIMARY KEY AUTO_INCREMENT,
-    username VARCHAR(50) NOT NULL,
+
+    -- for case sensitive usernames
+    username VARCHAR(50) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
     role ENUM('Administrator', 'Office Staff', 'Grounds Staff') NOT NULL DEFAULT 'Grounds Staff',
     status ENUM('Verified', 'Unverified') NOT NULL DEFAULT 'Unverified',
     email VARCHAR(255) NOT NULL,
@@ -98,13 +85,11 @@ CREATE TABLE users (
     created_by INT NULL,
     updated_by INT NULL,
 
-    -- ------------------------------------------------------------------
     -- Generated "shadow" columns for soft-delete-aware uniqueness.
     -- They equal the real value when the row is ACTIVE (deleted_at IS NULL),
     -- and become NULL when the row is SOFT-DELETED. Because MySQL allows
     -- many NULLs in a UNIQUE index, only ACTIVE rows must be unique.
     -- You never write to these columns; they update automatically.
-    -- ------------------------------------------------------------------
     active_username VARCHAR(50)
         GENERATED ALWAYS AS (CASE WHEN deleted_at IS NULL THEN username ELSE NULL END) STORED,
     active_email VARCHAR(255)
@@ -121,11 +106,9 @@ CREATE TABLE users (
     FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
 
-INSERT INTO `users` (`user_id`, `username`, `role`, `status`, `email`, `phone_number`, `password_hash`, `name`, `session_token`, `created_at`, `updated_at`, `deleted_at`, `created_by`, `updated_by`) VALUES (NULL, 'admin', 'Administrator', 'Verified', 'admin@gmail.com', '+639111111111', '$2y$12$YtdLBOCGz5.WcnxtHGPBx.eg4yRaijZUBMOYuw9GVAxkp670BXW0y', 'Administrator', NULL, '2026-10-11 01:37:40', '2026-10-11 01:37:57', NULL, NULL, NULL);
+INSERT INTO `users` (`user_id`, `username`, `role`, `status`, `email`, `phone_number`, `password_hash`, `name`, `session_token`, `created_at`, `updated_at`, `deleted_at`, `created_by`, `updated_by`) VALUES (NULL, 'admin', 'Administrator', 'Verified', 'admin@gmail.com', '+639293456789', '$2y$12$YtdLBOCGz5.WcnxtHGPBx.eg4yRaijZUBMOYuw9GVAxkp670BXW0y', 'Administrator', NULL, '2026-10-11 01:37:40', '2026-10-11 01:37:57', NULL, NULL, NULL);
 
---  ----------------------------------------------------------------------
 --  BLOCKS (sections / areas)
---  ----------------------------------------------------------------------
 CREATE TABLE blocks (
     block_id INT AUTO_INCREMENT PRIMARY KEY,
     block_name VARCHAR(100) NOT NULL,
@@ -157,13 +140,15 @@ CREATE TABLE blocks (
     FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
 
-INSERT INTO `blocks` (`block_id`, `block_name`, `block_type`, `image_link`, `coordinates`, `rows`, `cols`, `rotation`, `remarks`, `created_at`, `updated_at`, `deleted_at`, `created_by`, `updated_by`) 
-VALUES (NULL, 'Santa Cecelia', 'Niche', NULL, '[{\"x\": 495.6913183279742, \"y\": 87.91201982651798}, {\"x\": 552.636655948553, \"y\": 87.91201982651798}, {\"x\": 552.636655948553, \"y\": 208.09720501170315}, {\"x\": 495.6913183279742, \"y\": 208.09720501170315}]', '5', '5', '0.000000', NULL, '2026-11-02 09:50:52', '2026-11-02 09:51:09', NULL, '1', '1');
+-- INSERT INTO `blocks` (`block_id`, `block_name`, `block_type`, `image_link`, `coordinates`, `rows`, `cols`, `rotation`, `remarks`, `created_at`, `updated_at`, `deleted_at`, `created_by`, `updated_by`, `active_block_name`) VALUES
+-- (1, 'Block A', 'Niche', 'https://lh3.googleusercontent.com/pw/AP1GczPm8PoMTq8qseByrs9OFdn1PQxXTjSVp2-4zdU_dPqfgbL_7MP2VHg7M9xO4oTsMxRpy5jAcK3Hs--jiOBX8-R44gjfW9s8BRhvWZDujo_Zl0hVw4CScO0tTzO3TDKZ4TWOiVxPEQD9pD5D8oIujUMj=w1380-h777-s-no-gm?authuser=0', '[{\"x\": 66, \"y\": 125}, {\"x\": 160, \"y\": 125}, {\"x\": 160, \"y\": 393}, {\"x\": 66, \"y\": 393}]', 26, 26, 0.000000, NULL, '2026-11-04 22:56:40', '2026-11-04 22:58:44', NULL, 1, 1, 'Block A'),
+-- (2, 'Block B', 'Niche', 'https://lh3.googleusercontent.com/pw/AP1GczNCs0UwooAs0ZcT4_LeawrsCIUoEI_ghJZWOdPHHNUVORPYh-2_8yk7iCuIBHigSImk2k8ZoMWvP_hS5WFZ0XqYZm9bM0KW7FPNvS3g2V8oUHTYhprFJ0xM4xZFOWNsfROTEHMeBbNjcW23BMCFRjbJ=w1380-h777-s-no-gm?authuser=0', '[{\"x\": 318, \"y\": 101}, {\"x\": 389, \"y\": 101}, {\"x\": 389, \"y\": 414}, {\"x\": 318, \"y\": 414}]', 26, 26, 0.000000, NULL, '2026-11-04 22:58:10', '2026-11-04 22:59:36', NULL, 1, 1, 'Block B'),
+-- (3, 'Block C', 'Niche', 'https://lh3.googleusercontent.com/pw/AP1GczO05pIrAMC-hAscxFlq1B_CubjwhGtLA9BUmmdOhqKpP7Y5_1Gr52I8i5yOLX2_EQA8HIA2t6v9Eq1YFWJhKDb05kZZiVmHCskVQJ1-Hb26RZISLdLmADsB6sh6Mhm3224PaTTcADVVzVFvwG47KCCF=w1380-h777-s-no-gm?authuser=0', '[{\"x\": 402, \"y\": 105}, {\"x\": 506, \"y\": 105}, {\"x\": 506, \"y\": 410}, {\"x\": 402, \"y\": 410}]', 26, 26, 0.000000, NULL, '2026-11-04 22:58:52', '2026-11-04 22:59:49', NULL, 1, 1, 'Block C');
 
---  ----------------------------------------------------------------------
+
 --  GRAVES (individual slots inside a block)
---      Status is manual: 'Vacant', 'Occupied', or 'Other'.
---  ----------------------------------------------------------------------
+--  Status is manual: 'Vacant', 'Occupied', or 'Other'.
+--  Grave_code: Block name-rowletter-colnumber
 CREATE TABLE graves (
     grave_id INT AUTO_INCREMENT PRIMARY KEY,
     block_id INT NOT NULL,
@@ -191,43 +176,13 @@ CREATE TABLE graves (
     FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE SET NULL,
     FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
--- Block name-rowletter-colnumber
-INSERT INTO `graves` (`grave_id`, `block_id`, `grave_code`, `row_num`, `col_num`, `status`, `remarks`, `created_at`, `updated_at`, `deleted_at`, `created_by`, `updated_by`) VALUES
-(1, 1, 'Santa Cecelia-A-1', 1, 1, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(2, 1, 'Santa Cecelia-A-2', 1, 2, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(3, 1, 'Santa Cecelia-A-3', 1, 3, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(4, 1, 'Santa Cecelia-A-4', 1, 4, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(5, 1, 'Santa Cecelia-A-5', 1, 5, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(6, 1, 'Santa Cecelia-B-1', 2, 1, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(7, 1, 'Santa Cecelia-B-2', 2, 2, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(8, 1, 'Santa Cecelia-B-3', 2, 3, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(9, 1, 'Santa Cecelia-B-4', 2, 4, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(10, 1, 'Santa Cecelia-B-5', 2, 5, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(11, 1, 'Santa Cecelia-C-1', 3, 1, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(12, 1, 'Santa Cecelia-C-2', 3, 2, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(13, 1, 'Santa Cecelia-C-3', 3, 3, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(14, 1, 'Santa Cecelia-C-4', 3, 4, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(15, 1, 'Santa Cecelia-C-5', 3, 5, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(16, 1, 'Santa Cecelia-D-1', 4, 1, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(17, 1, 'Santa Cecelia-D-2', 4, 2, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(18, 1, 'Santa Cecelia-D-3', 4, 3, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(19, 1, 'Santa Cecelia-D-4', 4, 4, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(20, 1, 'Santa Cecelia-D-5', 4, 5, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(21, 1, 'Santa Cecelia-E-1', 5, 1, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(22, 1, 'Santa Cecelia-E-2', 5, 2, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(23, 1, 'Santa Cecelia-E-3', 5, 3, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(24, 1, 'Santa Cecelia-E-4', 5, 4, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL),
-(25, 1, 'Santa Cecelia-E-5', 5, 5, 'Vacant', NULL, '2026-11-02 09:50:52', '2026-11-02 09:50:52', NULL, NULL, NULL);
 
---  ----------------------------------------------------------------------
 --  INTERMENTS (PRESENT — current state)
 --      Pending  = burial is not yet executed (not physically interred yet).
 --      Active   = in the cemetery.
 --      Inactive = was interred, now removed (moved to family, exhumed, etc.).
---
 --      Reservations live in the `reservations` table; this table only
 --      tracks where the body is *right now* via current_grave_id.
---  ----------------------------------------------------------------------
 CREATE TABLE interments (
     interment_id INT AUTO_INCREMENT PRIMARY KEY,
 
@@ -303,27 +258,21 @@ CREATE TABLE interments (
 );
 
 
---  ----------------------------------------------------------------------
 --  RESERVATIONS (FUTURE — planned data)
---  ----------------------------------------------------------------------
 --  A reservation is a proposal to place an incoming person (N) into a
 --  target grave (G), possibly displacing an existing occupant (O).
---
 --  Reservation lifecycle (reservation_state):
 --    Active     Waiting for Confirm or Cancel. Frozen after creation.
 --    Executed   Movement applied. Kept forever for audit.
 --    Cancelled  N discarded, O untouched. Kept forever for audit.
---
 --  Editability:
 --    Everything on the reservation is set once, at creation. Nothing is
 --    edited after that. To change a reservation, cancel it and create a
 --    new one.
---
 --  Uniqueness:
 --    Only one Active reservation may target a given grave, reference a
 --    given old occupant, or reference a given incoming person. Enforced
 --    with shadow columns keyed on reservation_state = 'Active'.
---
 --  Old-occupant fields (old_new_*):
 --    Only set when old_interment_id IS NOT NULL.
 --    old_new_grave_id = O's destination grave. NULL means "no grave"
@@ -332,14 +281,12 @@ CREATE TABLE interments (
 --    old_new_status   = O's new status: Active or Inactive.
 --    old_new_grave_id must never equal target_grave_id (no co-interment
 --      through a reservation).
---
 --  old_edited_fields (JSON):
 --    Staged biography edits to O as a DIFF — only fields the user
 --    actually changed.  Applied to O's interments row on Confirm in the
 --    same UPDATE as the move.  Discarded on Cancel.
 --    Never contains control_number, current_grave_id, status,
 --    date_buried, or lease_expiration_date.
---  ----------------------------------------------------------------------
 CREATE TABLE reservations (
     reservation_id INT AUTO_INCREMENT PRIMARY KEY,
 
@@ -426,35 +373,28 @@ CREATE TABLE reservations (
 );
 
 
---  ----------------------------------------------------------------------
 --  PLACEMENT_HISTORY (PAST — append-only)
---  ----------------------------------------------------------------------
 --  Every change of a person's physical placement produces one row here.
 --  Field edits (name correction, contact change, permit added) do NOT
 --  produce history rows — they only modify the live interments row.
---
 --  Snapshot semantics:
 --    snapshot_before  = full JSON copy of the interment row before the
 --                       placement change.
 --    snapshot_after   = full JSON copy of the interment row after the
 --                       placement change.
---
 --  Cross-referencing:
 --    related_interment_id  = the other person involved in the same
 --                            reservation operation (O ↔ N). NULL for
 --                            manual moves.
 --    reservation_id        = the reservation that caused the change.
 --                            NULL for manual moves.
---
 --  Append-only: no updated_at, no updated_by, no deleted_at. Rows are
 --  never edited or removed. Corrections are made by inserting a
 --  compensating row.
---
 --  Event types (physical placements only):
 --    Initial   from_grave_id IS NULL,     to_grave_id IS NOT NULL
 --    Move      from_grave_id IS NOT NULL, to_grave_id IS NOT NULL
 --    Removal   from_grave_id IS NOT NULL, to_grave_id IS NULL
---  ----------------------------------------------------------------------
 CREATE TABLE placement_history (
     history_id INT AUTO_INCREMENT PRIMARY KEY,
 
@@ -486,9 +426,7 @@ CREATE TABLE placement_history (
 );
 
 
---  ----------------------------------------------------------------------
 --  SETTINGS
---  ----------------------------------------------------------------------
 CREATE TABLE settings (
     setting_id INT AUTO_INCREMENT PRIMARY KEY,
     setting_key VARCHAR(50) NOT NULL,
@@ -531,12 +469,11 @@ INSERT INTO `settings` (`setting_id`, `setting_key`, `setting_value`, `descripti
 (32, 'people_name_1', 'Ms. Rosemarie U. Chavez', 'Report Signatory 1 Name', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
 (33, 'people_title_1', 'OIC, Department of General Services', 'Report Signatory 1 Title', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
 (34, 'people_name_2', 'Ar. Maria Aileen A. Paragsa', 'Report Signatory 2 Name', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
-(35, 'people_title_2', 'Admin Division Chief', 'Report Signatory 2 Title', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1);
+(35, 'people_title_2', 'Admin Division Chief', 'Report Signatory 2 Title', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
+(36, 'cemetery_map_images', 'cemetery_map_image.png', 'For the cemetery map backgound image', '2026-11-04 22:50:13', '2026-11-04 22:50:13', NULL, '1', '1');
 
 
---  ----------------------------------------------------------------------
 --  PAYMENTS
---  ----------------------------------------------------------------------
 CREATE TABLE payments (
     payment_id INT AUTO_INCREMENT PRIMARY KEY,
     reference_number VARCHAR(100) NOT NULL,
@@ -574,11 +511,9 @@ CREATE TABLE payments (
     FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE SET NULL,
     FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
-INSERT INTO `payments` (`payment_id`, `reference_number`, `payment_channel`, `amount`, `deceased_name`, `payers_phone_number`, `payers_email`, `payers_name`, `purpose`, `image_link`, `confirmed_office_staff`, `confirmed_ground_staff`, `remarks_payer`, `remarks_office`, `remarks_grounds`, `created_at`, `updated_at`, `deleted_at`, `created_by`, `updated_by`) VALUES (NULL, '2323', 'GCash', '400.00', 'Mr. Fran', '+639201234567', 'msfran@gmail.com', 'Ms. Fran', 'Pasuga / Lighting', 'https://memoriasys.test/api/images/2323_imagepayments_MandaueBackgroundpng.png', NULL, NULL, 'For pasuga', NULL, NULL, '2026-11-02 09:10:39', '2026-11-02 09:10:39', NULL, NULL, NULL);
+INSERT INTO `payments` (`payment_id`, `reference_number`, `payment_channel`, `amount`, `deceased_name`, `payers_phone_number`, `payers_email`, `payers_name`, `purpose`, `image_link`, `confirmed_office_staff`, `confirmed_ground_staff`, `remarks_payer`, `remarks_office`, `remarks_grounds`, `deleted_at`, `created_by`, `updated_by`) VALUES (NULL, '0046876781312', 'GCash', '70.00', 'Jean Aika R. Canoy', '+639154570385', 'jeanaikacanoy224@gmail.com', 'John Anthony O. Tabigne', 'Pasuga / Lighting', 'https://lh3.googleusercontent.com/pw/AP1GczNF6uNbzhA1JChzgLOwuBHO_TNKihx3ollL2QV6o6v2L1LnMV2E2fXNbASlQ_6jgHrsNrbSWLkPtXE3VtryS8StLa2_h5o5Sk33khOu5HK8winPmVKK0GCaZOI4244kEAZ2Vt_8Dp4X-Trw-e37tKUV=w395-h878-s-no-gm?authuser=0', NULL, NULL, 'For pasuga', NULL, NULL, NULL, NULL, NULL);
 
---  ----------------------------------------------------------------------
 --  TABLE COMMENTS
---  ----------------------------------------------------------------------
 ALTER TABLE users             COMMENT = 'System users with role-based access';
 ALTER TABLE blocks            COMMENT = 'Cemetery sections/areas';
 ALTER TABLE graves            COMMENT = 'Individual burial slots inside a block';
@@ -589,10 +524,8 @@ ALTER TABLE settings          COMMENT = 'System configuration key-value store';
 ALTER TABLE payments          COMMENT = 'Payment records with dual-approval workflow';
 
 
---  ----------------------------------------------------------------------
 --  INDEXES
---  ----------------------------------------------------------------------
-
+-- to improves the speed of data by creating a reference instead of scanning every row
 -- Users
 CREATE INDEX idx_users_deleted_at     ON users(deleted_at);
 CREATE INDEX idx_users_session_token  ON users(session_token(100));  -- For fast single-session lookup
