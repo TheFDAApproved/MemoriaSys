@@ -1,6 +1,6 @@
 # Memoria: Mandaue City Public Cemetery Management System
 
-**Memoria** (**MemoriaSys**) is a comprehensive web-based cemetery management and spatial locator system developed for the **Mandaue City Public Cemetery** under the **Mandaue City Department of General Services (DGS) – Cemetery Affairs Section**. 
+**Memoria** is a comprehensive web-based cemetery management and spatial locator system developed for the **Mandaue City Public Cemetery** under the **Mandaue City Department of General Services (DGS) – Cemetery Affairs Section**. 
 
 Built with lightweight, dependency-free frontend technologies and a modular PHP backend, Memoria streamlines burial record management, plot reservations, lease expiration monitoring, payment tracking, and public grave searching.
 
@@ -28,7 +28,7 @@ Built with lightweight, dependency-free frontend technologies and a modular PHP 
 ## Repository Structure
 
 ```text
-MemoriaSys/
+memoria/
 ├── api/                        # Backend PHP API endpoints
 │   ├── jwt/                    # PHP-JWT authentication library
 │   ├── auth.php                # Login, signup, and token verification
@@ -92,7 +92,7 @@ MemoriaSys/
 ## Installation & Local Setup
 
 1. **Clone the Repository**
-   Place the project folder inside your local web server directory (such as **C:/laragon/www/MemoriaSys** for Laragon or **C:/xampp/htdocs/MemoriaSys** for XAMPP).
+   Place the project folder inside your local web server directory (such as **C:/laragon/www/memoria** for Laragon or **C:/xampp/htdocs/memoria** for XAMPP).
 
 2. **Set Up the Database**
    * Open **phpMyAdmin** or your preferred MySQL client and create a new database.
@@ -108,7 +108,7 @@ MemoriaSys/
 
 4. **Launch the Application**
    * Start Apache and MySQL in Laragon, XAMPP, or your hosting control panel.
-   * Open your browser and navigate to your configured URL (such as **http://localhost/MemoriaSys/** or **http://memoriasys.test**).
+   * Open your browser and navigate to your configured URL (such as **http://localhost/memoria/** or **http://memoria.test**).
 
 ## Development Team
 
