@@ -533,10 +533,9 @@ body {
         font-size: 12px;
         line-height: 1.4;
         color: #4b5563;
-
         width: max-content;
         max-width: min(280px, calc(100vw - 32px));
-
+        white-space: normal;
         overflow-wrap: break-word;
         opacity: 0;
         visibility: hidden;
@@ -550,7 +549,7 @@ body {
         }
 
         a {
-            color: var(--mainColor, #0f172a);
+            color: var(--mainColor);
             font-weight: 500;
             text-decoration: none;
             text-underline-offset: 2px;
