@@ -1641,6 +1641,7 @@ async function loadReportBranding() {
         // Always apply whatever was loaded [or fallbacks] to the UI
         bindReportSignatories(settingsMap);
         applyBarangayOptions();
+        updateGenerationDate();
     }
 }
 
@@ -1767,11 +1768,12 @@ document.addEventListener("DOMContentLoaded", () => {
         initialContainer.classList.remove("is-loading");
     }
 
-    loadReportBranding();
     loadFilterOptions();
 
-    const reportLoad = switchReport("interments");
-    reportLoad.catch((err) => console.error("Initial report load failed:", err));
+    loadReportBranding()
+        .catch((err) => console.warn("Branding load failed.", err))
+        .then(() => switchReport("interments"))
+        .catch((err) => console.error("Initial report load failed:", err));
 });
 
 // Print preparation
