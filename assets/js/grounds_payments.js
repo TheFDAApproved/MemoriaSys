@@ -455,14 +455,6 @@
         return btn;
     }
 
-    function buildVerifiedPill(title) {
-        const pill = document.createElement("span");
-        pill.className = "pmVerifiedPill";
-        pill.title = title || "Payment fully verified";
-        pill.innerHTML = '<i class="fas fa-circle-check"></i><span>Verified</span>';
-        return pill;
-    }
-
     // Renders the right-hand action cell depending on which tab is active
     function buildActionsCell(p) {
         const wrap = document.createElement("div");
@@ -478,7 +470,6 @@
                 ),
             );
         } else if (state.activeTab === "verified" && currentTabCanUndo()) {
-            wrap.appendChild(buildVerifiedPill("Payment fully verified"));
             wrap.appendChild(
                 makeIconBtn(
                     "fas fa-undo",
@@ -487,8 +478,6 @@
                     "Undo grounds verification (returns to Pending – Grounds)",
                 ),
             );
-        } else if (state.activeTab === "verified") {
-            wrap.appendChild(buildVerifiedPill("Payment fully verified"));
         }
 
         return wrap;

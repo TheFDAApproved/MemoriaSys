@@ -1155,13 +1155,6 @@
         return btn;
     }
 
-    function buildVerifiedPill(title) {
-        const pill = document.createElement("span");
-        pill.className = "pmVerifiedPill";
-        pill.title = title || "Payment fully verified";
-        pill.innerHTML = '<i class="fas fa-circle-check"></i><span>Verified</span>';
-        return pill;
-    }
 
     function buildActionsCell(p) {
         const wrap = document.createElement("div");
@@ -1170,7 +1163,6 @@
         const key = classifyStatus(p);
 
         if (key === "completed") {
-            wrap.appendChild(buildVerifiedPill("Payment fully verified"));
             wrap.appendChild(
                 makeIconBtn(
                     "fas fa-undo",

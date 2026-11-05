@@ -1174,15 +1174,6 @@
         return btn;
     }
 
-    // Green "Verified" pill shown once a payment is fully confirmed
-    function buildVerifiedPill(title) {
-        const pill = document.createElement("span");
-        pill.className = "pmVerifiedPill";
-        pill.title = title || "Payment fully verified";
-        pill.innerHTML = '<i class="fas fa-circle-check"></i><span>Verified</span>';
-        return pill;
-    }
-
     function buildActionsCell(p) {
         const wrap = document.createElement("div");
         wrap.className = "pmActionGroup";
@@ -1191,7 +1182,6 @@
 
         if (key === "completed") {
             // Fully verified. Undo is blocked because grounds already confirmed; the backend returns 409
-            wrap.appendChild(buildVerifiedPill("Payment fully verified"));
         } else if (key === "pending_grounds") {
             // Office confirmed; awaiting grounds. Office can still revert its own step while grounds has not confirmed
             wrap.appendChild(
