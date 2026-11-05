@@ -46,6 +46,7 @@ const ReserveBurialModal = (() => {
     let backBtn = null;
 
     let submissionSucceeded = false;
+    let savedActiveIntermentDate = null;
 
     function warn(message) {
         if (!message) return;
@@ -319,6 +320,47 @@ const ReserveBurialModal = (() => {
         if (!intermentInput || !expirationInput) return;
         const raw = (intermentInput.value || "").trim();
         expirationInput.value = raw ? addYearsISO(raw, LEASE_YEARS) : "";
+    }
+    
+    // Clears the Date of Interment (and derived lease expiration) when the old
+    // occupant goes Inactive, and restores the last known Active date when the
+    // status flips back to Active.
+    // Restore precedence:
+    //   1. The date the field held the last time it went Inactive (covers the
+    //      "edited first, then went Inactive" case).
+    //   2. The original date loaded from the record (covers the very first
+    //      Active -> Inactive transition).
+    function applyIntermentDateForStatus(isInactive) {
+        if (!modalEl) return;
+        const intermentEl = getIntermentField();
+        const expEl = getExpirationField();
+
+        if (isInactive) {
+            const current = (intermentEl?.value || "").trim();
+            if (current) {
+                savedActiveIntermentDate = current;
+            } else if (!savedActiveIntermentDate) {
+                savedActiveIntermentDate = sliceDate(
+                    oldOccupantOriginal?.date_buried || "",
+                );
+            }
+            if (intermentEl) intermentEl.value = "";
+            if (expEl) expEl.value = "";
+            return;
+        }
+
+        // Going back to Active: only restore if the field is currently empty
+        // (don't clobber anything the user typed while Active).
+        const current = (intermentEl?.value || "").trim();
+        if (!current) {
+            const restore =
+                savedActiveIntermentDate ||
+                sliceDate(oldOccupantOriginal?.date_buried || "");
+            if (intermentEl && restore) {
+                intermentEl.value = restore;
+                recalcExpirationFromInterment();
+            }
+        }
     }
 
     // If the Date of Interment was left identical to the original value, ask the user to confirm they don't want to update it.
@@ -783,6 +825,13 @@ const ReserveBurialModal = (() => {
         if (!statusSelect) return;
 
         const isInactive = statusSelect.value !== "Active";
+
+        // Only the old-occupant wizard step edits the status field, so this
+        // is the only place the clear/restore needs to run.
+        if (wizardMode === "old") {
+            applyIntermentDateForStatus(isInactive);
+        }
+
         toggleLocationFields(isInactive);
 
         if (wizardMode === "old") {
@@ -2589,6 +2638,7 @@ const ReserveBurialModal = (() => {
             oldTargetContext = null;
             wizardMode = null;
             submissionSucceeded = false;
+            savedActiveIntermentDate = null;
         }
 
         unlockFields();
@@ -3149,6 +3199,7 @@ const ReserveBurialModal = (() => {
         oldTargetContext = null;
 
         submissionSucceeded = false;
+        savedActiveIntermentDate = null;
 
         unlockFields();
         toggleLocationFields(false);

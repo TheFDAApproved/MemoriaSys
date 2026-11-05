@@ -12,6 +12,9 @@ const MonitorBurialModal = (() => {
     let oldModeSnapshot = null;
     let newModeSnapshot = null;
 
+    let savedActiveIntermentDate = null;
+
+
     let burialTypePlaceholderText = null;
 
     let blocksPromise = null;
@@ -459,6 +462,39 @@ const MonitorBurialModal = (() => {
         if (!i || !e) return;
         const raw = (i.value || '').trim();
         e.value = raw ? addYearsISO(raw, LEASE_YEARS) : '';
+    }
+
+    function applyIntermentDateForStatus(isInactive) {
+        if (!modalEl) return;
+        const intermentEl = getIntermentField();
+        const expEl = getExpirationField();
+
+        if (isInactive) {
+            const current = (intermentEl?.value || '').trim();
+            if (current) {
+                savedActiveIntermentDate = current;
+            } else if (!savedActiveIntermentDate) {
+                savedActiveIntermentDate = sliceDate(
+                    oldOccupantOriginal?.date_buried || '',
+                );
+            }
+            if (intermentEl) intermentEl.value = '';
+            if (expEl) expEl.value = '';
+            return;
+        }
+
+        // Going back to Active: only restore if the field is currently empty
+        // so we never clobber anything the user typed while Active.
+        const current = (intermentEl?.value || '').trim();
+        if (!current) {
+            const restore =
+                savedActiveIntermentDate ||
+                sliceDate(oldOccupantOriginal?.date_buried || '');
+            if (intermentEl && restore) {
+                intermentEl.value = restore;
+                recalcExpirationFromInterment();
+            }
+        }
     }
 
     // Asks the user to confirm when the auto-computed lease expiration is already in the past, or falls within the current calendar year.
@@ -997,6 +1033,11 @@ const MonitorBurialModal = (() => {
 
         const statusSelect = modalEl.querySelector('#status');
         if (!statusSelect) return;
+
+        // The status select only exists (and only matters) on the old-occupant
+        // step, so this is the only place the Date of Interment clear/restore
+        // needs to run.
+        applyIntermentDateForStatus(statusSelect.value !== 'Active');
 
         if (statusSelect.value !== 'Active') {
             const blockEl = modalEl.querySelector('#block');
@@ -1718,6 +1759,15 @@ const MonitorBurialModal = (() => {
         applyMode();
         updateWizardButtons();
 
+        // If the reservation says the old occupant is already Inactive, mirror
+        // that by clearing the Date of Interment so the field matches the
+        // status on first render. savedActiveIntermentDate is captured from
+        // whatever was just populated, so flipping back to Active later will
+        // restore it.
+        if (data.status === 'Inactive') {
+            applyIntermentDateForStatus(true);
+        }
+
         if (data.status === 'Active' && data.block) {
             const blockSelect = modalEl.querySelector('#block');
             const opt = blockSelect ? blockSelect.options[blockSelect.selectedIndex] : null;
@@ -2062,6 +2112,7 @@ const MonitorBurialModal = (() => {
         submissionSucceeded = false;
         oldModeSnapshot = null;
         newModeSnapshot = null;
+        savedActiveIntermentDate = null;
 
         oldOccupantOriginal = res.old_interment ? reservationToOldFields(res) : null;
         newOccupantOriginal = reservationToNewFields(res);
@@ -2115,6 +2166,7 @@ const MonitorBurialModal = (() => {
         selectedSlot = null;
         submissionSucceeded = false;
         wizardMode = null;
+        savedActiveIntermentDate = null;
         oldModeSnapshot = null;
         newModeSnapshot = null;
         oldOccupantOriginal = null;
