@@ -192,6 +192,39 @@ function resetPage(scope) {
     if (paginationState[scope]) paginationState[scope].page = 1;
 }
 
+// Disables the "Window (Days)" input when it would be ignored,
+// and shows a short reason in the existing hint <p>.
+function syncExpirationsDaysUI() {
+    const daysInput = document.getElementById("expirations-input-days");
+    const hint = document.getElementById("expirations-days-hint");
+    if (!daysInput) return;
+
+    const state = filterState.expirations || {};
+    const show = state.show || "";
+    const hasRange = Boolean(state.start_date || state.end_date);
+
+    let reason = "";
+    if (show === "expired") {
+        reason = "Not used when only expired leases are shown.";
+    } else if (hasRange) {
+        reason = "Ignored while a date range is active.";
+    }
+
+    daysInput.disabled = Boolean(reason);
+    daysInput.title = reason || "";
+
+    if (hint) {
+        if (reason) {
+            hint.textContent = reason;
+            hint.style.color = "#94a3b8";
+            hint.style.display = "block";
+        } else {
+            hint.textContent = "";
+            hint.style.display = "none";
+        }
+    }
+}
+
 // URL builder
 function buildReportUrl(scope) {
     const path = RESOURCE_PATHS[scope] || scope;
@@ -210,8 +243,17 @@ function buildReportUrl(scope) {
         }
         if (state.start_date) params.set("start_date", state.start_date);
         if (state.end_date) params.set("end_date", state.end_date);
-        if (state.days !== "" && state.days !== null && state.days !== undefined) {
-            params.set("days", state.days);
+
+        // days is only meaningful when the expiring bucket is included
+        // AND no date range is active
+        const includeExpiring = (show === "" || show === "expiring");
+        const hasRange = Boolean(state.start_date || state.end_date);
+        if (includeExpiring && !hasRange) {
+            const daysVal =
+                (state.days === "" || state.days === null || state.days === undefined)
+                    ? "30"
+                    : state.days;
+            params.set("days", daysVal);
         }
     } else {
         for (const [key, value] of Object.entries(state)) {
@@ -305,6 +347,7 @@ async function switchReport(reportId) {
     const panel = document.getElementById("filter-panel-" + reportId);
     if (panel) panel.classList.add("visible");
 
+    if (reportId === "expirations") syncExpirationsDaysUI();
     await loadReportData(reportId, { immediate: true });
 }
 
@@ -348,7 +391,7 @@ function validateDateRange(scope) {
 
 function validateExpirationDays() {
     const input = document.getElementById("expirations-input-days");
-    if (!input) return true;
+    if (!input || input.disabled) return true;
     const hintId = "expirations-days-hint";
 
     const raw = String(input.value).trim();
@@ -458,6 +501,7 @@ function toggleFilter(scope, pillName) {
     }
 
     resetPage(scope);
+    if (scope === "expirations") syncExpirationsDaysUI();
     scheduleReload(scope, pillName);
 }
 
@@ -470,6 +514,11 @@ function onFilterValueChange(scope, filterName, value) {
 
     // Any filter change goes back to page 1
     resetPage(scope);
+
+    if (scope === "expirations" &&
+        (filterName === "show" || filterName === "start_date" || filterName === "end_date")) {
+        syncExpirationsDaysUI();
+    }
 
     if (!validateAllFilters(scope)) return;
 
@@ -564,6 +613,7 @@ function clearAllFilters(scope) {
 
     hideAllHints(scope);
     resetPage(scope);
+    if (scope === "expirations") syncExpirationsDaysUI();
     loadReportData(scope);
 }
 
@@ -637,6 +687,7 @@ function buildAppliedFilterParts(scope) {
                 `Expiration date: ${formatDateRangeLabel(state.start_date, state.end_date)}`,
             );
         } else if (
+            state.show !== "expired" &&
             state.days !== "" &&
             state.days !== null &&
             state.days !== undefined

@@ -248,7 +248,7 @@
 
                     <div id="expirations-filter-days" class="filterControlBlock" data-filter="days">
                         <label class="paramLabel" for="expirations-input-days">
-                            Expiring within N days (0 = today only, max 365). Ignored when a date range is set.
+                            Expiring within N days (0 = today only, max 365). Used only for expiring leases and ignored while a date range is set.
                         </label>
                         <input id="expirations-input-days" type="number" min="0" max="365" step="1" class="inlineSelect" placeholder="30 (default)" oninput="onFilterValueChange('expirations', 'days', this.value)">
                         <p id="expirations-days-hint" style="display: none; color: #dc3545; font-size: 11.5px; margin: 4px 0 0;"></p>

@@ -429,6 +429,8 @@ function handle_lease_expirations(PDO $pdo): void
 
     $hasRange = ($startDate !== null || $endDate !== null);
 
+    $todayLit = "'" . date('Y-m-d') . "'";
+
     // Base filters (soft-delete + status + non-null expiration)
     // A date range narrows both buckets to that window
     $baseWhere = "i.status = 'Active' AND i.deleted_at IS NULL AND i.lease_expiration_date IS NOT NULL";
@@ -443,12 +445,12 @@ function handle_lease_expirations(PDO $pdo): void
         $params[':end_date'] = $endDate;
     }
 
-    $expiredClause = "i.lease_expiration_date < CURDATE()";
+    $expiredClause = "i.lease_expiration_date < $todayLit";
 
     // Expiring
     $expiringClause = $hasRange
-        ? "i.lease_expiration_date >= CURDATE()"
-        : "i.lease_expiration_date BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL {$days} DAY)";
+        ? "i.lease_expiration_date >= $todayLit"
+        : "i.lease_expiration_date BETWEEN $todayLit AND DATE_ADD($todayLit, INTERVAL {$days} DAY)";
 
     $bucketClauses = [];
     if ($includeExpired)  $bucketClauses[] = $expiredClause;
@@ -488,7 +490,7 @@ function handle_lease_expirations(PDO $pdo): void
     $stmt->execute($params);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
-    $todayTs = strtotime('today');
+    $todayTs = strtotime(date('Y-m-d'));
     $mapped = array_map(static function (array $row) use ($todayTs): array {
         $exp   = $row['lease_expiration_date'] ?? null;
         $expTs = $exp ? strtotime((string)$exp) : false;
