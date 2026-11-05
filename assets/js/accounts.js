@@ -533,11 +533,20 @@ document.addEventListener('DOMContentLoaded', function () {
     // Check whether a user still matches the active filters
     function matchesActiveFilters(user) {
         if (!user) return false;
-        if (state.appliedStatus && state.appliedStatus !== 'all' && user.status !== state.appliedStatus) return false;
-        if (state.appliedRole && state.appliedRole !== 'all') {
-            const filter = String(state.appliedRole);
-            if (user.role !== filter && toDbRole(user.role) !== filter) return false;
+
+        if (state.appliedStatus && state.appliedStatus !== 'all') {
+            const userStatus = String(user.status || '').trim().toLowerCase();
+            const filterStatus = String(state.appliedStatus).trim().toLowerCase();
+            if (userStatus !== filterStatus) return false;
         }
+
+        if (state.appliedRole && state.appliedRole !== 'all') {
+            const filterRole = String(state.appliedRole).trim().toLowerCase();
+            const userRole = String(user.role || '').trim().toLowerCase();
+            const userRoleDb = String(toDbRole(user.role) || '').trim().toLowerCase();
+            if (userRole !== filterRole && userRoleDb !== filterRole) return false;
+        }
+
         return true;
     }
 
@@ -644,20 +653,25 @@ document.addEventListener('DOMContentLoaded', function () {
                 state.editingId = null;
 
                 const serverMsg = (data && (data.message || data.msg)) || null;
+                const stillMatches = original ? matchesActiveFilters(original) : true;
 
                 // Remove the row if the update no longer matches the current filters
-                if (original && !matchesActiveFilters(original)) {
+                if (!stillMatches) {
                     state.allUsers = state.allUsers.filter(function (u) {
                         return Number(u.user_id) !== userId;
                     });
-                    clearPending();
-                    refreshFromLocalState();
-                    notify(serverMsg || 'Account updated. It no longer matches the current filters.', 'warning');
-                } else {
-                    clearPending();
-                    refreshFromLocalState();
-                    notify(serverMsg || 'Account updated successfully.', 'success');
                 }
+
+                clearPending();
+                refreshFromLocalState();
+
+                // The save itself succeeded — always report success
+                notify(
+                    stillMatches
+                        ? (serverMsg || 'Account updated successfully.')
+                        : (serverMsg || 'Account updated successfully. It no longer matches the current filters.'),
+                    'success'
+                );
             } catch (err) {
                 // Restore the previous values if the save failed
                 if (original) {
