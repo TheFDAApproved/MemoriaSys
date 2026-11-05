@@ -337,8 +337,9 @@
                 width: 1%;
             }
             .paymentsTable td:last-child {
-                vertical-align: middle;
-                text-align: center;
+            padding: 10px 12px;
+            text-align: left;
+            vertical-align: middle;
             }
 
             .pmActionGroup {
