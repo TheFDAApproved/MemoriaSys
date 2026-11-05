@@ -526,16 +526,28 @@ const MAP = (() => {
     return { ok: true };
   }
 
+  async function fetchAllBlockPages() {
+    const pageUrl = (p) => `${API_BLOCKS}?page=${p}&limit=500`;
+    const first = await fetch(pageUrl(1), { headers: { Accept: "application/json" }, cache: "no-store" }).then((r) => r.json());
+    if (first.success === false) throw new Error(first.message || "Load failed");
+    const firstData = first.data || {};
+    let rows = Array.isArray(firstData) ? firstData : (firstData.blocks || []);
+    const totalPages = Math.max(1, Number(firstData.pagination && firstData.pagination.total_pages) || 1);
+    for (let p = 2; p <= totalPages; p++) {
+      const next = await fetch(pageUrl(p), { headers: { Accept: "application/json" }, cache: "no-store" }).then((r) => r.json());
+      if (next.success === false) throw new Error(next.message || "Load failed");
+      const nextData = next.data || {};
+      const pageRows = Array.isArray(nextData) ? nextData : (nextData.blocks || []);
+      rows = rows.concat(pageRows);
+    }
+    return rows;
+  }
+
   function persistLoad() {
     const loader = $("mapLoading");
     if (loader) loader.style.display = "block";
-    fetch(API_BLOCKS)
-      .then((r) => r.json())
-      .then((res) => {
-        if (res.success === false)
-          throw new Error(res.message || "Load failed");
-
-        const rows = Array.isArray(res.data) ? res.data : res.data.blocks || [];
+    fetchAllBlockPages()
+      .then((rows) => {
         blocks = {};
         blockOrder = [];
         let stagedIndex = 0;
@@ -1695,6 +1707,27 @@ const MAP = (() => {
     showModal();
   }
 
+  async function fetchAllGravesForBlock(blockId) {
+    const pageUrl = (p) => `${API_BLOCKS}/${blockId}?page=${p}&limit=500`;
+    const first = await fetch(pageUrl(1), { headers: { Accept: "application/json" }, cache: "no-store" }).then((r) => r.json());
+    if (!first.success || !first.data) throw new Error("Failed to load graves");
+    const graves = Array.isArray(first.data.graves) ? first.data.graves.slice() : [];
+    const seen = new Set(graves.map((g) => g && g.grave_id).filter((id) => id != null));
+    const totalPages = Math.max(1, Number(first.data.pagination && first.data.pagination.total_pages) || 1);
+    for (let p = 2; p <= totalPages; p++) {
+      const next = await fetch(pageUrl(p), { headers: { Accept: "application/json" }, cache: "no-store" }).then((r) => r.json());
+      if (!next.success || !next.data) throw new Error("Failed to load graves");
+      const pageGraves = Array.isArray(next.data.graves) ? next.data.graves : [];
+      pageGraves.forEach((g) => {
+        if (g && g.grave_id != null && !seen.has(g.grave_id)) {
+          seen.add(g.grave_id);
+          graves.push(g);
+        }
+      });
+    }
+    return graves;
+  }
+
   function openBlockDetailsModal(bid) {
     const b = blocks[bid];
     const { occ, res, avail, total } = blockStats(b);
@@ -1731,11 +1764,9 @@ const MAP = (() => {
     $("modalCancel").onclick = closeModal;
     showModal();
 
-    fetch(`${API_BLOCKS}/${b.block_id}`)
-      .then((res) => res.json())
-      .then((res) => {
-        if (!res.success || !res.data || !res.data.graves) throw new Error("Failed to load graves");
-        const graves = res.data.graves, container = $("gravesContainer");
+    fetchAllGravesForBlock(b.block_id)
+      .then((graves) => {
+        const container = $("gravesContainer");
         if (graves.length === 0) {
           container.innerHTML = `<div class="grave-grid-header"><span>Graves Information</span></div><div style="text-align:center; color:#94a3b8; font-size:12px; padding:10px;">No graves created for this block yet.</div>`;
           return;
