@@ -468,6 +468,31 @@ const PUBLIC_MAP = (() => {
       searchInput.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: false });
       searchInput.addEventListener("click", (e) => e.stopPropagation());
 
+      // Pressing the on-screen Enter / → key on a mobile keyboard should
+      // dismiss the keyboard. A simple blur() is NOT enough on Android -
+      // the keyboard often stays open. The reliable method is the
+      // "readonly trick":
+      //   1. set readonly  (iOS: forces the keyboard to close)
+      //   2. blur()        (Android: input loses focus)
+      //   3. remove readonly after 100ms so typing works again
+      const dismissKeyboard = () => {
+        searchInput.setAttribute("readonly", "readonly");
+        searchInput.blur();
+        setTimeout(() => {
+          searchInput.removeAttribute("readonly");
+        }, 100);
+      };
+
+      searchInput.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" && e.keyCode !== 13) return;
+        dismissKeyboard();
+      });
+
+      searchInput.addEventListener("keyup", (e) => {
+        if (e.key !== "Enter" && e.keyCode !== 13) return;
+        dismissKeyboard();
+      });
+
       searchInput.addEventListener("input", (e) => {
         const query = e.target.value.toLowerCase().trim();
         searchResults.innerHTML = "";

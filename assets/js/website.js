@@ -151,11 +151,37 @@ function initSearchView() {
 
     if (!searchForm || !recordsGrid || !searchInput) return;
 
+    // Mobile keyboard hints
+    // "enterkeyhint" tells the on-screen keyboard this is a search field, so
+    // the return key reads "Search"/"Go" instead of "Next".
+    searchInput.setAttribute("enterkeyhint", "search");
+    searchInput.setAttribute("inputmode", "search");
+    searchInput.setAttribute("autocomplete", "off");
+    searchInput.setAttribute("autocorrect", "off");
+    searchInput.setAttribute("autocapitalize", "words");
+    searchInput.setAttribute("spellcheck", "false");
+
     initSearchClearButton({ searchForm, searchInput, recordsGrid, submitBtn });
 
-    searchForm.addEventListener("submit", async (e) => {
-        e.preventDefault();
+    // Some mobile browsers won't submit a form whose submit button is hidden
+    // by CSS on small screens. Add a rendered-but-invisible submit button as
+    // the form's default button so implicit submission has something to use.
+    if (submitBtn) {
+        const style = getComputedStyle(submitBtn);
+        if (style.display === "none" || style.visibility === "hidden") {
+            const fallbackSubmit = document.createElement("button");
+            fallbackSubmit.type = "submit";
+            fallbackSubmit.tabIndex = -1;
+            fallbackSubmit.setAttribute("aria-hidden", "true");
+            fallbackSubmit.style.cssText =
+                "position:absolute;width:1px;height:1px;padding:0;margin:-1px;" +
+                "overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;";
+            searchForm.insertBefore(fallbackSubmit, submitBtn);
+        }
+    }
 
+    // The single place that actually performs a search
+    const runSearch = async () => {
         // Don't send another request while one is already running
         if (searchForm.classList.contains("isLoading")) return;
 
@@ -215,7 +241,59 @@ function initSearchView() {
                 setSearchBusy(searchForm, submitBtn, false);
             }
         }
+    };
+
+    // Dismiss the on-screen keyboard. blur() must be called synchronously
+    // inside the key event to count as a user gesture on iOS/Android.
+    const dismissKeyboard = () => {
+        if (document.activeElement === searchInput) {
+            searchInput.blur();
+        }
+        // Some mobile browsers need one more nudge after the blur
+        setTimeout(() => {
+            if (document.activeElement === searchInput) {
+                searchInput.blur();
+            }
+        }, 0);
+    };
+
+    // Desktop: normal form submit (Enter key or clicking the button)
+    searchForm.addEventListener("submit", (e) => {
+        e.preventDefault();
+        dismissKeyboard();
+        runSearch();
     });
+
+    // Mobile: soft keyboards frequently never fire a submit event. Handle the
+    // Enter / "Go" / "Search" key ourselves instead of relying on the form.
+    let lastEnterRunAt = 0;
+    const handleEnterKey = (e) => {
+        const isEnter = e.key === "Enter" || e.keyCode === 13 || e.which === 13;
+        if (!isEnter) return;
+
+        // keyCode 229 means the IME is still composing (e.g. predictive text).
+        // Wait for the committed Enter press that follows.
+        if (e.keyCode === 229) return;
+
+        e.preventDefault();
+
+        // keydown + keyup can both fire on some Android keyboards.
+        const now = Date.now();
+        if (now - lastEnterRunAt < 400) return;
+        lastEnterRunAt = now;
+
+        dismissKeyboard();
+        runSearch();
+    };
+
+    // Listen on the form so we catch the key even if focus is on the input,
+    // the clear button, or anything else inside the search form.
+    searchForm.addEventListener("keydown", handleEnterKey);
+    searchForm.addEventListener("keyup", handleEnterKey);
+
+    // Extra safety net for WebKit-based mobile browsers that sometimes fire
+    // keypress instead of keydown for the return key.
+    searchForm.addEventListener("keypress", handleEnterKey);
 }
 
 // Wait until a minimum amount of time has passed [used for loading delay]
@@ -244,10 +322,11 @@ function initSearchClearButton({
         parent.style.position = "relative";
     }
 
-    const clearBtn = document.createElement("button");
-    clearBtn.type = "button";
-    clearBtn.className = "searchClearBtn";
+    const clearBtn = document.createElement("span");
+    clearBtn.setAttribute("role", "button");
     clearBtn.setAttribute("aria-label", "Clear search");
+    clearBtn.tabIndex = -1;
+    clearBtn.className = "searchClearBtn";
     clearBtn.textContent = "×";
 
     clearBtn.style.position = "absolute";
