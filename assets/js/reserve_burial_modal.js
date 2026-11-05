@@ -540,6 +540,7 @@ const ReserveBurialModal = (() => {
 
         select.value = code;
         updateSelectedSlotFromGraveSelect();
+        setGraveCodeHint("");
     }
 
     function applyBurialTypeFromSnapshot(snapshotValue) {
@@ -1176,13 +1177,20 @@ const ReserveBurialModal = (() => {
 
             if (token !== gravesToken) return;
 
-            if (!graves.length)
+            // Build the final list ONCE (vacant graves + the pinned grave, if any)
+            // and base the hint on THAT instead of the raw vacant-only list.
+            // Otherwise a block with zero vacant graves but with a pinned
+            // (current/original) grave would still show "No available grave codes"
+            // even though a valid grave is selected.
+            const finalGraves = withPinned(graves);
+
+            if (!finalGraves.length)
                 setGraveCodeHint("No available grave codes in this block.", true);
             else setGraveCodeHint("");
 
             // Re-render final so the pinned grave is force-selected, matching
             // the original end-of-function behavior.
-            renderGraveOptions(withPinned(graves), pinnedGraveId);
+            renderGraveOptions(finalGraves, pinnedGraveId);
 
             if (pinnedGraveCode) selectGraveByCode(pinnedGraveCode, pinnedGraveId);
         } catch (err) {

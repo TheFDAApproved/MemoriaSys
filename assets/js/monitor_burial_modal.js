@@ -810,6 +810,10 @@ const MonitorBurialModal = (() => {
             if (match) select.value = match.value;
         }
         updateSelectedSlotFromGraveSelect();
+
+        // If we just rendered at least one real grave option, no "No available
+        // grave codes in this block." hint can be truthful any more.
+        if (select.value) setGraveCodeHint('');
     }
 
     function updateSelectedSlotFromGraveSelect() {
@@ -927,8 +931,21 @@ const MonitorBurialModal = (() => {
 
             if (token !== gravesToken) return;
 
-            if (!graves.length) setGraveCodeHint('No available grave codes in this block.', true);
+            // Base the "no graves" hint on the FINAL merged list
+            // (vacant graves + the pinned/current grave, if any) — not on
+            // the raw vacant-only list. Otherwise a block with zero vacant
+            // graves but with the old occupant's current grave pinned would
+            // still show "No available grave codes in this block." even
+            // though a valid grave ends up selected in the dropdown.
+            const finalGraves = withPinned(graves);
+
+            if (!finalGraves.length) setGraveCodeHint('No available grave codes in this block.', true);
             else setGraveCodeHint('');
+
+            // Final render so the pinned grave is force-selected and the
+            // select reflects the merged list exactly (mirrors the same
+            // pattern used by ReserveBurialModal).
+            renderGraveOptions(finalGraves, pinnedGraveId);
         } catch (err) {
             if (err.name === 'AbortError' || token !== gravesToken) return;
             console.warn('[MonitorModal] Unable to fetch graves:', err);
