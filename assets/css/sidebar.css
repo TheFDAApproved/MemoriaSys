@@ -450,6 +450,24 @@ body {
         transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1), width 0.3s ease;
         box-shadow: none;
         will-change: transform;
+
+        /* Use the dynamic viewport height so the footer (logout) is never
+           pushed behind the mobile browser's bottom UI */
+        height: 100vh;
+        height: 100dvh;
+        max-height: 100dvh;
+    }
+
+    /* Keep the nav scrollable and never let it push the footer out */
+    .sidebar .sidebarNav {
+        min-height: 0;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Respect the device safe area (iOS home indicator, Android gesture bar) */
+    .sidebar .sidebarFooter {
+        padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
     }
 
     .sidebar.mobile-open {
@@ -535,6 +553,19 @@ body {
         font-size: 13px;
         top: 6px;
         left: 8px;
+    }
+
+    /* Short landscape screens: tighten the sidebar top so the footer still fits */
+    .sidebar .sidebarTop {
+        padding: 0 0 4px;
+    }
+
+    .sidebar .sidebarTop .memoriaLogo {
+        padding: 12px 25px 4px;
+    }
+
+    .sidebar .sidebarTop .sidebarDateTime {
+        display: none;
     }
 }
 
