@@ -27,6 +27,7 @@ const OFFICE_WRITABLE_SETTING_KEYS = [
     'contact_email',
     'payment_channels_list',
     'payment_purposes_list',
+    'barangay_options'
 ];
 
 // Image keys: value must be a .png filename, uploads only accepted for these
@@ -47,6 +48,7 @@ const IMAGE_SETTING_KEYS = [
 const JSON_LIST_SETTING_KEYS = [
     'payment_channels_list',
     'payment_purposes_list',
+    'barangay_options'
 ];
 
 $userData = checkuser(false);
