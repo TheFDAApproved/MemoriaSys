@@ -332,6 +332,8 @@ const ReserveBurialModal = (() => {
     //      Active -> Inactive transition).
     function applyIntermentDateForStatus(isInactive) {
         if (!modalEl) return;
+        if (submissionSucceeded) return; // post-submit: everything is locked
+
         const intermentEl = getIntermentField();
         const expEl = getExpirationField();
 
@@ -344,13 +346,25 @@ const ReserveBurialModal = (() => {
                     oldOccupantOriginal?.date_buried || "",
                 );
             }
-            if (intermentEl) intermentEl.value = "";
+            if (intermentEl) {
+                intermentEl.value = "";
+                intermentEl.disabled = true;
+                intermentEl.style.background = "#eef2f8";
+                intermentEl.style.color = "#475569";
+                intermentEl.style.cursor = "not-allowed";
+            }
             if (expEl) expEl.value = "";
             return;
         }
 
-        // Going back to Active: only restore if the field is currently empty
-        // (don't clobber anything the user typed while Active).
+        // Going back to Active: re-enable first, then restore if empty.
+        if (intermentEl) {
+            intermentEl.disabled = false;
+            intermentEl.style.background = "";
+            intermentEl.style.color = "";
+            intermentEl.style.cursor = "";
+        }
+
         const current = (intermentEl?.value || "").trim();
         if (!current) {
             const restore =
@@ -632,6 +646,10 @@ const ReserveBurialModal = (() => {
         setOneDate("transfer_permit_date", V("transfer_permit_date"));
         setOneDate("exhumation_permit_date", V("exhumation_permit_date"));
         setOneDate("date_buried", V("date_buried"));
+        if ((oldModeSnapshot?.status || "") === "Inactive") {
+            const el = modalEl.querySelector("#date_buried") || modalEl.querySelector("#date_interment");
+            if (el) el.value = "";
+        }
         setOneDate("date_exhumed", V("date_exhumed"));
         setOneDate("lease_expiration_date", V("lease_expiration_date"));
 
@@ -2907,6 +2925,16 @@ const ReserveBurialModal = (() => {
             return;
         }
 
+        // Reset any Inactive-disabled styling on the Date of Interment so the
+        // loop below can set enabled/disabled from scratch, and so no stale
+        // grey styling leaks into the new-occupant step.
+        const intermentResetEl = getIntermentField();
+        if (intermentResetEl) {
+            intermentResetEl.style.background = "";
+            intermentResetEl.style.color = "";
+            intermentResetEl.style.cursor = "";
+        }
+
         const fields = modalEl.querySelectorAll("input, select, textarea");
         fields.forEach((field) => {
             if (field.closest(".paperFormActions")) return;
@@ -2968,6 +2996,14 @@ const ReserveBurialModal = (() => {
         updateBurialTypePlaceholder();
         updateWizardButtons();
         refreshRemarksHint();
+
+        // Re-apply the Inactive lock: setEditable() above enables every field
+        // for "old" mode, so if the status is Inactive we must disable the
+        // Date of Interment again (covers Next/Back round-trips).
+        if (mode === "old") {
+            const statusVal = modalEl.querySelector("#status")?.value || "";
+            applyIntermentDateForStatus(statusVal !== "Active");
+        }
     }
 
     async function handleSubmit(event) {

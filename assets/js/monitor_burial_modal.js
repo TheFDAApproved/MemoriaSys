@@ -466,6 +466,8 @@ const MonitorBurialModal = (() => {
 
     function applyIntermentDateForStatus(isInactive) {
         if (!modalEl) return;
+        if (submissionSucceeded) return; // post-submit: everything is locked
+
         const intermentEl = getIntermentField();
         const expEl = getExpirationField();
 
@@ -478,13 +480,25 @@ const MonitorBurialModal = (() => {
                     oldOccupantOriginal?.date_buried || '',
                 );
             }
-            if (intermentEl) intermentEl.value = '';
+            if (intermentEl) {
+                intermentEl.value = '';
+                intermentEl.disabled = true;
+                intermentEl.style.background = '#eef2f8';
+                intermentEl.style.color = '#475569';
+                intermentEl.style.cursor = 'not-allowed';
+            }
             if (expEl) expEl.value = '';
             return;
         }
 
-        // Going back to Active: only restore if the field is currently empty
-        // so we never clobber anything the user typed while Active.
+        // Going back to Active: re-enable first, then restore if empty.
+        if (intermentEl) {
+            intermentEl.disabled = false;
+            intermentEl.style.background = '';
+            intermentEl.style.color = '';
+            intermentEl.style.cursor = '';
+        }
+
         const current = (intermentEl?.value || '').trim();
         if (!current) {
             const restore =
@@ -1665,6 +1679,15 @@ const MonitorBurialModal = (() => {
         updateWizardButtons();
 
         refreshRemarksHint();
+
+        // Re-apply the Inactive lock. applyMode()'s loop above enables every
+        // field for the old-occupant step, so if the status is Inactive we
+        // must disable the Date of Interment again (covers first entry from
+        // an already-Inactive reservation, and Next/Back round-trips).
+        if (wizardMode === 'old' && !submissionSucceeded) {
+            const statusVal = modalEl.querySelector('#status')?.value || '';
+            applyIntermentDateForStatus(statusVal !== 'Active');
+        }
     }
 
     function lockFieldsOnly() {
@@ -1758,15 +1781,6 @@ const MonitorBurialModal = (() => {
         populateFields(data);
         applyMode();
         updateWizardButtons();
-
-        // If the reservation says the old occupant is already Inactive, mirror
-        // that by clearing the Date of Interment so the field matches the
-        // status on first render. savedActiveIntermentDate is captured from
-        // whatever was just populated, so flipping back to Active later will
-        // restore it.
-        if (data.status === 'Inactive') {
-            applyIntermentDateForStatus(true);
-        }
 
         if (data.status === 'Active' && data.block) {
             const blockSelect = modalEl.querySelector('#block');
@@ -1874,6 +1888,10 @@ const MonitorBurialModal = (() => {
             wizardMode = 'old';
             unlockFields();
             applyFormFields(oldModeSnapshot || {});
+            if ((oldModeSnapshot?.status || '') === 'Inactive') {
+                const el = getIntermentField();
+                if (el) el.value = '';
+            }
             lockFieldsOnly();
             updateBurialTypePlaceholder();
             updateWizardButtons();
