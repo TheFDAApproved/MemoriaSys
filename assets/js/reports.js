@@ -556,6 +556,19 @@ function onIntermentsStatusChange() {
     scheduleReload("interments", "status");
 }
 
+// FIX: this handler was missing entirely — that is why
+// "onIntermentsGenderChange is not defined" was thrown.
+function onIntermentsGenderChange() {
+    const grp = document.getElementById("interments-gender-checkboxes");
+    if (!grp) return;
+    const checked = Array.from(
+        grp.querySelectorAll('input[type="checkbox"]:checked'),
+    ).map((el) => el.value);
+    filterState.interments.gender = checked.join(",");
+    resetPage("interments");
+    scheduleReload("interments", "gender");
+}
+
 function onIntermentsBarangayChange() {
     const grp = document.getElementById("interments-barangay-checkboxes");
     if (!grp) return;
