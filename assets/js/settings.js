@@ -212,6 +212,122 @@ function showImportReportModal(data = {}) {
     if (cancelBtn) cancelBtn.style.display = "none";
 }
 
+// ---------------------------------------------------------------------------
+// App-wide click blocker
+// ---------------------------------------------------------------------------
+// Prevents any click / tap / keypress anywhere in the app — including the
+// parent page's sidebar links — while a long task runs (CSV import, DB
+// restore).
+//
+// What it does:
+//   1. Injects a FULLY TRANSPARENT, empty full-screen div into the PARENT
+//      document (the page that owns the sidebar). It swallows all pointer
+//      events and sets `cursor: wait`. No visual overlay, no dim, no text —
+//      the existing button spinners already communicate "loading".
+//   2. Sets `inert` on the parent shell (#sidebar, #mobileHamburger,
+//      #sidebarBackdrop, .mainContent). `inert` blocks mouse AND keyboard
+//      focus, so Tab / Enter can't reach the sidebar links either.
+//   3. Installs a `beforeunload` guard so reload / tab-close warns the user.
+//
+// Only mutates the parent's DOM at runtime, exactly like applyUIColor above
+// already does with CSS variables. No parent files are edited.
+//
+// Safe to call when settings.html is opened standalone (no parent):
+// the blocker/inert parts are skipped, and only beforeunload remains.
+
+let _appLocked = false;
+let _appLockUnloadGuard = null;
+
+function setAppLock(locked) {
+    _appLocked = Boolean(locked);
+
+    const isIframe = window.parent && window.parent !== window;
+
+    // ---- 1) Transparent click-blocker + inert on the parent shell ----
+    if (isIframe) {
+        let parentDoc = null;
+        try {
+            parentDoc = window.parent.document;
+        } catch {
+            /* cross-origin — skip, beforeunload still protects us */
+        }
+
+        if (parentDoc) {
+            const shellSelectors = [
+                "#sidebar",
+                "#mobileHamburger",
+                "#sidebarBackdrop",
+                ".mainContent",
+            ];
+            const shellEls = shellSelectors
+                .map((sel) => parentDoc.querySelector(sel))
+                .filter(Boolean);
+
+            let blocker = parentDoc.getElementById("appBusyBlocker");
+
+            if (_appLocked) {
+                if (!blocker) {
+                    blocker = parentDoc.createElement("div");
+                    blocker.id = "appBusyBlocker";
+                    blocker.setAttribute("aria-hidden", "true");
+                    // Fully transparent — no background, no content.
+                    blocker.style.cssText = [
+                        "position:fixed",
+                        "inset:0",
+                        "z-index:2147483000",
+                        "background:transparent",
+                        "cursor:wait",
+                        // Belt-and-braces: swallow pointer events even if
+                        // something above tries to bubble through.
+                        "pointer-events:auto",
+                    ].join(";");
+
+                    // Actively prevent the events that would otherwise
+                    // reach elements behind the blocker.
+                    ["click", "mousedown", "mouseup", "touchstart", "touchend"].forEach(
+                        (evt) => {
+                            blocker.addEventListener(
+                                evt,
+                                (e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                },
+                                { passive: false },
+                            );
+                        },
+                    );
+
+                    parentDoc.body.appendChild(blocker);
+                }
+
+                shellEls.forEach((el) => {
+                    el.inert = true;
+                });
+            } else {
+                if (blocker) blocker.remove();
+                shellEls.forEach((el) => {
+                    el.inert = false;
+                });
+            }
+        }
+    }
+
+    // ---- 2) Navigation / reload / tab-close guard ----
+    if (_appLocked) {
+        if (!_appLockUnloadGuard) {
+            _appLockUnloadGuard = (e) => {
+                if (!_appLocked) return;
+                e.preventDefault();
+                e.returnValue = "";
+            };
+            window.addEventListener("beforeunload", _appLockUnloadGuard);
+        }
+    } else if (_appLockUnloadGuard) {
+        window.removeEventListener("beforeunload", _appLockUnloadGuard);
+        _appLockUnloadGuard = null;
+    }
+}
+
 // Page initialization
 document.addEventListener("DOMContentLoaded", () => {
 
@@ -941,6 +1057,9 @@ document.addEventListener("DOMContentLoaded", () => {
         importNowBtn.innerHTML =
             '<i class="fas fa-spinner fa-spin"></i> Importing…';
 
+        // Block all clicks (including parent sidebar) while importing
+        setAppLock(true);
+
         try {
             const response = await fetch(EXCEL_API, {
                 method: "POST",
@@ -980,6 +1099,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 "error",
             );
         } finally {
+            // Always release the lock, even on error
+            setAppLock(false);
             importNowBtn.disabled = false;
             importNowBtn.innerHTML = originalHTML;
         }
@@ -1238,21 +1359,29 @@ document.addEventListener("DOMContentLoaded", () => {
             confirmIcon: "fa-clock-rotate-left",
             loadingText: "Restoring…",
             onConfirm: async () => {
-                const res = await fetch(
-                    `${BACKUP_API}/${encodeURIComponent(filename)}`,
-                    { method: "PUT", credentials: "same-origin" },
-                );
+                // Block all clicks (including parent sidebar) while restoring
+                setAppLock(true);
 
-                const result = await res.json().catch(() => ({}));
-                if (!res.ok) {
-                    throw new Error(
-                        friendlyMessage(result?.message, "Failed to restore database."),
+                try {
+                    const res = await fetch(
+                        `${BACKUP_API}/${encodeURIComponent(filename)}`,
+                        { method: "PUT", credentials: "same-origin" },
                     );
+
+                    const result = await res.json().catch(() => ({}));
+                    if (!res.ok) {
+                        throw new Error(
+                            friendlyMessage(result?.message, "Failed to restore database."),
+                        );
+                    }
+
+                    showAlertTOP(result?.message || "Database restored.", "success");
+
+                    await loadBackups({ silent: true });
+                } finally {
+                    // Always release the lock, even on error
+                    setAppLock(false);
                 }
-
-                showAlertTOP(result?.message || "Database restored.", "success");
-
-                await loadBackups({ silent: true });
             },
         });
     });
