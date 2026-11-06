@@ -402,7 +402,6 @@ document.addEventListener("DOMContentLoaded", () => {
                     "display:flex",
                     "align-items:flex-start",
                     "gap:8px",
-                    "margin:12px 0 0",
                     "padding:10px 14px",
                     "background-color:#fffbeb",
                     "border:1px solid #fde68a",
