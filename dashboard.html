@@ -110,7 +110,7 @@
             <!-- Total Interments -->
             <div class="statCard accentPrimary" id="total_interments">
                 <div class="statTop">
-                    <span class="statTitle">Total Interments</span>
+                    <span class="statTitle"><span class="statTitleText">Total Interments</span></span>
                     <div class="iconBadge"><i class="fas fa-monument"></i></div>
                 </div>
                 <div class="statBottom">
@@ -121,7 +121,7 @@
             <!-- Available Graves -->
             <div class="statCard accentSuccess" id="available_graves">
                 <div class="statTop">
-                    <span class="statTitle">Vacant Graves</span>
+                    <span class="statTitle"><span class="statTitleText">Vacant Graves</span></span>
                     <div class="iconBadge"><i class="fas fa-border-all"></i></div>
                 </div>
                 <div class="statBottom">
@@ -132,7 +132,7 @@
             <!-- Pending Payments -->
             <div class="statCard accentPrimary" id="pending_payments">
                 <div class="statTop">
-                    <span class="statTitle">Pending Payments</span>
+                    <span class="statTitle"><span class="statTitleText">Pending Payments</span></span>
                     <div class="iconBadge"><i class="fas fa-credit-card"></i></div>
                 </div>
                 <div class="statBottom">
@@ -144,12 +144,31 @@
             <!-- Unverified Accounts -->
             <div class="statCard accentDanger" id="unverified_accounts">
                 <div class="statTop">
-                    <span class="statTitle">Unverified Accounts</span>
+                    <span class="statTitle"><span class="statTitleText">Unverified Accounts</span></span>
                     <div class="iconBadge"><i class="fas fa-user-shield"></i></div>
                 </div>
                 <div class="statBottom">
                     <h2 class="statValue" id="stat_unverified_accounts"></h2>
                     <span class="badge badgeDanger">Action Req.</span>
+                </div>
+            </div>
+
+            <!-- SMS Automation -->
+            <div class="statCard accentInfo" id="sms_alerts">
+                <div class="statTop">
+                    <span class="statTitle">
+                        <span class="statTitleText">SMS Automation</span>
+                        <i class="fas fa-arrow-up-right-from-square smsCardLaunchHint" aria-hidden="true"></i>
+                    </span>
+                    <div class="iconBadge"><i class="fas fa-comment-dots"></i></div>
+                </div>
+                <div class="statBottom">
+                    <h2 class="statValue" id="stat_sms_alerts">
+                        <span class="statLoadingText" aria-hidden="true"></span>
+                    </h2>
+                    <span class="badge badgeMuted" id="sms_alerts_badge" aria-label="Loading SMS status">
+                        <i class="fas fa-circle-notch fa-spin" aria-hidden="true"></i>
+                    </span>
                 </div>
             </div>
         </section>
@@ -187,7 +206,200 @@
         </section>
     </div>
 
+    <!-- SMS Alerts Modal -->
+    <div class="smsModal" id="smsAlertsModal" aria-hidden="true">
+        <div class="smsModalBackdrop" data-close="1"></div>
+
+        <div class="smsModalPanel" role="dialog" aria-modal="true" aria-labelledby="smsModalTitle">
+            <!-- Header -->
+            <header class="smsModalHeader">
+                <div class="smsModalTitleGroup">
+                    <div class="smsModalTitleRow">
+                        <h2 id="smsModalTitle">SMS Automation Alerts</h2>
+                        <span class="smsViewOnlyPill" id="smsViewOnlyPill" hidden title="Read-only access">
+                            <i class="fas fa-lock" aria-hidden="true"></i>
+                            <span>View only</span>
+                        </span>
+                    </div>
+                    <p class="smsModalSubtext">Automated lease-expiry reminders &middot; Max 3 attempts per recipient</p>
+                </div>
+
+                <div class="smsModalHeaderRight">
+                    <!-- Bulk actions: 1 primary + 1 dropdown -->
+                    <div class="smsBulkActions" id="smsBulkActions" style="display: none;">
+                        <button type="button" class="smsBtn smsBtnPrimary" data-action="run_now" id="smsBtnRunNow" title="Dispatch pending SMS queue now" disabled>
+                            <i class="fas fa-paper-plane" aria-hidden="true"></i>
+                            <span>Send Now</span>
+                            <span class="smsBtnCount" id="smsRunNowCount">0</span>
+                        </button>
+                        <div class="smsBulkDropdown" id="smsBulkDropdown">
+                            <button type="button" class="smsBtn smsBtnSecondary smsBulkMenuTrigger" id="smsBulkMenuTrigger" aria-haspopup="true" aria-expanded="false" title="More queue actions">
+                                <i class="fas fa-ellipsis-h" aria-hidden="true"></i>
+                                <span>More</span>
+                                <i class="fas fa-chevron-down smsChevronIcon" aria-hidden="true"></i>
+                            </button>
+                            <div class="smsBulkMenu" id="smsBulkMenu" role="menu" aria-label="More queue actions" hidden>
+                                <button type="button" class="smsBulkMenuItem" data-action="retry_all_failed" role="menuitem" disabled>
+                                    <span class="smsBulkMenuItemLeft">
+                                        <i class="fas fa-redo-alt smsBulkMenuIcon smsIconWarning" aria-hidden="true"></i>
+                                        <span class="smsBulkMenuText">
+                                            <span class="smsBulkMenuLabel">Retry all failed</span>
+                                            <span class="smsBulkMenuSub">Re-queue messages that errored</span>
+                                        </span>
+                                    </span>
+                                    <span class="smsMenuCount" id="smsRetryFailedCount">0</span>
+                                </button>
+                                <button type="button" class="smsBulkMenuItem" data-action="retry_all_skipped" role="menuitem" disabled>
+                                    <span class="smsBulkMenuItemLeft">
+                                        <i class="fas fa-rotate-left smsBulkMenuIcon smsIconNeutral" aria-hidden="true"></i>
+                                        <span class="smsBulkMenuText">
+                                            <span class="smsBulkMenuLabel">Retry all skipped</span>
+                                            <span class="smsBulkMenuSub">Restore previously aborted items</span>
+                                        </span>
+                                    </span>
+                                    <span class="smsMenuCount" id="smsRetrySkippedCount">0</span>
+                                </button>
+                                <div class="smsBulkMenuDivider" role="separator"></div>
+                                <button type="button" class="smsBulkMenuItem smsBulkMenuItemDanger" data-action="cancel_all_pending" role="menuitem" disabled>
+                                    <span class="smsBulkMenuItemLeft">
+                                        <i class="fas fa-ban smsBulkMenuIcon smsIconDanger" aria-hidden="true"></i>
+                                        <span class="smsBulkMenuText">
+                                            <span class="smsBulkMenuLabel">Abort queue</span>
+                                            <span class="smsBulkMenuSub">Mark all pending items as skipped</span>
+                                        </span>
+                                    </span>
+                                    <span class="smsMenuCount smsMenuCountDanger" id="smsAbortPendingCount">0</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Chrome buttons -->
+                    <div class="smsModalHeaderActions">
+                        <button type="button" class="smsModalIconBtn" id="smsModalRefresh" aria-label="Refresh notifications" title="Refresh">
+                            <i class="fas fa-sync-alt" aria-hidden="true"></i>
+                        </button>
+                        <button type="button" class="smsModalIconBtn" id="smsModalClose" aria-label="Close" title="Close (Esc)">
+                            <i class="fas fa-times" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                </div>
+            </header>
+            
+            <div class="smsAutoSendBanner" id="smsAutoSendBanner" style="display: none;" role="status">
+                <i class="fas fa-pause-circle" aria-hidden="true"></i>
+                <span>Auto-send is paused &mdash; queued items will not dispatch until re-enabled in settings.</span>
+            </div>
+
+            <!-- Body -->
+            <div class="smsModalBody">
+                <!-- Summary tiles (click to filter) -->
+                <div class="smsSummaryGrid" role="group" aria-label="Filter by status">
+                    <button type="button" class="smsSummaryTile" data-filter-status="Pending" aria-pressed="false" title="Filter by Pending">
+                        <span class="smsSummaryLabel">Pending</span>
+                        <strong class="smsSummaryValue" id="sms_sum_pending"><span class="skeletonBlock smsSummarySkeleton" aria-hidden="true"></span></strong>
+                        <span class="smsSummarySub">Awaiting dispatch</span>
+                    </button>
+                    <button type="button" class="smsSummaryTile" data-filter-status="Sent" aria-pressed="false" title="Filter by Sent">
+                        <span class="smsSummaryLabel">Sent</span>
+                        <strong class="smsSummaryValue smsValueSuccess" id="sms_sum_sent"><span class="skeletonBlock smsSummarySkeleton" aria-hidden="true"></span></strong>
+                        <span class="smsSummarySub" id="sms_sum_sent_sub">Daily cap</span>
+                    </button>
+                    <button type="button" class="smsSummaryTile" data-filter-status="Failed" aria-pressed="false" title="Filter by Failed">
+                        <span class="smsSummaryLabel">Failed</span>
+                        <strong class="smsSummaryValue smsValueDanger" id="sms_sum_failed"><span class="skeletonBlock smsSummarySkeleton" aria-hidden="true"></span></strong>
+                        <span class="smsSummarySub">Delivery errored. View logs for details</span>
+                    </button>
+                    <button type="button" class="smsSummaryTile" data-filter-status="Skipped" aria-pressed="false" title="Filter by Skipped">
+                        <span class="smsSummaryLabel">Skipped</span>
+                        <strong class="smsSummaryValue smsValueMuted" id="sms_sum_skipped"><span class="skeletonBlock smsSummarySkeleton" aria-hidden="true"></span></strong>
+                        <span class="smsSummarySub">Aborted or bypassed</span>
+                    </button>
+                </div>
+
+                <!-- Toolbar -->
+                <div class="smsToolbar">
+                    <div class="smsSearchWrap">
+                        <i class="fas fa-search smsSearchIcon" aria-hidden="true"></i>
+                        <input type="text" id="smsSearchInput" placeholder="Search by name or phone" aria-label="Search by name or phone" class="smsSearch" autocomplete="off">
+                        <button type="button" class="smsSearchClear" id="smsSearchClear" aria-label="Clear search" title="Clear" hidden>
+                            <i class="fas fa-times" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                    <div class="smsFilterGroup">
+                        <div class="smsSelectWrap">
+                            <label for="smsStatusFilter" class="smsFilterLabel">Status</label>
+                            <select id="smsStatusFilter" class="smsSelect">
+                                <option value="">All</option>
+                                <option value="Pending">Pending</option>
+                                <option value="Sent">Sent</option>
+                                <option value="Failed">Failed</option>
+                                <option value="Skipped">Skipped</option>
+                            </select>
+                        </div>
+                        <div class="smsSelectWrap">
+                            <label for="smsStageFilter" class="smsFilterLabel">Stage</label>
+                            <select id="smsStageFilter" class="smsSelect">
+                                <option value="">All</option>
+                                <option value="30">30-day</option>
+                                <option value="7">7-day</option>
+                                <option value="0">Expiry day</option>
+                                <option value="-1">Expired</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Scrollable Table -->
+                <div class="smsTableViewport" id="smsTableViewport">
+                    <div class="smsTableLoadingOverlay" aria-hidden="true">
+                        <div class="smsOverlaySpinner" role="status" aria-label="Loading">
+                            <i class="fas fa-circle-notch fa-spin" aria-hidden="true"></i>
+                        </div>
+                    </div>
+                    <div class="smsTableWrap" id="smsTableWrap">
+                        <table class="smsTable">
+                            <thead>
+                                <tr>
+                                    <th class="col-deceased">Deceased</th>
+                                    <th class="col-lease smsColHideTablet">Lease Expires</th>
+                                    <th class="col-recipient">Recipient</th>
+                                    <th class="col-phone">Phone</th>
+                                    <th class="col-stage">Stage</th>
+                                    <th class="col-status">Status</th>
+                                    <th class="col-attempts">Attempts</th>
+                                    <th class="col-created">Last Update</th>
+                                    <th class="col-sent">Sent</th>
+                                    <th class="col-actions smsActionsCol" id="smsActionsHeader">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="smsTableBody" aria-live="polite"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Pagination -->
+                <footer class="smsPagination">
+                    <span id="smsPageInfo"></span>
+                    <div class="smsPageBtns">
+                        <button type="button" class="smsBtn smsBtnGhost" id="smsPrevPage" aria-label="Previous page" disabled>
+                            <i class="fas fa-chevron-left" aria-hidden="true"></i>
+                            <span>Prev</span>
+                        </button>
+                        <button type="button" class="smsBtn smsBtnGhost" id="smsNextPage" aria-label="Next page" disabled>
+                            <span>Next</span>
+                            <i class="fas fa-chevron-right" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                </footer>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="assets/js/alert.js"></script>
+    <script src="assets/js/confirm_ui.js"></script>
     <script src="assets/js/dashboard.js"></script>
+    <script src="assets/js/sms_alerts.js"></script>
 </body>
 </html>

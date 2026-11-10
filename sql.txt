@@ -513,6 +513,81 @@ CREATE TABLE payments (
 );
 INSERT INTO `payments` (`payment_id`, `reference_number`, `payment_channel`, `amount`, `deceased_name`, `payers_phone_number`, `payers_email`, `payers_name`, `purpose`, `image_link`, `confirmed_office_staff`, `confirmed_ground_staff`, `remarks_payer`, `remarks_office`, `remarks_grounds`, `deleted_at`, `created_by`, `updated_by`) VALUES (NULL, '0046876781312', 'GCash', '70.00', 'Jean Aika R. Canoy', '+639154570385', 'jeanaikacanoy224@gmail.com', 'John Anthony O. Tabigne', 'Pasuga / Lighting', 'https://lh3.googleusercontent.com/pw/AP1GczNF6uNbzhA1JChzgLOwuBHO_TNKihx3ollL2QV6o6v2L1LnMV2E2fXNbASlQ_6jgHrsNrbSWLkPtXE3VtryS8StLa2_h5o5Sk33khOu5HK8winPmVKK0GCaZOI4244kEAZ2Vt_8Dp4X-Trw-e37tKUV=w395-h878-s-no-gm?authuser=0', NULL, NULL, 'For pasuga', NULL, NULL, NULL, NULL, NULL);
 
+--  SMS_NOTIFICATIONS (append-only log of every automated or manual SMS)
+--  Not a setting. Not a flag on interments. A record of a real-world
+--  event: "an SMS about lease X was sent to phone P at time T".
+--
+--  Rows are never edited or deleted. A failed attempt stays as a Failed
+--  row; a retry inserts a new Pending/Sent row alongside it. This lets
+--  you answer: when did we last contact this family? did it go through?
+--  did we try multiple times? who triggered it?
+--
+--  Deduplication:
+--    active_sent_key is a shadow column that only exists when status is
+--    'Sent'. It encodes (interment, notification_type, lease date the
+--    reminder was about, days_before_expiry). Because MySQL allows many
+--    NULLs in a UNIQUE index, Failed / Pending / Skipped rows do not
+--    block each other, and retries are allowed until one succeeds.
+CREATE TABLE sms_notifications (
+    notification_id INT AUTO_INCREMENT PRIMARY KEY,
+
+    interment_id INT NOT NULL,
+
+    notification_type ENUM(
+        'Lease Expiring',
+        'Burial Confirmation',
+        'Payment Reminder',
+        'Other'
+    ) NOT NULL DEFAULT 'Lease Expiring',
+
+    -- Snapshot of the lease date this reminder was about.
+    -- Stored so a later lease renewal does not confuse the audit trail:
+    -- "we already notified them about the 2026-11-30 expiry" is a
+    -- different fact from "we notified them about 2027-11-30".
+    lease_expiration_date_at_send DATE NULL,
+
+    -- Which reminder stage: 30, 7, 0, etc. NULL for manual / non-lease types.
+    days_before_expiry INT NULL,
+
+    -- Who we contacted
+    recipient_name  VARCHAR(255) NULL,   -- snapshot of contact_person_name
+    recipient_phone_number VARCHAR(50) NOT NULL,
+    message_body TEXT NOT NULL,
+
+    -- Delivery outcome
+    status ENUM('Pending','Sent','Failed','Skipped') NOT NULL DEFAULT 'Pending',
+    sent_at DATETIME NULL,
+    provider VARCHAR(50) NULL DEFAULT 'TextBee',
+    provider_message_id VARCHAR(255) NULL,
+    error_message TEXT NULL,
+    attempt_count INT NOT NULL DEFAULT 0,
+
+    -- Append-only audit
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_by INT NULL,                 -- NULL when fired by the scheduler
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+
+    FOREIGN KEY (interment_id) REFERENCES interments(interment_id) ON DELETE RESTRICT,
+    FOREIGN KEY (created_by)  REFERENCES users(user_id)           ON DELETE SET NULL,
+
+    -- Shadow column: prevents duplicate SUCCESSFUL sends of the same
+    -- reminder stage for the same lease cycle. Failed / Pending / Skipped
+    -- rows produce NULL here, so retries are allowed until one Sent row
+    -- exists for that key.
+    active_sent_key VARCHAR(255)
+        GENERATED ALWAYS AS (
+            CASE WHEN status = 'Sent' THEN
+                CONCAT(
+                    interment_id, ':', notification_type, ':',
+                    COALESCE(DATE_FORMAT(lease_expiration_date_at_send, '%Y-%m-%d'), 'NULL'), ':',
+                    COALESCE(days_before_expiry, -1)
+                )
+            ELSE NULL END
+        ) STORED,
+    CONSTRAINT uk_active_sent_key UNIQUE (active_sent_key)
+);
+
 --  TABLE COMMENTS
 ALTER TABLE users             COMMENT = 'System users with role-based access';
 ALTER TABLE blocks            COMMENT = 'Cemetery sections/areas';
@@ -522,7 +597,7 @@ ALTER TABLE reservations      COMMENT = 'FUTURE. Proposal to move O and place N.
 ALTER TABLE placement_history COMMENT = 'PAST. Append-only placement history. No edits logged.';
 ALTER TABLE settings          COMMENT = 'System configuration key-value store';
 ALTER TABLE payments          COMMENT = 'Payment records with dual-approval workflow';
-
+ALTER TABLE sms_notifications COMMENT = 'PAST. Append-only log of every SMS attempt (lease reminders, etc).';
 
 --  INDEXES
 -- to improves the speed of data by creating a reference instead of scanning every row
@@ -570,3 +645,10 @@ CREATE INDEX idx_settings_deleted_at        ON settings(deleted_at);
 
 -- Payments
 CREATE INDEX idx_payments_deleted_at        ON payments(deleted_at);
+
+-- SMS
+CREATE INDEX idx_sms_notifications_interment      ON sms_notifications(interment_id);
+CREATE INDEX idx_sms_notifications_status         ON sms_notifications(status);
+CREATE INDEX idx_sms_notifications_type_sent      ON sms_notifications(notification_type, sent_at);
+CREATE INDEX idx_sms_notifications_lease_date     ON sms_notifications(lease_expiration_date_at_send);
+CREATE INDEX idx_sms_notifications_stage          ON sms_notifications(days_before_expiry);

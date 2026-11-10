@@ -47,7 +47,7 @@ function sendSmsViaTextBee($phoneNumber, $message, $include_cemetery_name = true
         $formatted = formatPhNumber($number);
         if (!$formatted) {
             $reason = "Invalid Philippines phone number: {$number}";
-            systemLog("Failed to send SMS to {$number}. Error: {$reason}. Content: {$message}", $user_id);
+            systemLog("Failed to send SMS to {$number}. Error: {$reason}. Content in the message: {$message}", $user_id);
             return ['success' => false, 'error' => $reason];
         }
         $formattedNumbers[] = $formatted;
@@ -55,7 +55,7 @@ function sendSmsViaTextBee($phoneNumber, $message, $include_cemetery_name = true
 
     if (empty($formattedNumbers)) {
         $reason = 'No valid phone numbers provided.';
-        systemLog("Failed to send SMS. Error: {$reason}. Content: {$message}", $user_id);
+        systemLog("Failed to send SMS. Error: {$reason}. Content in the message: {$message}", $user_id);
         return ['success' => false, 'error' => $reason];
     }
 
@@ -75,7 +75,7 @@ function sendSmsViaTextBee($phoneNumber, $message, $include_cemetery_name = true
 
         if (!$keyResult || empty($keyResult['setting_value'])) {
             $reason = 'TextBee API key is missing in the database.';
-            systemLog("Failed to send SMS to {$phoneNumbersForLog}. Error: {$reason}. Content: {$message}", $user_id);
+            systemLog("Failed to send SMS to {$phoneNumbersForLog}. Error: {$reason}. Content in the message: {$message}", $user_id);
             return ['success' => false, 'error' => $reason];
         }
 
@@ -83,7 +83,7 @@ function sendSmsViaTextBee($phoneNumber, $message, $include_cemetery_name = true
 
         if (!$apiKey) {
             $reason = 'Failed to decrypt TextBee API key.';
-            systemLog("Failed to send SMS to {$phoneNumbersForLog}. Error: {$reason}. Content: {$message}", $user_id);
+            systemLog("Failed to send SMS to {$phoneNumbersForLog}. Error: {$reason}. Content in the message: {$message}", $user_id);
             return ['success' => false, 'error' => $reason];
         }
 
@@ -99,7 +99,7 @@ function sendSmsViaTextBee($phoneNumber, $message, $include_cemetery_name = true
 
         if (!$deviceResult || empty($deviceResult['setting_value'])) {
             $reason = 'TextBee Device ID is missing in the database.';
-            systemLog("Failed to send SMS to {$phoneNumbersForLog}. Error: {$reason}. Content: {$message}", $user_id);
+            systemLog("Failed to send SMS to {$phoneNumbersForLog}. Error: {$reason}. Content in the message: {$message}", $user_id);
             return ['success' => false, 'error' => $reason];
         }
 
@@ -107,7 +107,7 @@ function sendSmsViaTextBee($phoneNumber, $message, $include_cemetery_name = true
 
         if (!$deviceId) {
             $reason = 'Failed to decrypt TextBee Device ID.';
-            systemLog("Failed to send SMS to {$phoneNumbersForLog}. Error: {$reason}. Content: {$message}", $user_id);
+            systemLog("Failed to send SMS to {$phoneNumbersForLog}. Error: {$reason}. Content in the message: {$message}", $user_id);
             return ['success' => false, 'error' => $reason];
         }
 
@@ -157,28 +157,28 @@ function sendSmsViaTextBee($phoneNumber, $message, $include_cemetery_name = true
         if ($curlError) {
             error_log("TextBee cURL Error: " . $curlError);
             $reason = 'Connection failed: ' . $curlError;
-            systemLog("Failed to send SMS to {$phoneNumbersForLog}. Error: {$reason}. Content: {$message}", $user_id);
+            systemLog("Failed to send SMS to {$phoneNumbersForLog}. Error: {$reason}. Content in the message: {$message}", $user_id);
             return ['success' => false, 'error' => $reason];
         }
 
         if ($httpCode >= 200 && $httpCode < 300) {
-            systemLog("SMS sent to {$phoneNumbersForLog}. Content: {$message}", $user_id);
+            systemLog("SMS sent to {$phoneNumbersForLog}. Content in the message: {$message}", $user_id);
             return ['success' => true, 'response' => json_decode($response, true)];
         } else {
             error_log("TextBee API Error (Code $httpCode): " . $response);
             $reason = 'API rejected the request. Code: ' . $httpCode;
-            systemLog("Failed to send SMS to {$phoneNumbersForLog}. Error: {$reason}. Content: {$message}", $user_id);
+            systemLog("Failed to send SMS to {$phoneNumbersForLog}. Error: {$reason}. Content in the message: {$message}", $user_id);
             return ['success' => false, 'error' => $reason];
         }
     } catch (PDOException $e) {
         error_log("Database error in sendSmsViaTextBee: " . $e->getMessage());
         $reason = 'Database failure while fetching credentials.';
-        systemLog("Failed to send SMS to {$phoneNumbersForLog}. Error: {$reason}. Content: {$message}", $user_id);
+        systemLog("Failed to send SMS to {$phoneNumbersForLog}. Error: {$reason}. Content in the message: {$message}", $user_id);
         return ['success' => false, 'error' => $reason];
     } catch (Exception $e) {
         error_log("Decryption error in sendSmsViaTextBee: " . $e->getMessage());
         $reason = 'System error processing credentials.';
-        systemLog("Failed to send SMS to {$phoneNumbersForLog}. Error: {$reason}. Content: {$message}", $user_id);
+        systemLog("Failed to send SMS to {$phoneNumbersForLog}. Error: {$reason}. Content in the message: {$message}", $user_id);
         return ['success' => false, 'error' => $reason];
     }
 }

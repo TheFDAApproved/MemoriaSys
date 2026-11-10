@@ -1,0 +1,20 @@
+temporary notes:
+
+cron:
+# Before closing Laragon (or anytime you want to stop the cron cleanly):
+
+# 1. Stop the scheduler
+Get-Process Cronical -ErrorAction SilentlyContinue | Stop-Process -Force
+
+# 2. Confirm zero remain (no output = success)
+Get-Process Cronical -ErrorAction SilentlyContinue
+
+# 3. Now close Laragon
+
+revisions i guess:
+dashboard.. sms auto,,,...
+settings: csv filtering, sms auto settings
+auto-save/auto-suggest for all inputs hmphh..
+
+new sql.txt, sql_dummy... change data dictionary, erd, db design...
+i hate css diha ko nalangan?? wth

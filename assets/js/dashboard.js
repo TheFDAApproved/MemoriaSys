@@ -120,13 +120,29 @@ document.addEventListener("DOMContentLoaded", function () {
             statId: "stat_unverified_accounts",
             resolve: (data) => pickKey(data, "unverified_accounts"),
         },
+        {
+            cardId: "sms_alerts",
+            statId: "stat_sms_alerts",
+            isSmsCard: true,
+            resolve: () => ({
+                visible: true,
+                value: window.smsAlertsPendingCache,
+            }),
+        },
     ];
 
     // Writes a value into a stat card
     // Shows a dash for bad values
-    function setStatValue(id, value) {
+    function setStatValue(id, value, isSmsCard = false) {
         const el = document.getElementById(id);
         if (!el) return;
+
+        // Keep animated loading state on SMS card while sms_alerts.js is still fetching
+        if (isSmsCard && value === undefined) {
+            el.innerHTML = '<span class="statLoadingText">-</span>';
+            return;
+        }
+
         el.textContent =
             value === null || value === undefined || Number.isNaN(value)
                 ? "—"
@@ -141,27 +157,25 @@ document.addEventListener("DOMContentLoaded", function () {
         const hidden = cards.filter((c) => c && c.style.display === "none");
         [...visible, ...hidden].forEach((c) => grid.appendChild(c));
 
-        const n = visible.length;
-        grid.classList.remove("grid3", "grid4", "grid5");
-        if (n <= 3) grid.classList.add("grid3");
-        else if (n === 4) grid.classList.add("grid4");
-        else grid.classList.add("grid5");
+        const n = Math.min(Math.max(visible.length, 1), 5);
+        grid.classList.remove("grid1", "grid2", "grid3", "grid4", "grid5");
+        grid.classList.add("grid" + n);
     }
 
     // Safety net: if data breaks, show all cards with a dash so the grid never ends up empty
-    function showAllCardsFallback(reason) {
+    function showAllCardsFallback() {
         const cards = STAT_CARDS.map((cfg) => {
             const card = document.getElementById(cfg.cardId);
             if (!card) return null;
             card.style.display = "";
-            setStatValue(cfg.statId, "—");
+            setStatValue(cfg.statId, cfg.isSmsCard ? window.smsAlertsPendingCache : "—", cfg.isSmsCard);
             return card;
         }).filter(Boolean);
 
         const grid = document.querySelector(".statsGrid");
         if (grid) {
             cards.forEach((c) => grid.appendChild(c));
-            grid.classList.remove("grid3", "grid4", "grid5");
+            grid.classList.remove("grid1", "grid2", "grid3", "grid4", "grid5");
             grid.classList.add("grid5");
         }
     }
@@ -170,7 +184,7 @@ document.addEventListener("DOMContentLoaded", function () {
     // A card with visible:false gets hidden
     function applyStats(data) {
         if (!isPlainObject(data)) {
-            showAllCardsFallback("payload was not an object");
+            showAllCardsFallback();
             return;
         }
 
@@ -193,7 +207,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
             if (result.visible) {
                 card.style.display = "";
-                setStatValue(cfg.statId, result.value);
+                setStatValue(cfg.statId, result.value, cfg.isSmsCard);
                 visibleCount++;
             } else {
                 card.style.display = "none";
@@ -201,7 +215,7 @@ document.addEventListener("DOMContentLoaded", function () {
         });
 
         if (visibleCount === 0) {
-            showAllCardsFallback("all cards would be hidden — data may be malformed");
+            showAllCardsFallback();
             return;
         }
 
@@ -222,8 +236,8 @@ document.addEventListener("DOMContentLoaded", function () {
         }
 
         ul.innerHTML = segments
-            .map((seg) => {
-                return (
+            .map(
+                (seg) =>
                     "<li>" +
                     '<span class="legendLeft">' +
                     '<span class="legendDot" style="background:' +
@@ -236,9 +250,8 @@ document.addEventListener("DOMContentLoaded", function () {
                     '<span class="legendValue">' +
                     seg.value +
                     "</span>" +
-                    "</li>"
-                );
-            })
+                    "</li>",
+            )
             .join("");
     }
 
@@ -480,14 +493,7 @@ document.addEventListener("DOMContentLoaded", function () {
     // Data Transforms
     // Keeps a fixed order for the pie slices.
     function transformGraveDistribution(dist) {
-        const order = [
-            "Vacant",
-            "Occupied",
-            "Expiring",
-            "Expired",
-            "Reserved",
-            "Other",
-        ];
+        const order = ["Vacant", "Occupied", "Expiring", "Expired", "Reserved", "Other"];
         const labels = [];
         const values = [];
 
@@ -586,7 +592,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
             renderCharts(data, { delayMs: showLoading ? 300 : 0 });
         } catch (err) {
-            showAllCardsFallback("fetch/parse error");
+            showAllCardsFallback();
 
             if (showLoading) await setLoading(false);
 

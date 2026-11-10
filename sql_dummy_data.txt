@@ -106,7 +106,7 @@ CREATE TABLE users (
     FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
 
--- INSERT INTO `users` (`user_id`, `username`, `role`, `status`, `email`, `phone_number`, `password_hash`, `name`, `session_token`, `created_at`, `updated_at`, `deleted_at`, `created_by`, `updated_by`) VALUES (NULL, 'admin', 'Administrator', 'Verified', 'admin@gmail.com', '+639293456789', '$2y$12$YtdLBOCGz5.WcnxtHGPBx.eg4yRaijZUBMOYuw9GVAxkp670BXW0y', 'Administrator', NULL, '2026-10-11 01:37:40', '2026-10-11 01:37:57', NULL, NULL, NULL);
+INSERT INTO `users` (`user_id`, `username`, `role`, `status`, `email`, `phone_number`, `password_hash`, `name`, `session_token`, `created_at`, `updated_at`, `deleted_at`, `created_by`, `updated_by`) VALUES (NULL, 'admin', 'Administrator', 'Verified', 'admin@gmail.com', '+639293456789', '$2y$12$YtdLBOCGz5.WcnxtHGPBx.eg4yRaijZUBMOYuw9GVAxkp670BXW0y', 'Administrator', NULL, '2026-10-11 01:37:40', '2026-10-11 01:37:57', NULL, NULL, NULL);
 
 --  BLOCKS (sections / areas)
 CREATE TABLE blocks (
@@ -449,28 +449,28 @@ CREATE TABLE settings (
     FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
 
--- INSERT INTO `settings` (`setting_id`, `setting_key`, `setting_value`, `description`, `created_at`, `updated_at`, `deleted_at`, `created_by`, `updated_by`) VALUES
--- (1, 'logo_1', 'logo_1.png', 'Header Logo 1', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
--- (2, 'logo_2', 'logo_2.png', 'Header Logo 2', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
--- (3, 'cemetery_logo', 'cemetery_logo.png', 'Cemetery Logo', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
--- (4, 'cemetery_mark', 'cemetery_mark.png', 'Cemetery Mark', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
--- (5, 'cemetery_background', 'cemetery_background.png', 'Cemetery Background', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
--- (6, 'qr_code', 'qr_code.png', 'Payment QR Code', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
--- (7, 'dept_name', 'Department of General Services', 'Main Department Name', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
--- (8, 'cemetery_name', 'Mandaue City Public Cemetery', 'Cemetery Name', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
--- (9, 'cemetery_address', 'Barangay Guizo, 710 del Pilar Street, Mandaue, 6014 Cebu', 'Cemetery Physical Address', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
--- (10, 'office_address', '8WFV+PC8 Barangay Centro, Mandaue, Cebu', 'Administrative Office Address', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
--- (11, 'cemetery_google_maps', 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d693.8860555934123!2d123.94400457004447!3d10.32488936201375!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x33a999006ffb7753%3A0x1e52e02b25fd79be!2sDepartment%20of%20General%20Services!5e0!3m2!1sen!2sph!4v1786613815863!5m2!1sen!2sph" allowfullscreen="" loading="lazy" referrerpolicy="strict-origin-when-cross-origin', 'Google Maps Embed URL', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
--- (12, 'contact_phone', '+63 912 3456 789', 'Contact Hotline / Phone', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
--- (13, 'contact_email', 'memoria@gmail.com', 'Official Email Address', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
--- (14, 'payment_channels_list', '["Maya", "GoTyme", "Maribank", "GCash"]', 'Payment Channels', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
--- (15, 'payment_purposes_list', '["Pasuga / Lighting", "Burial Fee"]', 'Purposes of Payment', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
--- (31, 'main_color', '#0f172a', 'UI Primary Color', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
--- (32, 'people_name_1', 'Ms. Rosemarie U. Chavez', 'Report Signatory 1 Name', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
--- (33, 'people_title_1', 'OIC, Department of General Services', 'Report Signatory 1 Title', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
--- (34, 'people_name_2', 'Ar. Maria Aileen A. Paragsa', 'Report Signatory 2 Name', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
--- (35, 'people_title_2', 'Admin Division Chief', 'Report Signatory 2 Title', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
--- (36, 'cemetery_map_images', 'cemetery_map_image.png', 'For the cemetery map backgound image', '2026-11-04 22:50:13', '2026-11-04 22:50:13', NULL, '1', '1');
+INSERT INTO `settings` (`setting_id`, `setting_key`, `setting_value`, `description`, `created_at`, `updated_at`, `deleted_at`, `created_by`, `updated_by`) VALUES
+(1, 'logo_1', 'logo_1.png', 'Header Logo 1', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(2, 'logo_2', 'logo_2.png', 'Header Logo 2', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(3, 'cemetery_logo', 'cemetery_logo.png', 'Cemetery Logo', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(4, 'cemetery_mark', 'cemetery_mark.png', 'Cemetery Mark', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(5, 'cemetery_background', 'cemetery_background.png', 'Cemetery Background', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(6, 'qr_code', 'qr_code.png', 'Payment QR Code', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(7, 'dept_name', 'Department of General Services', 'Main Department Name', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(8, 'cemetery_name', 'Mandaue City Public Cemetery', 'Cemetery Name', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(9, 'cemetery_address', 'Barangay Guizo, 710 del Pilar Street, Mandaue, 6014 Cebu', 'Cemetery Physical Address', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(10, 'office_address', '8WFV+PC8 Barangay Centro, Mandaue, Cebu', 'Administrative Office Address', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(11, 'cemetery_google_maps', 'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d693.8860555934123!2d123.94400457004447!3d10.32488936201375!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x33a999006ffb7753%3A0x1e52e02b25fd79be!2sDepartment%20of%20General%20Services!5e0!3m2!1sen!2sph!4v1786613815863!5m2!1sen!2sph" allowfullscreen="" loading="lazy" referrerpolicy="strict-origin-when-cross-origin', 'Google Maps Embed URL', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(12, 'contact_phone', '+63 912 3456 789', 'Contact Hotline / Phone', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(13, 'contact_email', 'memoria@gmail.com', 'Official Email Address', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(14, 'payment_channels_list', '["Maya", "GoTyme", "Maribank", "GCash"]', 'Payment Channels', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(15, 'payment_purposes_list', '["Pasuga / Lighting", "Burial Fee"]', 'Purposes of Payment', '2026-10-11 19:05:43', '2026-10-11 19:05:50', NULL, 1, 1),
+(31, 'main_color', '#0f172a', 'UI Primary Color', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
+(32, 'people_name_1', 'Ms. Rosemarie U. Chavez', 'Report Signatory 1 Name', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
+(33, 'people_title_1', 'OIC, Department of General Services', 'Report Signatory 1 Title', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
+(34, 'people_name_2', 'Ar. Maria Aileen A. Paragsa', 'Report Signatory 2 Name', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
+(35, 'people_title_2', 'Admin Division Chief', 'Report Signatory 2 Title', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
+(36, 'cemetery_map_images', 'cemetery_map_image.png', 'For the cemetery map backgound image', '2026-11-04 22:50:13', '2026-11-04 22:50:13', NULL, '1', '1');
 
 
 --  PAYMENTS
@@ -511,7 +511,82 @@ CREATE TABLE payments (
     FOREIGN KEY (created_by) REFERENCES users(user_id) ON DELETE SET NULL,
     FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
--- INSERT INTO `payments` (`payment_id`, `reference_number`, `payment_channel`, `amount`, `deceased_name`, `payers_phone_number`, `payers_email`, `payers_name`, `purpose`, `image_link`, `confirmed_office_staff`, `confirmed_ground_staff`, `remarks_payer`, `remarks_office`, `remarks_grounds`, `deleted_at`, `created_by`, `updated_by`) VALUES (NULL, '0046876781312', 'GCash', '70.00', 'Jean Aika R. Canoy', '+639154570385', 'jeanaikacanoy224@gmail.com', 'John Anthony O. Tabigne', 'Pasuga / Lighting', 'https://lh3.googleusercontent.com/pw/AP1GczNF6uNbzhA1JChzgLOwuBHO_TNKihx3ollL2QV6o6v2L1LnMV2E2fXNbASlQ_6jgHrsNrbSWLkPtXE3VtryS8StLa2_h5o5Sk33khOu5HK8winPmVKK0GCaZOI4244kEAZ2Vt_8Dp4X-Trw-e37tKUV=w395-h878-s-no-gm?authuser=0', NULL, NULL, 'For pasuga', NULL, NULL, NULL, NULL, NULL);
+INSERT INTO `payments` (`payment_id`, `reference_number`, `payment_channel`, `amount`, `deceased_name`, `payers_phone_number`, `payers_email`, `payers_name`, `purpose`, `image_link`, `confirmed_office_staff`, `confirmed_ground_staff`, `remarks_payer`, `remarks_office`, `remarks_grounds`, `deleted_at`, `created_by`, `updated_by`) VALUES (NULL, '0046876781312', 'GCash', '70.00', 'Jean Aika R. Canoy', '+639154570385', 'jeanaikacanoy224@gmail.com', 'John Anthony O. Tabigne', 'Pasuga / Lighting', 'https://lh3.googleusercontent.com/pw/AP1GczNF6uNbzhA1JChzgLOwuBHO_TNKihx3ollL2QV6o6v2L1LnMV2E2fXNbASlQ_6jgHrsNrbSWLkPtXE3VtryS8StLa2_h5o5Sk33khOu5HK8winPmVKK0GCaZOI4244kEAZ2Vt_8Dp4X-Trw-e37tKUV=w395-h878-s-no-gm?authuser=0', NULL, NULL, 'For pasuga', NULL, NULL, NULL, NULL, NULL);
+
+--  SMS_NOTIFICATIONS (append-only log of every automated or manual SMS)
+--  Not a setting. Not a flag on interments. A record of a real-world
+--  event: "an SMS about lease X was sent to phone P at time T".
+--
+--  Rows are never edited or deleted. A failed attempt stays as a Failed
+--  row; a retry inserts a new Pending/Sent row alongside it. This lets
+--  you answer: when did we last contact this family? did it go through?
+--  did we try multiple times? who triggered it?
+--
+--  Deduplication:
+--    active_sent_key is a shadow column that only exists when status is
+--    'Sent'. It encodes (interment, notification_type, lease date the
+--    reminder was about, days_before_expiry). Because MySQL allows many
+--    NULLs in a UNIQUE index, Failed / Pending / Skipped rows do not
+--    block each other, and retries are allowed until one succeeds.
+CREATE TABLE sms_notifications (
+    notification_id INT AUTO_INCREMENT PRIMARY KEY,
+
+    interment_id INT NOT NULL,
+
+    notification_type ENUM(
+        'Lease Expiring',
+        'Burial Confirmation',
+        'Payment Reminder',
+        'Other'
+    ) NOT NULL DEFAULT 'Lease Expiring',
+
+    -- Snapshot of the lease date this reminder was about.
+    -- Stored so a later lease renewal does not confuse the audit trail:
+    -- "we already notified them about the 2026-11-30 expiry" is a
+    -- different fact from "we notified them about 2027-11-30".
+    lease_expiration_date_at_send DATE NULL,
+
+    -- Which reminder stage: 30, 7, 0, etc. NULL for manual / non-lease types.
+    days_before_expiry INT NULL,
+
+    -- Who we contacted
+    recipient_name  VARCHAR(255) NULL,   -- snapshot of contact_person_name
+    recipient_phone_number VARCHAR(50) NOT NULL,
+    message_body TEXT NOT NULL,
+
+    -- Delivery outcome
+    status ENUM('Pending','Sent','Failed','Skipped') NOT NULL DEFAULT 'Pending',
+    sent_at DATETIME NULL,
+    provider VARCHAR(50) NULL DEFAULT 'TextBee',
+    provider_message_id VARCHAR(255) NULL,
+    error_message TEXT NULL,
+    attempt_count INT NOT NULL DEFAULT 0,
+
+    -- Append-only audit
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    created_by INT NULL,                 -- NULL when fired by the scheduler
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+
+
+    FOREIGN KEY (interment_id) REFERENCES interments(interment_id) ON DELETE RESTRICT,
+    FOREIGN KEY (created_by)  REFERENCES users(user_id)           ON DELETE SET NULL,
+
+    -- Shadow column: prevents duplicate SUCCESSFUL sends of the same
+    -- reminder stage for the same lease cycle. Failed / Pending / Skipped
+    -- rows produce NULL here, so retries are allowed until one Sent row
+    -- exists for that key.
+    active_sent_key VARCHAR(255)
+        GENERATED ALWAYS AS (
+            CASE WHEN status = 'Sent' THEN
+                CONCAT(
+                    interment_id, ':', notification_type, ':',
+                    COALESCE(DATE_FORMAT(lease_expiration_date_at_send, '%Y-%m-%d'), 'NULL'), ':',
+                    COALESCE(days_before_expiry, -1)
+                )
+            ELSE NULL END
+        ) STORED,
+    CONSTRAINT uk_active_sent_key UNIQUE (active_sent_key)
+);
 
 --  TABLE COMMENTS
 ALTER TABLE users             COMMENT = 'System users with role-based access';
@@ -522,7 +597,7 @@ ALTER TABLE reservations      COMMENT = 'FUTURE. Proposal to move O and place N.
 ALTER TABLE placement_history COMMENT = 'PAST. Append-only placement history. No edits logged.';
 ALTER TABLE settings          COMMENT = 'System configuration key-value store';
 ALTER TABLE payments          COMMENT = 'Payment records with dual-approval workflow';
-
+ALTER TABLE sms_notifications COMMENT = 'PAST. Append-only log of every SMS attempt (lease reminders, etc).';
 
 --  INDEXES
 -- to improves the speed of data by creating a reference instead of scanning every row
@@ -571,6 +646,12 @@ CREATE INDEX idx_settings_deleted_at        ON settings(deleted_at);
 -- Payments
 CREATE INDEX idx_payments_deleted_at        ON payments(deleted_at);
 
+-- SMS
+CREATE INDEX idx_sms_notifications_interment      ON sms_notifications(interment_id);
+CREATE INDEX idx_sms_notifications_status         ON sms_notifications(status);
+CREATE INDEX idx_sms_notifications_type_sent      ON sms_notifications(notification_type, sent_at);
+CREATE INDEX idx_sms_notifications_lease_date     ON sms_notifications(lease_expiration_date_at_send);
+CREATE INDEX idx_sms_notifications_stage          ON sms_notifications(days_before_expiry);
 -- REALISTIC DUMMY DATA:
 
 -- Data-only backup generated 2026-11-05 01:52:03 (timezone: +08:00)
