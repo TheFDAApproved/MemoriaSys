@@ -138,6 +138,11 @@
                 -webkit-appearance: none;
                 appearance: none;
             }
+            /* Preserve line breaks inside multi-line log descriptions */
+            .logDesc {
+                white-space: pre-line;
+                word-break: break-word;
+            }
         `;
         document.head.appendChild(style);
     }
@@ -157,14 +162,15 @@
         return [];
     };
 
+    const LOG_LINE_RE =
+        /^\[?(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})\]?\s*([\s\S]*?)(?:\s*\(User ID:\s*(\d*)\))?\s*$/;
+
     // Parse a single log entry written as plain text
     const parseLogString = (str) => {
         if (typeof str !== 'string') return null;
         const s = str.trim();
 
-        const m = s.match(
-            /^\[?(\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2})\]\s*(.*?)(?:\s*\(User ID:\s*(\d*)\))?\s*$/
-        );
+        const m = s.match(LOG_LINE_RE);
 
         if (!m) {
             return {

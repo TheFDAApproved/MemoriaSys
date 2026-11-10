@@ -43,15 +43,13 @@ if ($method === 'POST') {
 
     // textbee.php appends "- From <cemetery_name>" itself when this is true,
     // so the message body must never carry the cemetery name already.
-    $smsStatus = sendSmsViaTextBee($phoneNumber, $message, $includeCemeteryName);
+    $smsStatus = sendSmsViaTextBee($phoneNumber, $message, $includeCemeteryName, $userData['user_id']);
 
     if (!$smsStatus['success']) {
         $reason = $smsStatus['error'] ?? 'Unknown gateway error';
-        systemLog("Failed to send SMS to {$phoneNumber}. Error: {$reason}. Content: {$message}", $userData['user_id']);
         Response::error("Failed to send SMS: " . $reason . ". Recheck your API KEYS and DEVICE ID", 500);
     }
 
-    systemLog("SMS sent to {$phoneNumber}. Content: {$message}", $userData['user_id']);
     Response::success("SMS sent successfully to " . $phoneNumber . ". Message content: " . $message, [
         "phone_number"          => $phoneNumber,
         "include_cemetery_name" => $includeCemeteryName,
