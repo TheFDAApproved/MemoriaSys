@@ -787,6 +787,11 @@ document.addEventListener("DOMContentLoaded", () => {
             desc: "Textbee Device ID (sensitive)",
             inputId: "textbee_device_id",
         },
+        {
+            key: "auto_send_sms_expiring",
+            desc: "Enable SMS Automation alerts every 2 mins",
+            inputId: "auto_send_sms_expiring",
+        }
     ];
 
     const SIGNATORY_INDEXES = [1, 2, 3, 4];
@@ -893,8 +898,16 @@ document.addEventListener("DOMContentLoaded", () => {
         for (const def of SYSTEM_SETTINGS) {
             const el = document.getElementById(def.inputId);
             if (!el) continue;
-            const val = (el.value ?? "").trim();
-            if (!val) continue;
+
+            let val;
+            if (el.type === "checkbox") {
+                // Always send a value for the toggle: "1" when on, "0" when off
+                val = el.checked ? "1" : "0";
+            } else {
+                val = (el.value ?? "").trim();
+                if (!val) continue;
+            }
+
             entries.push({ key: def.key, desc: def.desc, value: val, file: null });
         }
 

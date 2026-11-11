@@ -132,30 +132,47 @@
             <form autocomplete="off" id="system_config_form">
                 <div class="systemGrid">
 
-                    <!-- UI Primary Color -->
-                    <div class="systemItem">
-                        <label>UI Primary Color</label>
-                        <div class="colorRow">
-                            <input type="color" id="main_color" oninput="updateColorHex(this); applyUIColor(this);">
-                            <div>
-                                <div class="colorLabel">Primary Color</div>
-                                <div class="colorHex" id="main_color_1"></div>
-                            </div>
-                            <button class="btn ghostBtn" type="button"
-                                onclick="const hexLabel = document.getElementById('main_color_1'); hexLabel.textContent = window.main_mainColor; const uicolor = document.getElementById('main_color'); uicolor.value = window.main_mainColor; applyUIColor(uicolor);">
-                                <i class="fas fa-undo"></i>
-                            </button>
-                            <button class="btn ghostBtn" type="button"
-                                onclick="hexLabel = document.getElementById('main_color_1'); hexLabel.textContent = '#0f172a'; uicolor = document.getElementById('main_color'); uicolor.value = '#0f172a'; applyUIColor(uicolor);">
-                                <i class="fas fa-clock-rotate-left"></i> Reset to default
-                            </button>
-                            <div class="infoWrap">
-                                <button class="infoIcon" type="button" aria-label="Save changes reminder"
-                                    aria-expanded="false">
-                                    <i class="fas fa-info-circle"></i>
+                    <!-- UI Primary Color + SMS Automation, side by side -->
+                    <div class="systemRowCol">
+                        <!-- UI Primary Color -->
+                        <div class="systemItem">
+                            <label>UI Primary Color</label>
+                            <div class="colorRow">
+                                <input type="color" id="main_color" oninput="updateColorHex(this); applyUIColor(this);">
+                                <div>
+                                    <div class="colorLabel">Primary Color</div>
+                                    <div class="colorHex" id="main_color_1"></div>
+                                </div>
+                                <button class="btn ghostBtn" type="button"
+                                    onclick="const hexLabel = document.getElementById('main_color_1'); hexLabel.textContent = window.main_mainColor; const uicolor = document.getElementById('main_color'); uicolor.value = window.main_mainColor; applyUIColor(uicolor);">
+                                    <i class="fas fa-undo"></i>
                                 </button>
-                                <div class="infoPopup" role="tooltip">
-                                    Remember to click save changes below
+                                <button class="btn ghostBtn" type="button"
+                                    onclick="hexLabel = document.getElementById('main_color_1'); hexLabel.textContent = '#0f172a'; uicolor = document.getElementById('main_color'); uicolor.value = '#0f172a'; applyUIColor(uicolor);">
+                                    <i class="fas fa-clock-rotate-left"></i> Reset to default
+                                </button>
+                                <div class="infoWrap">
+                                    <button class="infoIcon" type="button" aria-label="Save changes reminder"
+                                        aria-expanded="false">
+                                        <i class="fas fa-info-circle"></i>
+                                    </button>
+                                    <div class="infoPopup" role="tooltip">
+                                        Remember to click save changes below
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- SMS Automation Toggle -->
+                        <div class="systemItem">
+                            <label for="auto_send_sms_expiring">SMS Automation</label>
+                            <div class="toggleRow">
+                                <label class="toggleSwitch">
+                                    <input type="checkbox" id="auto_send_sms_expiring">
+                                    <span class="toggleSlider"></span>
+                                </label>
+                                <div class="toggleText">
+                                    <span class="toggleLabel">Enable SMS Automation alerts on expiring graves</span>
                                 </div>
                             </div>
                         </div>
