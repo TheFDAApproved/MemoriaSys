@@ -3,12 +3,10 @@
 require_once 'config.php';
 require_once 'textbee.php';
 
-/**
- * Scan active interments and insert Pending rows for leases that
- * match a reminder stage. Idempotent — safe to run as often as you
- * like; the dedup check prevents duplicate rows for the same
- * (interment, stage, lease-date) combo.
- */
+// Scan active interments and insert Pending rows for leases that
+// match a reminder stage. Idempotent — safe to run as often as you
+// the dedup check prevents duplicate rows for the same
+// (interment, stage, lease-date) combo
 function generateSmsAlerts(PDO $pdo): array
 {
     global $SMS_REMINDER_STAGES;
@@ -88,10 +86,8 @@ function generateSmsAlerts(PDO $pdo): array
     return ['inserted' => $inserted, 'skipped' => $skipped];
 }
 
-/**
- * Drain the Pending/Failed queue, respecting the daily cap and the
- * per-run batch cap. Updates status + attempt_count on each row.
- */
+// Drain the Pending/Failed queue, respecting the daily cap and the
+// per-run batch cap. Updates status + attempt_count on each row.
 function processSmsAlerts(PDO $pdo): array
 {
     $dailyLimit = SMS_MAX_DAILY_SENDS;
@@ -199,15 +195,10 @@ function processSmsAlerts(PDO $pdo): array
     return $stats;
 }
 
-/**
- * Generate + send in one call. Safe to run every tick because
- * generation is idempotent — most ticks insert 0 rows.
- *
- * Sending is gated by the `auto_send_sms_expiring` setting. Generation
- * always runs so the queue stays fresh (missed stages would otherwise
- * never get caught if the flag was off during that day). When sending is
- * disabled, pending rows simply accumulate until the flag is re-enabled.
- */
+// Generate and send SMS alerts in one call. It is safe to run every tick because
+// generation does not create duplicate rows. Sending only happens when the
+// auto_send_sms_expiring setting is enabled, but generation always runs so the
+// queue stays updated. If sending is off, pending alerts will wait until it is turned on.
 function runSmsAlerts(PDO $pdo, ?bool $sendEnabled = null): array
 {
     // If caller didn't specify, look up the flag
@@ -232,21 +223,9 @@ function runSmsAlerts(PDO $pdo, ?bool $sendEnabled = null): array
     return $result;
 }
 
-/**
- * Is automated SMS sending enabled?
- *
- * Reads the `auto_send_sms_expiring` setting. Default is ENABLED:
- *   - Setting row missing              → true  (default-on)
- *   - Value is empty string / NULL     → true  (treated as "not configured")
- *   - Explicit falsy value             → false
- *     ("0", "false", "no", "off", "disabled")
- *   - Explicit truthy value            → true
- *     ("1", "true", "yes", "on", "enabled")
- *   - Any other unrecognized value     → true  (fail-open)
- *
- * A DB error during the check also fails open (true), so a transient
- * query issue never silently kills all outbound SMS.
- */
+// Check if automated SMS sending is enabled. It reads the auto_send_sms_expiring setting.
+// If the setting is missing, empty, or unknown, sending is enabled by default.
+// If the database has an error, it also stays enabled so SMS does not stop working.
 function isAutoSendSmsEnabled(PDO $pdo): bool
 {
     try {
@@ -291,21 +270,15 @@ function isAutoSendSmsEnabled(PDO $pdo): bool
     return true;
 }
 
-/**
- * Return the current state of the SMS notification queue for the UI:
- *   - summary:     counts by status, sent-today vs daily cap, stage breakdown
- *   - rows:        paginated log (filterable, searchable)
- *   - pagination:  page info for the UI
- *   - filters:     echoes back what was applied
- *
- * Options (all optional):
- *   status    'Pending'|'Sent'|'Failed'|'Skipped'   filter by status manual is coming soon?? not yet i guess
- *   stage     30|7|0|-1|'manual'                    filter by reminder stage
- *   search    string                               matches recipient_name, phone, deceased_name
- *   type      'Lease Expiring'|...                 default 'Lease Expiring'
- *   page      int  (default 1)
- *   per_page  int  (default 25, max 100)
- */
+// Get the current SMS notification queue for the UI.
+// It returns summary counts, a paginated list of logs, pagination info, and the filters that were used.
+// Optional options:
+//   status   - Filter by status: 'Pending', 'Sent', 'Failed', or 'Skipped'
+//   stage    - Filter by reminder stage: 30, 7, 0, -1, or 'manual'
+//   search   - Search by recipient name, phone number, or deceased name
+//   type     - Notification type, default is 'Lease Expiring'
+//   page     - Page number, default is 1
+//   per_page - Number of rows per page, default is 25 and maximum is 100
 function statusesSmsAlerts(PDO $pdo, array $options = []): array
 {
     $type     = $options['type']     ?? 'Lease Expiring';
@@ -452,7 +425,7 @@ function statusesSmsAlerts(PDO $pdo, array $options = []): array
     ];
 }
 
-/** Flip a Failed (or Skipped) row back to Pending and reset the attempt counter. */
+// Flip a Failed (or Skipped) row back to Pending and reset the attempt counter.
 function retrySmsAlert(PDO $pdo, int $notificationId): array
 {
     $stmt = $pdo->prepare("
@@ -471,7 +444,7 @@ function retrySmsAlert(PDO $pdo, int $notificationId): array
     return ['success' => true, 'notification_id' => $notificationId];
 }
 
-/** Cancel a single Pending row (mark Skipped). Sent rows can't be cancelled. */
+// Cancel a single Pending row (mark Skipped). Sent rows can't be cancelled
 function cancelSmsAlert(PDO $pdo, int $notificationId, int $userId): array
 {
     // Preserve the original error if this was a Failed row — the user
@@ -503,7 +476,7 @@ function cancelSmsAlert(PDO $pdo, int $notificationId, int $userId): array
     return ['success' => true, 'notification_id' => $notificationId];
 }
 
-/** Bulk abort: every Pending row → Skipped. */
+// Bulk abort: every Pending row → Skipped
 function cancelAllPendingSmsAlerts(PDO $pdo, int $userId): array
 {
     $stmt = $pdo->prepare("
@@ -518,7 +491,7 @@ function cancelAllPendingSmsAlerts(PDO $pdo, int $userId): array
     return ['success' => true, 'cancelled' => $stmt->rowCount()];
 }
 
-/** Bulk retry: every Failed row under the retry cap → Pending with attempt_count reset. */
+// Bulk retry: every Failed row under the retry cap → Pending with attempt_count reset
 function retryAllFailedSmsAlerts(PDO $pdo): array
 {
     $stmt = $pdo->prepare("
@@ -532,7 +505,7 @@ function retryAllFailedSmsAlerts(PDO $pdo): array
     return ['success' => true, 'retried' => $stmt->rowCount()];
 }
 
-/** Bulk retry: every Skipped row → Pending with attempt_count reset. */
+// Bulk retry: every Skipped row → Pending with attempt_count reset
 function retryAllSkippedSmsAlerts(PDO $pdo): array
 {
     $stmt = $pdo->prepare("

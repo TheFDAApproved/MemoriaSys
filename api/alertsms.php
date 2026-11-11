@@ -26,9 +26,7 @@ if (in_array($method, ['POST', 'DELETE'], true) && !$canMutate) {
 
 switch ($method) {
 
-    // ============================================================
     // GET — view details (summary + paginated rows). All roles.
-    // ============================================================
     case 'GET':
         $searchTerm = trim((string) ($_GET['search_term'] ?? ''));
         if ($searchTerm !== '' && mb_strlen($searchTerm) < 3) {
@@ -50,9 +48,7 @@ switch ($method) {
         Response::success("SMS alert statuses retrieved", $data);
         break;
 
-    // ============================================================
-    // POST — actions. Admin + Office only (guarded above).
-    // ============================================================
+    // POST — actions. Admin + Office only (guarded above)
     case 'POST':
         $input  = json_decode(file_get_contents('php://input'), true) ?: $_POST;
         $action = $input['action'] ?? null;
@@ -111,9 +107,7 @@ switch ($method) {
         }
         break;
 
-    // ============================================================
-    // DELETE — single-row cancel. Admin + Office only (guarded above).
-    // ============================================================
+    // DELETE — single-row cancel. Admin + Office only (guarded above)
     case 'DELETE':
         $id = (int)($_GET['notification_id'] ?? 0);
         if (!$id) Response::error("notification_id required", 400);

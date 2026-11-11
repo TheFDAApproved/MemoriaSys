@@ -1,6 +1,4 @@
-/* ============================================================
-   Base & Layout
-   ============================================================ */
+/* Base & Layout */
 html,
 body {
   height: 100%;
@@ -22,9 +20,7 @@ body {
   overflow: hidden;
 }
 
-/* ============================================================
-   Skeleton Loading
-   ============================================================ */
+/* Skeleton Loading */
 .dashboardSkeleton {
   display: grid;
   position: absolute;
@@ -175,9 +171,7 @@ body {
   border-radius: 6px 6px 0 0;
 }
 
-/* ============================================================
-   Stats Grid
-   ============================================================ */
+/* Stats Grid */
 .statsGrid {
   display: grid;
   grid-template-columns:
@@ -325,11 +319,7 @@ body {
 .smsCardLaunchHint {
   font-size: 10px;
   color: #94a3b8;
-  opacity: 0;
   transform: translateY(1px);
-  transition:
-    opacity 0.15s ease,
-    color 0.15s ease;
   flex-shrink: 0;
 }
 .statCard.is-clickable:hover .smsCardLaunchHint,
@@ -428,9 +418,7 @@ body {
   color: #475569;
 }
 
-/* ============================================================
-   Charts Grid
-   ============================================================ */
+/* Charts Grid */
 .chartsGrid {
   display: grid;
   grid-template-columns: 1fr 1.6fr;
@@ -558,9 +546,7 @@ body {
   z-index: 1;
 }
 
-/* ============================================================
-   SMS Alerts Modal — the modal panel itself scrolls
-   ============================================================ */
+/* SMS Alerts Modal — the modal panel itself scrolls */
 .smsModal {
   position: fixed;
   inset: 0;
@@ -1490,9 +1476,7 @@ body {
   gap: 8px;
 }
 
-/* ============================================================
-   Keyframes
-   ============================================================ */
+/* Keyframes */
 @keyframes memoriaShimmer {
   0% {
     background-position: 200% 0;
@@ -1528,10 +1512,7 @@ body {
   }
 }
 
-/* ============================================================
-   Responsive
-   ============================================================ */
-
+/* Responsive */
 @media (min-width: 901px) and (max-width: 1280px) {
   .statsGrid {
     gap: 12px;

@@ -1,11 +1,5 @@
 // assets/js/sms_alerts.js
-// Dashboard SMS card + full-page modal for SMS automation alerts.
-// - Search: auto-fetches only for 3+ chars (debounced); Enter also requires 3+
-// - 1-2 char searches are rejected client-side with a warning toast —
-//   the previously displayed data stays on screen.
-// - The search input is NOT disabled during user-typing refreshes,
-//   so focus and typed text are preserved while the fetch is in flight.
-// - Uses showAlertTOP from alert.js and confirm_ui from confirm_ui.js
+// Dashboard SMS card and full-page modal for SMS automation alerts
 (function () {
   "use strict";
 
@@ -22,9 +16,7 @@
     }
   }
 
-  // ============================================================
-  // 1. STATE & HELPERS
-  // ============================================================
+  // STATE & HELPERS
 
   const state = {
     isOpen: false,
@@ -60,7 +52,7 @@
     );
   }
 
-  // Full date + time (for "Sent At" / "Created")
+  // Full date + time (for "Sent At" / "Created (updated_at haha)")
   function formatDate(iso) {
     if (!iso) return "—";
 
@@ -133,10 +125,55 @@
     trigger.setAttribute("aria-expanded", nextOpen ? "true" : "false");
   }
 
-  // ============================================================
-  // 2. DASHBOARD CARD
-  // ============================================================
+  //Dynamic column visibility
+  //NO last update column at sent and has sent column only on sent
+  function isSentColumnVisible() {
+    return state.filters.status === "Sent";
+  }
 
+  let dynamicColStylesInjected = false;
+
+  function ensureDynamicColumnStyles() {
+    if (dynamicColStylesInjected) return;
+    dynamicColStylesInjected = true;
+    const style = document.createElement("style");
+    style.id = "smsDynamicColStyles";
+    style.textContent =
+      ".smsSentColHidden .col-sent," +
+      '.smsSentColHidden [data-label="Sent"],' +
+      ".smsCreatedColHidden .col-created," +
+      '.smsCreatedColHidden [data-label="Created"]{display:none !important;}';
+    document.head.appendChild(style);
+  }
+
+  function applyDynamicColumnVisibility() {
+    ensureDynamicColumnStyles();
+
+    const modal = $("smsAlertsModal");
+    if (!modal) return;
+
+    // Defensive: tag header cells if the markup didn't already
+    modal.querySelectorAll("thead th").forEach((th) => {
+      if (
+        !th.classList.contains("col-sent") &&
+        (th.dataset.label === "Sent" || th.textContent.trim() === "Sent")
+      ) {
+        th.classList.add("col-sent");
+      }
+      if (
+        !th.classList.contains("col-created") &&
+        (th.dataset.label === "Created" || th.textContent.trim() === "Created")
+      ) {
+        th.classList.add("col-created");
+      }
+    });
+
+    const inSentView = isSentColumnVisible();
+    modal.classList.toggle("smsSentColHidden", !inSentView);
+    modal.classList.toggle("smsCreatedColHidden", inSentView);
+  }
+
+  // DASHBOARD CARD
   function setCardLoadingState() {
     const valueEl = $("stat_sms_alerts");
     if (valueEl && window.smsAlertsPendingCache === undefined) {
@@ -250,9 +287,7 @@
     }
   }
 
-  // ============================================================
-  // 3. MODAL RENDER & LOADING STATES
-  // ============================================================
+  // MODAL RENDER & LOADING STATES
 
   function buildSkeletonRows(canMutate, rowCount = 6) {
     const rows = [];
@@ -417,6 +452,8 @@
     if (banner) {
       banner.style.display = autoSendEnabled ? "none" : "";
     }
+
+    applyDynamicColumnVisibility();
   }
 
   function hasActiveFilters() {
@@ -434,7 +471,7 @@
     const canMutate = Boolean(state.permissions.can_mutate);
     const colSpan = canMutate ? 10 : 9;
 
-    // 1. Fetch Error State
+    // Fetch Error State
     if (lastFetchError) {
       tbody.innerHTML = `
         <tr>
@@ -457,7 +494,7 @@
 
     const rows = state.data?.rows || [];
 
-    // 2. Empty States
+    // Empty States
     if (rows.length === 0) {
       if (hasActiveFilters()) {
         tbody.innerHTML = `
@@ -495,9 +532,9 @@
       return;
     }
 
-    // 3. Populated Rows
-    // Must match <thead>:
-    // Deceased | Lease Expires | Recipient | Phone | Stage | Status | Attempts | Created | Sent | Actions
+    // Populated Rows
+    // <thead>:
+    // Deceased | Lease Expires | Recipient | Phone | Stage | Status | Attempts | Created (last update haha) | Sent | Actions
     tbody.innerHTML = rows
       .map((r) => {
         const rowId = String(r.notification_id);
@@ -599,11 +636,11 @@
 
     const stageSelect = $("smsStageFilter");
     if (stageSelect) stageSelect.value = "";
+
+    applyDynamicColumnVisibility();
   }
 
-  // ============================================================
-  // 4. MODAL DATA & MUTATIONS
-  // ============================================================
+  // MODAL DATA & MUTATIONS
 
   async function refresh(options = {}) {
     const { silent = false, keepInputs = false } = options;
@@ -720,9 +757,7 @@
     state.pollTimer = setTimeout(() => refresh({ silent: true }), 5000);
   }
 
-  // ============================================================
-  // 5. MODAL OPEN / CLOSE & FOCUS MANAGEMENT
-  // ============================================================
+  // MODAL OPEN / CLOSE & FOCUS MANAGEMENT
 
   function trapFocus(e) {
     if (!state.isOpen || e.key !== "Tab") return;
@@ -794,9 +829,7 @@
     }
   }
 
-  // ============================================================
-  // 6. EVENT BINDINGS
-  // ============================================================
+  // EVENT BINDINGS
 
   function bindCard() {
     const card = $("sms_alerts");
@@ -1050,9 +1083,7 @@
     });
   }
 
-  // ============================================================
-  // 7. INIT
-  // ============================================================
+  // INIT
 
   function init() {
     bindCard();

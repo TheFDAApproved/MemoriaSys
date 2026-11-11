@@ -1,50 +1,45 @@
 <?php
 // cron_send_sms_alerts.php
-// Dual-mode endpoint:
-//   - CLI   (Cronical, Task Scheduler, `php cron_send_sms_alerts.php`) → trusted, no header needed
-//   - HTTP  (cron-job.org, external scheduler)                          → REQUIRES X-CRON-SECRET
+// This file can run in two ways:
+//   - From the command line (Cronical, Task Scheduler, or `php cron_send_sms_alerts.php`)
+//     In this mode, no secret header is needed.
+//   - From a web request (like cron-job.org or another external scheduler)
+//     In this mode, it needs the X-CRON-SECRET header.
 //
-// Both modes run runSmsAlerts(). Output is JSON either way.
+// Both ways call runSmsAlerts() and return JSON.
 
-// 0. Long-running safety
-// If a web client drops the connection mid-batch, PHP would normally abort.
-// ignore_user_abort keeps it going; set_time_limit lifts PHP's 30s cap.
-// Both are no-ops in CLI mode.
+// 0. Make sure the script can run for a long time.
+// If the browser disconnects, PHP would normally stop the script.
+// ignore_user_abort keeps it running, and set_time_limit removes the 30 second limit.
+// These do nothing when running from the command line.
 ignore_user_abort(true);
 @set_time_limit(0);
 
-// 1. Auth-gate constant — MUST be defined before config.php is required,
-//    because config.php → notallowed.php checks it.
+// 1. This must be defined before config.php is included.
+// config.php uses it to check that this file is allowed to access it.
 define('ITS_ME_JUSTTOVERIFY', true);
 
-// 2. Requires — always use __DIR__, never bare filenames.
-//    Cronical, Task Scheduler, cron-job.org, and cPanel cron all run this
-//    script from different working directories. __DIR__ makes all of them
-//    resolve to the file's own folder.
+
+// 2. Use __DIR__ when including files.
+// Cron jobs can run this file from different folders, so using __DIR__
+// makes sure the files are found in the same folder as this script.
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/database.php';
 require_once __DIR__ . '/sms_alerts.php';
 
 $isCli = (php_sapi_name() === 'cli');
 
-// ---------------------------------------------------------------------------
-// Helper: keep cron.log as a valid JSON array, newest entry at index 0.
-//
-// Format on disk:
+// Helper function to save the log.
+// It keeps cron.log as a JSON array with the newest entry first.
+// Example:
 //   [
 //       { "success": true, "ran_at": "...", "result": {...} },
 //       { "success": true, "ran_at": "...", "result": {...} }
 //   ]
-//
-// Why newest-first: when you open the file, the first thing you see is the
-// most recent run. Old entries age out of the bottom (capped at $maxEntries).
-//
-// Concurrency: multiple cron instances (if they ever race) are serialized by
-// flock. Corruption (invalid JSON) is tolerated — the file restarts fresh.
-//
-// Cost: O(n) read+write per run. At $maxEntries=500 and ~500 bytes/entry, the
-// file is ~250 KB and a rewrite takes ~5 ms. Fine for a once-a-minute cron.
-// ---------------------------------------------------------------------------
+// The newest run is at the top so it is easy to see the latest result.
+// It only keeps the last 500 entries.
+// flock is used so two cron jobs do not write to the file at the same time.
+// If the file has bad JSON, the log starts fresh.
 function prependToJsonLog(string $path, array $entry, int $maxEntries = 500): bool
 {
     $fh = @fopen($path, 'c+');
@@ -69,9 +64,8 @@ function prependToJsonLog(string $path, array $entry, int $maxEntries = 500): bo
             if (is_array($decoded)) {
                 $entries = $decoded;
             }
-            // If not an array (corrupt or old text-format log):
-            // silently start fresh. Old content is discarded — acceptable
-            // for a log; nothing downstream depends on its contents.
+            // If the file is not valid JSON, just start a new log.
+            // The old content is removed because it cannot be used anymore.
         }
 
         array_unshift($entries, $entry);
@@ -87,8 +81,8 @@ function prependToJsonLog(string $path, array $entry, int $maxEntries = 500): bo
             return false;
         }
 
-        // Rewrite in place — we hold the exclusive lock, so no reader
-        // will see a half-written file.
+        // Clear the file and write the updated log.
+        // We already have the lock, so it is safe to do this.
         ftruncate($fh, 0);
         rewind($fh);
         fwrite($fh, $json . PHP_EOL);
@@ -101,12 +95,12 @@ function prependToJsonLog(string $path, array $entry, int $maxEntries = 500): bo
     }
 }
 
-// 3. Authentication (HTTP only)
+// 3. Check the secret only for web requests.
 if (!$isCli) {
     $providedSecret = $_SERVER['HTTP_X_CRON_SECRET'] ?? '';
     $expectedSecret = CRON_SECRET;
 
-    // Fail-closed: if no secret is configured, reject ALL web requests.
+    // If no secret is set, do not allow any web request.
     if ($expectedSecret === '' || !hash_equals($expectedSecret, $providedSecret)) {
         http_response_code(403);
         exit('Forbidden!');
@@ -115,7 +109,7 @@ if (!$isCli) {
     header('Content-Type: application/json');
 }
 
-// 4. Run the job
+// 4. Run the SMS alert job
 $payload = null;
 
 try {
@@ -131,7 +125,7 @@ try {
         'result'  => $result,
     ];
 } catch (Throwable $e) {
-    // Throwable covers Exception AND Error (TypeError, etc.)
+    // Throwable catches both Exception and Error.
     error_log('Cron SMS Error: ' . $e->getMessage());
 
     if (function_exists('systemLog')) {
@@ -149,22 +143,22 @@ try {
     ];
 }
 
-// 5. Output
+// 5. Show the result as JSON
 $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 
 if ($isCli) {
-    // CLI: echo a small banner + the JSON so Cronical's console shows
-    // a readable line per run. (The log FILE uses the array format below;
-    // this is only for the terminal view.)
+    // Show a simple message and the JSON in the terminal.
+    // The cron.log file uses the JSON array format.
     echo '[' . date('Y-m-d H:i:s') . '] cron_send_sms_alerts.php' . PHP_EOL;
     echo $json . PHP_EOL;
 
-    // Append to cron.log as a JSON array, newest-first.
+    // Save this run to cron.log.
     prependToJsonLog(__DIR__ . '/cron.log', $payload);
 
-    // Exit codes let Cronical / Task Scheduler / CI detect failures
+    // Return 0 for success or 1 for failure.
+    // Cronical, Task Scheduler, and CI can use this to know if it worked.
     exit($payload['success'] ? 0 : 1);
 }
 
-// HTTP: pure JSON body
+// For web requests, return only JSON.
 echo $json;
