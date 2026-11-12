@@ -96,13 +96,13 @@ function escapeHtml(s) {
     return String(s).replace(
         /[&<>"']/g,
         (c) =>
-            ({
-                "&": "&amp;",
-                "<": "&lt;",
-                ">": "&gt;",
-                '"': "&quot;",
-                "'": "&#39;",
-            })[c],
+        ({
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;",
+        })[c],
     );
 }
 
@@ -1118,60 +1118,376 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    // CSV export
-    const excelExportBtn = document.getElementById("excelExportBtn");
+    // CSV export with filters
+    (function () {
+        const exportBtn = document.getElementById("excelExportBtn");
+        const panel = document.getElementById("csvExportPanel");
+        const closeBtn = document.getElementById("csvExportCloseBtn");
+        const resetBtn = document.getElementById("csvExportResetBtn");
+        const submitBtn = document.getElementById("csvExportSubmitBtn");
 
-    excelExportBtn?.addEventListener("click", async () => {
-        const originalHTML = excelExportBtn.innerHTML;
-        excelExportBtn.disabled = true;
-        excelExportBtn.innerHTML =
-            '<i class="fas fa-spinner fa-spin"></i> Exporting…';
+        const startDateEl = document.getElementById("csv-export-start_date");
+        const endDateEl = document.getElementById("csv-export-end_date");
+        const limitEl = document.getElementById("csv-export-limit");
+        const blockEl = document.getElementById("csv-export-block");
+        const addressEl = document.getElementById("csv-export-address");
+        const deceasedNameEl = document.getElementById("csv-export-deceased-name");
+        const controlNumberEl = document.getElementById("csv-export-control-number");
+        const remarksEl = document.getElementById("csv-export-remarks");
+        const daysEl = document.getElementById("csv-export-days");
 
-        try {
-            const response = await fetch(EXCEL_API, {
-                method: "GET",
-                credentials: "same-origin",
-            });
+        const statusGroup = document.getElementById("csv-export-status-checkboxes");
+        const genderGroup = document.getElementById("csv-export-gender-checkboxes");
+        const contactGroup = document.getElementById("csv-export-contact-radios");
+        const leaseStatusGroup = document.getElementById("csv-export-lease-status-checkboxes");
+        const hasReservationGroup = document.getElementById("csv-export-has-reservation-radios");
+        const assistanceTypeGroup = document.getElementById("csv-export-assistance-type-checkboxes");
+        const blockTypeGroup = document.getElementById("csv-export-block-type-checkboxes");
+        const barangayGroup = document.getElementById("csv-export-barangay-checkboxes");
 
-            if (!response.ok) {
-                const err = await response.json().catch(() => ({}));
-                throw new Error(err?.message || `HTTP ${response.status}`);
+        const dateHintEl = document.getElementById("csv-export-date-hint");
+        const limitHintEl = document.getElementById("csv-export-limit-hint");
+
+        // Barangay state
+        let barangayLoaded = false;
+        let barangayTextFallback = null;
+
+        // ---- Helpers ----
+        function setInlineError(el, message) {
+            if (!el) return;
+            el.textContent = message || "";
+            el.hidden = !message;
+        }
+
+        function setPanelOpen(open) {
+            if (!panel || !exportBtn) return;
+            const isOpen = Boolean(open);
+            panel.hidden = !isOpen;
+            exportBtn.setAttribute("aria-expanded", isOpen ? "true" : "false");
+            if (isOpen) {
+                panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
             }
+        }
 
-            // If the server sent JSON instead of a file, show its message
-            const contentType = response.headers.get("Content-Type") || "";
-            if (contentType.includes("application/json")) {
-                const parsed = await response.json();
-                showAlertTOP(parsed?.message || "Nothing to export.", "info");
+        // "All or none checked" => "" (means "all"). Otherwise comma-joined.
+        function readCheckboxGroupParam(container) {
+            if (!container) return "";
+            const boxes = Array.from(container.querySelectorAll('input[type="checkbox"]'));
+            const checked = boxes.filter(cb => cb.checked).map(cb => cb.value);
+            if (checked.length === 0 || checked.length === boxes.length) return "";
+            return checked.join(",");
+        }
+
+        function readRadioValue(group) {
+            if (!group) return "";
+            const el = group.querySelector('input[type="radio"]:checked');
+            return el ? el.value.trim() : "";
+        }
+
+        // ---- Barangay loader (mirrors reports.js pattern) ----
+        function renderBarangayCheckboxes(options) {
+            if (!barangayGroup) return;
+            if (options.length === 0) {
+                barangayGroup.innerHTML = '<p class="csv-export-hint">No barangays configured in settings.</p>';
                 return;
             }
-
-            // Try to use the server-provided filename
-            const cd = response.headers.get("Content-Disposition") || "";
-            const match = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
-            const filename =
-                match?.[1] ||
-                `interments_export_${new Date().toISOString().slice(0, 10)}.csv`;
-
-            const blob = await response.blob();
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = decodeURIComponent(filename);
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            URL.revokeObjectURL(url);
-
-            showAlertTOP("Export downloaded.", "success");
-        } catch (err) {
-            console.error("Export failed:", err);
-            showAlertTOP(friendlyMessage(err?.message, "Export failed."), "error");
-        } finally {
-            excelExportBtn.disabled = false;
-            excelExportBtn.innerHTML = originalHTML;
+            barangayGroup.innerHTML = options
+                .map(b => `
+                    <label class="csv-export-chip">
+                        <input type="checkbox" value="${escapeHtml(b)}">
+                        <span>${escapeHtml(b)}</span>
+                    </label>`)
+                .join("");
         }
-    });
+
+        function renderBarangayTextFallback() {
+            if (!barangayGroup) return;
+            barangayGroup.innerHTML = '<p class="csv-export-hint">Could not load barangay list. Enter manually:</p>';
+            const input = document.createElement("input");
+            input.type = "text";
+            input.id = "csv-export-barangay-fallback";
+            input.placeholder = "e.g. Centro, Bakilid";
+            input.style.cssText = "width:100%;margin-top:6px;height:38px;padding:0 12px;border:1px solid #d1d5db;border-radius:6px;font-family:inherit;font-size:14px;color:#1f2937;background:#fff;box-sizing:border-box;";
+            barangayGroup.appendChild(input);
+            barangayTextFallback = input;
+        }
+
+        async function loadBarangayOptions() {
+            if (!barangayGroup || barangayLoaded) return;
+            barangayLoaded = true;
+            try {
+                const res = await fetch("api/settings", {
+                    credentials: "same-origin",
+                    cache: "no-store",
+                });
+                if (!res.ok) throw new Error("HTTP " + res.status);
+                const json = await res.json();
+                const list = Array.isArray(json?.data) ? json.data : [];
+                const setting = list.find(s => s && s.setting_key === "barangay_options");
+
+                let options = [];
+                if (setting && setting.setting_value) {
+                    const raw = String(setting.setting_value).trim();
+                    try {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                            options = parsed.filter(x => typeof x === "string" && x.trim() !== "");
+                        }
+                    } catch {
+                        options = raw.split(",").map(s => s.trim()).filter(Boolean);
+                    }
+                }
+                renderBarangayCheckboxes(options);
+            } catch (err) {
+                console.error("Failed to load barangay options:", err);
+                renderBarangayTextFallback();
+            }
+        }
+
+        // ---- Validation ----
+        function validateDateRange() {
+            if (!startDateEl || !endDateEl) return true;
+            const s = startDateEl.value.trim();
+            const e = endDateEl.value.trim();
+            if (s && e && s > e) {
+                setInlineError(dateHintEl, "Start date cannot be after end date.");
+                return false;
+            }
+            setInlineError(dateHintEl, "");
+            return true;
+        }
+
+        function validateLimit() {
+            if (!limitEl) return true;
+            const raw = limitEl.value.trim();
+            if (raw === "") {
+                setInlineError(limitHintEl, "");
+                return true;
+            }
+            if (!/^\d+$/.test(raw)) {
+                setInlineError(limitHintEl, "Row limit must be a whole number.");
+                return false;
+            }
+            const n = parseInt(raw, 10);
+            if (!Number.isFinite(n) || n < 1 || n > 1000000) {
+                setInlineError(limitHintEl, "Row limit must be between 1 and 1,000,000.");
+                return false;
+            }
+            setInlineError(limitHintEl, "");
+            return true;
+        }
+
+        function validateFilters() {
+            const datesOk = validateDateRange();
+            const limitOk = validateLimit();
+            if (!datesOk) {
+                animateInputError(endDateEl || startDateEl);
+                return false;
+            }
+            if (!limitOk) {
+                animateInputError(limitEl);
+                return false;
+            }
+            return true;
+        }
+
+        // ---- URL builder ----
+        function buildExportUrl() {
+            const params = new URLSearchParams();
+
+            const startDate = startDateEl?.value.trim() || "";
+            const endDate = endDateEl?.value.trim() || "";
+            if (startDate) params.set("start_date", startDate);
+            if (endDate) params.set("end_date", endDate);
+
+            const limitRaw = limitEl?.value.trim() || "";
+            if (limitRaw) params.set("limit", String(parseInt(limitRaw, 10)));
+
+            const statusCsv = readCheckboxGroupParam(statusGroup);
+            if (statusCsv) params.set("status", statusCsv);
+
+            const genderCsv = readCheckboxGroupParam(genderGroup);
+            if (genderCsv) params.set("gender", genderCsv);
+
+            const contact = readRadioValue(contactGroup);
+            if (contact === "has_contact" || contact === "no_contact") {
+                params.set("contact", contact);
+            }
+
+            const leaseStatusCsv = readCheckboxGroupParam(leaseStatusGroup);
+            if (leaseStatusCsv) {
+                params.set("lease_status", leaseStatusCsv);
+                // days only matters when expiring or upcoming is included
+                if (leaseStatusCsv.split(",").some(s => s === "expiring" || s === "upcoming")) {
+                    const daysRaw = daysEl?.value.trim() || "";
+                    if (daysRaw) params.set("days", daysRaw);
+                }
+            }
+
+            const hasReservation = readRadioValue(hasReservationGroup);
+            if (hasReservation === "yes" || hasReservation === "no") {
+                params.set("has_reservation", hasReservation);
+            }
+
+            const assistanceCsv = readCheckboxGroupParam(assistanceTypeGroup);
+            if (assistanceCsv) params.set("assistance_type", assistanceCsv);
+
+            const blockTypeCsv = readCheckboxGroupParam(blockTypeGroup);
+            if (blockTypeCsv) params.set("block_type", blockTypeCsv);
+
+            const block = blockEl?.value.trim() || "";
+            if (block) params.set("block", block);
+
+            const address = addressEl?.value.trim() || "";
+            if (address) params.set("address", address);
+
+            const barangayCsv = readCheckboxGroupParam(barangayGroup);
+            if (barangayCsv) {
+                params.set("barangay", barangayCsv);
+            } else if (barangayTextFallback) {
+                const manual = barangayTextFallback.value.trim();
+                if (manual) {
+                    const csv = manual.split(",").map(s => s.trim()).filter(Boolean).join(",");
+                    if (csv) params.set("barangay", csv);
+                }
+            }
+
+            const deceasedName = deceasedNameEl?.value.trim() || "";
+            if (deceasedName) params.set("deceased_name", deceasedName);
+
+            const controlNumber = controlNumberEl?.value.trim() || "";
+            if (controlNumber) params.set("control_number", controlNumber);
+
+            const remarks = remarksEl?.value.trim() || "";
+            if (remarks) params.set("remarks", remarks);
+
+            const qs = params.toString();
+            return qs ? `${EXCEL_API}?${qs}` : EXCEL_API;
+        }
+
+        // ---- Reset ----
+        function resetFilters() {
+            [startDateEl, endDateEl, limitEl, blockEl, addressEl,
+             deceasedNameEl, controlNumberEl, remarksEl]
+                .filter(Boolean)
+                .forEach(el => {
+                    el.value = "";
+                    el.classList.remove("inputError");
+                });
+
+            // Status & Gender default to "all checked"
+            [statusGroup, genderGroup].filter(Boolean).forEach(grp => {
+                grp.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = true);
+            });
+
+            // Lease status, assistance type, block type, barangay default to "all unchecked"
+            [leaseStatusGroup, assistanceTypeGroup, blockTypeGroup, barangayGroup]
+                .filter(Boolean)
+                .forEach(grp => {
+                    grp.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
+                });
+
+            // Radios default to "Any"
+            [contactGroup, hasReservationGroup].filter(Boolean).forEach(grp => {
+                const any = grp.querySelector('input[type="radio"][value=""]');
+                if (any) any.checked = true;
+            });
+
+            if (daysEl) daysEl.value = "30";
+            if (barangayTextFallback) barangayTextFallback.value = "";
+
+            setInlineError(dateHintEl, "");
+            setInlineError(limitHintEl, "");
+        }
+
+        // ---- Export ----
+        async function runExport() {
+            if (submitBtn.disabled) return;
+            if (!validateFilters()) return;
+
+            const url = buildExportUrl();
+            const originalHTML = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Exporting…';
+
+            try {
+                const response = await fetch(url, { method: "GET", credentials: "same-origin" });
+                const contentType = (response.headers.get("Content-Type") || "").toLowerCase();
+
+                if (!response.ok) {
+                    const errJson = contentType.includes("application/json")
+                        ? await response.json().catch(() => ({}))
+                        : {};
+                    throw new Error(errJson?.message || `HTTP ${response.status}`);
+                }
+
+                // Server returns JSON for "no matches" / empty DB
+                if (contentType.includes("application/json")) {
+                    const parsed = await response.json().catch(() => ({}));
+                    const isError = parsed?.success === false;
+                    showAlertTOP(
+                        parsed?.message || "No records match the selected filters.",
+                        isError ? "error" : "info"
+                    );
+                    return;
+                }
+
+                // Server sent a CSV file
+                const cd = response.headers.get("Content-Disposition") || "";
+                const match = cd.match(/filename\*?=(?:UTF-8'')?"?([^";]+)"?/i);
+                const filename = match?.[1] ||
+                    `interments_export_${new Date().toISOString().slice(0, 10)}.csv`;
+
+                const totalHeader = response.headers.get("X-Total-Records");
+                const exportedHeader = response.headers.get("X-Exported-Records");
+                const isTruncated = response.headers.get("X-Truncated") === "1";
+
+                const blob = await response.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = blobUrl;
+                a.download = decodeURIComponent(filename);
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                URL.revokeObjectURL(blobUrl);
+
+                const exportedCount = exportedHeader ?? totalHeader ?? "0";
+                const totalCount = totalHeader ?? exportedCount;
+                let message = `Export downloaded. ${exportedCount} of ${totalCount} row(s).`;
+                if (isTruncated) message += " (Row limit reached.)";
+
+                showAlertTOP(message, "success");
+            } catch (err) {
+                console.error("Export failed:", err);
+                showAlertTOP(friendlyMessage(err?.message, "Export failed."), "error");
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalHTML;
+            }
+        }
+
+        // ---- Wire everything up ----
+        exportBtn?.addEventListener("click", () => setPanelOpen(panel?.hidden));
+        closeBtn?.addEventListener("click", () => setPanelOpen(false));
+        resetBtn?.addEventListener("click", resetFilters);
+        submitBtn?.addEventListener("click", runExport);
+
+        startDateEl?.addEventListener("change", validateDateRange);
+        endDateEl?.addEventListener("change", validateDateRange);
+        limitEl?.addEventListener("input", validateLimit);
+
+        window.addEventListener("keydown", (e) => {
+            if (e.key === "Escape" && panel && !panel.hidden) {
+                const confirmModal = document.getElementById("deleteModalOverlay");
+                if (confirmModal && confirmModal.classList.contains("visible")) return;
+                setPanelOpen(false);
+            }
+        });
+
+        // Load barangay chips once on page load
+        loadBarangayOptions();
+    })();
 
     // Small global helpers
     window.togglePass = function (inputId, btnEl) {

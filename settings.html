@@ -457,7 +457,7 @@
                         <i class="fas fa-file-import"></i> Import CSV File
                         <input type="file" id="csvImport" accept=".csv">
                     </label>
-                    <button class="btn secondaryBtn" type="button" id="excelExportBtn">
+                    <button class="btn secondaryBtn" type="button" id="excelExportBtn" aria-expanded="false" aria-controls="csvExportPanel">
                         <i class="fas fa-file-export"></i> Export CSV
                     </button>
                 </div>
@@ -473,6 +473,193 @@
                         aria-label="Remove selected file">
                         <i class="fas fa-times"></i>
                     </button>
+                </div>
+
+                <!-- CSV Export Filter Panel -->
+                <div class="csv-export-panel" id="csvExportPanel" role="region" aria-labelledby="csvExportPanelTitle" hidden>
+                    <div class="csv-export-header">
+                        <div>
+                            <h3 id="csvExportPanelTitle">Export CSV Filters</h3>
+                            <p>Filter interment records before downloading, or leave defaults to export all.</p>
+                        </div>
+                        <button class="csv-export-close" type="button" id="csvExportCloseBtn" aria-label="Close export filters" title="Close (Esc)">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+
+                    <div class="csv-export-body">
+
+                        <!-- Date Range & Row Limit -->
+                        <div class="formGrid csv-export-grid">
+                            <div class="csv-export-section">
+                                <span class="csv-export-section-title">Date Range</span>
+                                <div class="csv-export-date-row">
+                                    <div class="formGroup">
+                                        <label for="csv-export-start_date">Start Date</label>
+                                        <input type="date" id="csv-export-start_date">
+                                    </div>
+                                    <div class="formGroup">
+                                        <label for="csv-export-end_date">End Date</label>
+                                        <input type="date" id="csv-export-end_date">
+                                    </div>
+                                </div>
+                                <p class="csv-export-hint">Same date on both = that single day only.</p>
+                                <p class="csv-export-error" id="csv-export-date-hint" hidden></p>
+                            </div>
+
+                            <div class="csv-export-section">
+                                <span class="csv-export-section-title">Row Limit</span>
+                                <div class="formGroup">
+                                    <label for="csv-export-limit">Maximum Rows</label>
+                                    <input type="number" id="csv-export-limit" min="1" max="1000000" step="1" placeholder="Leave empty for all">
+                                </div>
+                                <p class="csv-export-hint">Cap between 1 and 1,000,000 rows.</p>
+                                <p class="csv-export-error" id="csv-export-limit-hint" hidden></p>
+                            </div>
+                        </div>
+
+                        <hr class="formDivider">
+
+                        <!-- Status, Gender & Contact -->
+                        <div class="csv-export-chips-grid">
+                            <div class="csv-export-section">
+                                <span class="csv-export-section-title">Status</span>
+                                <div class="csv-export-chips" id="csv-export-status-checkboxes">
+                                    <label class="csv-export-chip"><input type="checkbox" value="Active" checked><span>Active</span></label>
+                                    <label class="csv-export-chip"><input type="checkbox" value="Inactive" checked><span>Inactive</span></label>
+                                    <label class="csv-export-chip"><input type="checkbox" value="Pending" checked><span>Pending</span></label>
+                                </div>
+                                <p class="csv-export-hint">Uncheck all or keep all checked to include every status.</p>
+                            </div>
+
+                            <div class="csv-export-section">
+                                <span class="csv-export-section-title">Gender</span>
+                                <div class="csv-export-chips" id="csv-export-gender-checkboxes">
+                                    <label class="csv-export-chip"><input type="checkbox" value="Male" checked><span>Male</span></label>
+                                    <label class="csv-export-chip"><input type="checkbox" value="Female" checked><span>Female</span></label>
+                                    <label class="csv-export-chip"><input type="checkbox" value="Unknown" checked><span>Unknown</span></label>
+                                </div>
+                            </div>
+
+                            <div class="csv-export-section">
+                                <span class="csv-export-section-title">Contact</span>
+                                <div class="csv-export-chips" id="csv-export-contact-radios">
+                                    <label class="csv-export-chip"><input type="radio" name="csv_export_contact" value="" checked><span>Any</span></label>
+                                    <label class="csv-export-chip"><input type="radio" name="csv_export_contact" value="has_contact"><span>Has contact</span></label>
+                                    <label class="csv-export-chip"><input type="radio" name="csv_export_contact" value="no_contact"><span>No contact</span></label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr class="formDivider">
+
+                        <!-- Lease Status, Reservation & Assistance Type -->
+                        <div class="csv-export-chips-grid">
+                            <div class="csv-export-section">
+                                <span class="csv-export-section-title">Lease Status</span>
+                                <div class="csv-export-chips" id="csv-export-lease-status-checkboxes">
+                                    <label class="csv-export-chip"><input type="checkbox" value="expired"><span>Expired</span></label>
+                                    <label class="csv-export-chip"><input type="checkbox" value="expiring"><span>Expiring</span></label>
+                                    <label class="csv-export-chip"><input type="checkbox" value="upcoming"><span>Upcoming</span></label>
+                                    <label class="csv-export-chip"><input type="checkbox" value="unknown"><span>Unknown</span></label>
+                                </div>
+                                <p class="csv-export-hint">Leave unchecked to include any lease status.</p>
+                                <div class="formGroup" style="margin-top:8px;">
+                                    <label for="csv-export-days">Expiring window (days)</label>
+                                    <input type="number" id="csv-export-days" min="0" max="365" step="1" placeholder="30" value="30">
+                                </div>
+                                <p class="csv-export-hint">Only used when "Expiring" or "Upcoming" is checked.</p>
+                            </div>
+
+                            <div class="csv-export-section">
+                                <span class="csv-export-section-title">Reservation</span>
+                                <div class="csv-export-chips" id="csv-export-has-reservation-radios">
+                                    <label class="csv-export-chip"><input type="radio" name="csv_export_has_reservation" value="" checked><span>Any</span></label>
+                                    <label class="csv-export-chip"><input type="radio" name="csv_export_has_reservation" value="yes"><span>Has reservation</span></label>
+                                    <label class="csv-export-chip"><input type="radio" name="csv_export_has_reservation" value="no"><span>No reservation</span></label>
+                                </div>
+                                <p class="csv-export-hint">"Has reservation" = an Active reservation references this record.</p>
+                            </div>
+
+                            <div class="csv-export-section">
+                                <span class="csv-export-section-title">Assistance Type</span>
+                                <div class="csv-export-chips" id="csv-export-assistance-type-checkboxes">
+                                    <label class="csv-export-chip"><input type="checkbox" value="Burial"><span>Burial</span></label>
+                                    <label class="csv-export-chip"><input type="checkbox" value="Transfer the remains of the late"><span>Transfer</span></label>
+                                    <label class="csv-export-chip"><input type="checkbox" value="Other"><span>Other</span></label>
+                                </div>
+                                <p class="csv-export-hint">Leave unchecked to include every type.</p>
+                            </div>
+                        </div>
+
+                        <hr class="formDivider">
+
+                        <!-- Location -->
+                        <div class="csv-export-section">
+                            <span class="csv-export-section-title">Location</span>
+                            <div class="csv-export-location-grid">
+                                <div class="formGroup">
+                                    <label for="csv-export-block">Block name</label>
+                                    <input type="text" id="csv-export-block" placeholder="Exact block name (e.g. Block A)">
+                                </div>
+                                <div class="formGroup">
+                                    <label for="csv-export-address">Address</label>
+                                    <input type="text" id="csv-export-address" placeholder="Matches any address field">
+                                </div>
+                            </div>
+                            <div class="formGroup" style="margin-top:12px;">
+                                <label>Block Type</label>
+                                <div class="csv-export-chips" id="csv-export-block-type-checkboxes">
+                                    <label class="csv-export-chip"><input type="checkbox" value="Niche"><span>Niche</span></label>
+                                    <label class="csv-export-chip"><input type="checkbox" value="Bone Chamber"><span>Bone Chamber</span></label>
+                                    <label class="csv-export-chip"><input type="checkbox" value="Lawn/Grounds"><span>Lawn/Grounds</span></label>
+                                    <label class="csv-export-chip"><input type="checkbox" value="Unmapped Area"><span>Unmapped Area</span></label>
+                                    <label class="csv-export-chip"><input type="checkbox" value="Private"><span>Private</span></label>
+                                    <label class="csv-export-chip"><input type="checkbox" value="Mausoleum"><span>Mausoleum</span></label>
+                                    <label class="csv-export-chip"><input type="checkbox" value="Mass Grave"><span>Mass Grave</span></label>
+                                    <label class="csv-export-chip"><input type="checkbox" value="Cluster"><span>Cluster</span></label>
+                                    <label class="csv-export-chip"><input type="checkbox" value="Block"><span>Block</span></label>
+                                </div>
+                            </div>
+                            <div class="formGroup" style="margin-top:12px;">
+                                <label>Barangay(s)</label>
+                                <div class="csv-export-chips csv-export-scroll" id="csv-export-barangay-checkboxes">
+                                    <p class="csv-export-hint">Loading barangays…</p>
+                                </div>
+                                <p class="csv-export-hint">Leave unchecked to include every barangay.</p>
+                            </div>
+                        </div>
+
+                        <hr class="formDivider">
+
+                        <!-- Search -->
+                        <div class="csv-export-section">
+                            <span class="csv-export-section-title">Search</span>
+                            <div class="csv-export-search-grid">
+                                <div class="formGroup">
+                                    <label for="csv-export-deceased-name">Deceased Name</label>
+                                    <input type="text" id="csv-export-deceased-name" placeholder="Partial match">
+                                </div>
+                                <div class="formGroup">
+                                    <label for="csv-export-control-number">Control Number</label>
+                                    <input type="text" id="csv-export-control-number" placeholder="Partial match">
+                                </div>
+                                <div class="formGroup">
+                                    <label for="csv-export-remarks">Remarks</label>
+                                    <input type="text" id="csv-export-remarks" placeholder="Partial match">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="saveRow csv-export-actions">
+                        <button class="btn resetBtn" type="button" id="csvExportResetBtn">
+                            <i class="fas fa-rotate-left"></i> Reset Filters
+                        </button>
+                        <button class="btn primaryBtn" type="button" id="csvExportSubmitBtn">
+                            <i class="fas fa-file-export"></i> Export Filtered CSV
+                        </button>
+                    </div>
                 </div>
             </div>
 

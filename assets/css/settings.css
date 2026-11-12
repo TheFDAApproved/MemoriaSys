@@ -1047,3 +1047,234 @@ body {
         }
     }
 }
+
+/*  CSV Export Filter Panel  */
+.settingsContent .csv-export-panel {
+    margin-top: 16px;
+    padding: 18px 20px;
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+}
+
+/* Date and number inputs inside the panel — match the rest of the form */
+.settingsContent .csv-export-panel input[type="date"],
+.settingsContent .csv-export-panel input[type="number"] {
+    width: 100%;
+    height: 42px;
+    padding: 0 14px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 14px;
+    color: #1f2937;
+    background-color: #ffffff;
+    box-sizing: border-box;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+.settingsContent .csv-export-panel input[type="date"]::placeholder,
+.settingsContent .csv-export-panel input[type="number"]::placeholder {
+    color: #9ca3af;
+    font-weight: 400;
+}
+
+.settingsContent .csv-export-panel input[type="date"]:hover,
+.settingsContent .csv-export-panel input[type="number"]:hover {
+    border-color: #9ca3af;
+}
+
+.settingsContent .csv-export-panel input[type="date"]:focus,
+.settingsContent .csv-export-panel input[type="number"]:focus {
+    outline: none;
+    border-color: var(--mainColor, #0f172a);
+    box-shadow: 0 0 0 4px rgba(15, 23, 42, 0.1);
+}
+
+/* Panel header */
+.settingsContent .csv-export-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.settingsContent .csv-export-header h3 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #111827;
+}
+
+.settingsContent .csv-export-header p {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: #6b7280;
+}
+
+.settingsContent .csv-export-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: #64748b;
+    cursor: pointer;
+    flex: 0 0 auto;
+    transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.settingsContent .csv-export-close:hover {
+    background-color: #e2e8f0;
+    color: #0f172a;
+}
+
+.settingsContent .csv-export-close:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.15);
+}
+
+/* Sections */
+.settingsContent .csv-export-grid {
+    margin-bottom: 0;
+}
+
+.settingsContent .csv-export-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+}
+
+.settingsContent .csv-export-section-title {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #475569;
+}
+
+/* Grids */
+.settingsContent .csv-export-date-row,
+.settingsContent .csv-export-location-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
+
+.settingsContent .csv-export-search-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+}
+
+.settingsContent .csv-export-chips-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+}
+
+/* Chip group container */
+.settingsContent .csv-export-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+/* Individual chip — matches the reports.js look */
+.settingsContent .csv-export-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 999px;
+    background-color: #ffffff;
+    font-size: 13px;
+    font-weight: 500;
+    color: #374151;
+    cursor: pointer;
+    user-select: none;
+    transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.settingsContent .csv-export-chip input[type="checkbox"],
+.settingsContent .csv-export-chip input[type="radio"] {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    accent-color: var(--mainColor, #0f172a);
+    cursor: pointer;
+}
+
+.settingsContent .csv-export-chip:hover {
+    border-color: #94a3b8;
+    background-color: #f1f5f9;
+}
+
+.settingsContent .csv-export-chip:has(input:checked) {
+    border-color: var(--mainColor, #0f172a);
+    background-color: color-mix(in srgb, var(--mainColor, #0f172a) 8%, #ffffff);
+    color: var(--mainColor, #0f172a);
+    font-weight: 600;
+}
+
+.settingsContent .csv-export-chip:has(input:focus-visible) {
+    box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.15);
+}
+
+/* Hint / error text */
+.settingsContent .csv-export-hint {
+    margin: -2px 0 0;
+    font-size: 12px;
+    color: #64748b;
+    line-height: 1.4;
+}
+
+.settingsContent .csv-export-error {
+    margin: -2px 0 0;
+    font-size: 12px;
+    font-weight: 500;
+    color: #dc2626;
+    line-height: 1.4;
+}
+
+/* Scrollable container for large checkbox groups (barangay) */
+.settingsContent .csv-export-scroll {
+    max-height: 180px;
+    overflow-y: auto;
+    padding: 8px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background-color: #ffffff;
+}
+
+/* Action row */
+.settingsContent .csv-export-actions {
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid #e2e8f0;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .settingsContent .csv-export-chips-grid,
+    .settingsContent .csv-export-search-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 480px) {
+    .settingsContent .csv-export-date-row,
+    .settingsContent .csv-export-location-grid {
+        grid-template-columns: 1fr;
+    }
+}

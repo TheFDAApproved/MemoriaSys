@@ -12,6 +12,131 @@ if ($userData['role'] !== ROLE_ADMIN) {
 
 $method = $_SERVER['REQUEST_METHOD'] ?? '';
 
+// Request parameter helpers, mirror the reports API for consistency hehe
+if (!function_exists('rr_str')) {
+    function rr_str(string $key): ?string
+    {
+        $raw = $_GET[$key] ?? null;
+        if ($raw === null || $raw === '' || is_array($raw)) {
+            return null;
+        }
+        $v = trim((string)$raw);
+        if ($v === '' || strcasecmp($v, 'all') === 0) {
+            return null;
+        }
+        return $v;
+    }
+}
+
+if (!function_exists('rr_int')) {
+    function rr_int(string $key, ?int $default = null, ?int $min = null, ?int $max = null): ?int
+    {
+        $raw = $_GET[$key] ?? null;
+        if ($raw === null || $raw === '') {
+            return $default;
+        }
+        if (is_array($raw) || filter_var($raw, FILTER_VALIDATE_INT) === false) {
+            Response::error("Invalid '$key' parameter — must be an integer.", 400);
+        }
+        $v = (int)$raw;
+        if ($min !== null && $v < $min) {
+            Response::error("Invalid '$key' parameter — must be at least $min.", 400);
+        }
+        if ($max !== null && $v > $max) {
+            Response::error("Invalid '$key' parameter — must be at most $max.", 400);
+        }
+        return $v;
+    }
+}
+
+if (!function_exists('rr_enum')) {
+    function rr_enum(string $key, array $allowed): ?string
+    {
+        $raw = $_GET[$key] ?? null;
+        if ($raw === null || $raw === '' || is_array($raw)) {
+            return null;
+        }
+        $v = trim((string)$raw);
+        if ($v === '' || strcasecmp($v, 'all') === 0) {
+            return null;
+        }
+        foreach ($allowed as $candidate) {
+            if (strcasecmp($v, $candidate) === 0) {
+                return $candidate;
+            }
+        }
+        Response::error(
+            "Invalid '$key' parameter. Allowed: " . implode(', ', $allowed),
+            400
+        );
+        return null;
+    }
+}
+
+if (!function_exists('rr_csv_list')) {
+    function rr_csv_list(string $key): ?array
+    {
+        $raw = $_GET[$key] ?? null;
+        if ($raw === null || $raw === '' || is_array($raw)) {
+            return null;
+        }
+        $parts = [];
+        foreach (explode(',', (string)$raw) as $p) {
+            $v = trim($p);
+            if ($v !== '') $parts[] = $v;
+        }
+        if (empty($parts)) return null;
+        return array_values(array_unique($parts));
+    }
+}
+
+if (!function_exists('rr_enum_list')) {
+    function rr_enum_list(string $key, array $allowed): ?array
+    {
+        $raw = $_GET[$key] ?? null;
+        if ($raw === null || $raw === '' || is_array($raw)) {
+            return null;
+        }
+        $parts = array_map('trim', explode(',', (string)$raw));
+        $out = [];
+        foreach ($parts as $p) {
+            if ($p === '') continue;
+            $match = null;
+            foreach ($allowed as $candidate) {
+                if (strcasecmp($p, $candidate) === 0) {
+                    $match = $candidate;
+                    break;
+                }
+            }
+            if ($match === null) {
+                Response::error(
+                    "Invalid value '$p' for '$key'. Allowed: " . implode(', ', $allowed),
+                    400
+                );
+            }
+            $out[] = $match;
+        }
+        if (empty($out)) return null;
+        return array_values(array_unique($out));
+    }
+}
+
+if (!function_exists('rr_iso_date')) {
+    function rr_iso_date(string $key): ?string
+    {
+        $raw = $_GET[$key] ?? null;
+        if ($raw === null || $raw === '' || is_array($raw)) {
+            return null;
+        }
+        $v = trim((string)$raw);
+        $d = DateTime::createFromFormat('Y-m-d', $v);
+        if (!$d || $d->format('Y-m-d') !== $v) {
+            Response::error("Invalid '$key' parameter — must be YYYY-MM-DD.", 400);
+        }
+        return $v;
+    }
+}
+
 // Return null for empty or whitespace-only strings
 function nonEmpty($value)
 {
@@ -75,6 +200,7 @@ function getGraveId($pdo, $blockName, $graveCode)
     $id = $stmt->fetchColumn();
     return $id ? (int)$id : null;
 }
+
 function syncGraveStatus($pdo, $graveId)
 {
     if (empty($graveId)) return;
@@ -96,10 +222,250 @@ function syncGraveStatus($pdo, $graveId)
     ")->execute(['gid' => $graveId]);
 }
 
-// Stream all interments as a CSV download
-function exportInterments($pdo, $filename = 'interments_export.csv')
+/**
+ * Filter reference for the CSV export (GET):
+ *   status            Active,Inactive,Pending            (CSV list)
+ *   gender            Male,Female,Unknown                (CSV list)
+ *   block             block_name (exact)
+ *   block_type        Niche,Bone Chamber,Lawn/Grounds,   (CSV list)
+ *                     Unmapped Area,Private,Mausoleum,
+ *                     Mass Grave,Cluster,Block
+ *   barangay          partial match on contact barangay  (CSV list)
+ *   address           partial match on any address col
+ *   contact           has_contact | no_contact
+ *   deceased_name     partial match
+ *   control_number    partial match
+ *   remarks           partial match
+ *   assistance_type   Burial,Transfer the remains of the late,Other  (CSV list)
+ *   start_date        YYYY-MM-DD (on COALESCE(date_buried, deceased_date_of_death))
+ *   end_date          YYYY-MM-DD
+ *   lease_status      expired,expiring,upcoming,unknown  (CSV list)
+ *   days              0..365, default 30 — expiring window only
+ *   has_reservation   yes | no (any Active reservation touches this interment)
+ *   limit             1..1,000,000
+ *
+ * Build the WHERE clause / params shared by the count and select queries.
+ * Keeps both queries in lockstep so totals always match.
+ */
+function buildExportWhere(array $filters): array
 {
-    $stmt = $pdo->query("
+    $where  = ["i.deleted_at IS NULL"];
+    $params = [];
+
+    // Status list
+    if (!empty($filters['statuses'])) {
+        $phs = [];
+        foreach ($filters['statuses'] as $idx => $s) {
+            $ph = ":status_" . $idx;
+            $phs[] = $ph;
+            $params[$ph] = $s;
+        }
+        $where[] = "i.status IN (" . implode(', ', $phs) . ")";
+    }
+
+    // Gender list
+    if (!empty($filters['genders'])) {
+        $phs = [];
+        foreach ($filters['genders'] as $idx => $g) {
+            $ph = ":gender_" . $idx;
+            $phs[] = $ph;
+            $params[$ph] = $g;
+        }
+        $where[] = "i.deceased_sex IN (" . implode(', ', $phs) . ")";
+    }
+
+    // Date range — anchored on burial date, falling back to death date
+    // (matches how the interments report behaves)
+    if (!empty($filters['start_date'])) {
+        $where[] = "COALESCE(i.date_buried, i.deceased_date_of_death) >= :start_date";
+        $params[':start_date'] = $filters['start_date'];
+    }
+    if (!empty($filters['end_date'])) {
+        $where[] = "COALESCE(i.date_buried, i.deceased_date_of_death) <= :end_date";
+        $params[':end_date'] = $filters['end_date'];
+    }
+
+    // Free-text address (matches any of the address columns)
+    if (!empty($filters['address'])) {
+        $where[] = "(
+            i.last_known_address LIKE :addr1
+            OR i.contact_person_address LIKE :addr2
+            OR i.contact_person_address_barangay LIKE :addr3
+        )";
+        $like = '%' . $filters['address'] . '%';
+        $params[':addr1'] = $like;
+        $params[':addr2'] = $like;
+        $params[':addr3'] = $like;
+    }
+
+    // Barangay list (partial match each)
+    if (!empty($filters['barangays'])) {
+        $phrases = [];
+        foreach ($filters['barangays'] as $idx => $b) {
+            $ph = ":barangay_" . $idx;
+            $params[$ph] = '%' . $b . '%';
+            $phrases[] = "i.contact_person_address_barangay LIKE {$ph}";
+        }
+        $where[] = "(" . implode(" OR ", $phrases) . ")";
+    }
+
+    // Block name (exact)
+    if (!empty($filters['block'])) {
+        $where[] = "b.block_name = :block_name";
+        $params[':block_name'] = $filters['block'];
+    }
+
+    // Block type list (Niche, Lawn/Grounds, etc.)
+    if (!empty($filters['block_types'])) {
+        $phs = [];
+        foreach ($filters['block_types'] as $idx => $bt) {
+            $ph = ":block_type_" . $idx;
+            $phs[] = $ph;
+            $params[$ph] = $bt;
+        }
+        $where[] = "b.block_type IN (" . implode(', ', $phs) . ")";
+    }
+
+    // Assistance type list
+    if (!empty($filters['assistance_types'])) {
+        $phs = [];
+        foreach ($filters['assistance_types'] as $idx => $a) {
+            $ph = ":assistance_" . $idx;
+            $phs[] = $ph;
+            $params[$ph] = $a;
+        }
+        $where[] = "i.assistance_type IN (" . implode(', ', $phs) . ")";
+    }
+
+    // Contact presence
+    if (!empty($filters['contact'])) {
+        if ($filters['contact'] === 'has_contact') {
+            $where[] = "(i.contact_person_name IS NOT NULL AND i.contact_person_name <> '')";
+        } elseif ($filters['contact'] === 'no_contact') {
+            $where[] = "(i.contact_person_name IS NULL OR i.contact_person_name = '')";
+        }
+    }
+
+    // Deceased name (partial)
+    if (!empty($filters['deceased_name'])) {
+        $where[] = "i.deceased_name LIKE :deceased_name_like";
+        $params[':deceased_name_like'] = '%' . $filters['deceased_name'] . '%';
+    }
+
+    // Control number (partial)
+    if (!empty($filters['control_number'])) {
+        $where[] = "i.control_number LIKE :control_number_like";
+        $params[':control_number_like'] = '%' . $filters['control_number'] . '%';
+    }
+
+    // Remarks (partial)
+    if (!empty($filters['remarks'])) {
+        $where[] = "i.remarks LIKE :remarks_like";
+        $params[':remarks_like'] = '%' . $filters['remarks'] . '%';
+    }
+
+    // Lease status categories — mirrors the cemetery_capacity / lease_expirations
+    // categorization so a filtered export matches what the dashboard shows.
+    //   expired  = lease_expiration_date <= CURDATE()
+    //   expiring = CURDATE() < lease_expiration_date <= CURDATE() + days
+    //   upcoming = lease_expiration_date > CURDATE() + days
+    //   unknown  = lease_expiration_date IS NULL
+    if (!empty($filters['lease_statuses'])) {
+        $days = isset($filters['days']) && $filters['days'] !== null
+            ? (int)$filters['days']
+            : 30;
+        // Compute the cutoff in PHP so we never rely on INTERVAL placeholders
+        $cutoff = date('Y-m-d', strtotime('+' . $days . ' days'));
+
+        $clauses = [];
+        foreach ($filters['lease_statuses'] as $status) {
+            if ($status === 'expired') {
+                $clauses[] = "(i.lease_expiration_date IS NOT NULL AND i.lease_expiration_date <= CURDATE())";
+            } elseif ($status === 'expiring') {
+                $clauses[] = "(i.lease_expiration_date IS NOT NULL AND i.lease_expiration_date > CURDATE() AND i.lease_expiration_date <= :lease_cutoff_expiring)";
+                $params[':lease_cutoff_expiring'] = $cutoff;
+            } elseif ($status === 'upcoming') {
+                $clauses[] = "(i.lease_expiration_date IS NOT NULL AND i.lease_expiration_date > :lease_cutoff_upcoming)";
+                $params[':lease_cutoff_upcoming'] = $cutoff;
+            } elseif ($status === 'unknown') {
+                $clauses[] = "i.lease_expiration_date IS NULL";
+            }
+        }
+        if ($clauses) {
+            $where[] = "(" . implode(" OR ", $clauses) . ")";
+        }
+    }
+
+    // Reservation involvement (mirrors reports.php's has_active_reservation idea,
+    // but applied at the interment level: does any Active reservation reference
+    // this interment as either incoming person or old occupant?)
+    if (!empty($filters['has_reservation'])) {
+        $exists = "EXISTS (
+            SELECT 1 FROM reservations r
+            WHERE r.reservation_state = 'Active'
+              AND (r.pending_interment_id = i.interment_id
+                   OR r.old_interment_id = i.interment_id)
+        )";
+        if ($filters['has_reservation'] === 'yes') {
+            $where[] = $exists;
+        } elseif ($filters['has_reservation'] === 'no') {
+            $where[] = "NOT " . $exists;
+        }
+    }
+
+    return ["WHERE " . implode(" AND ", $where), $params];
+}
+
+// Stream interments as a CSV download.
+// $filters keys: statuses[], genders[], start_date, end_date, address,
+//   barangays[], block, block_types[], assistance_types[], contact,
+//   deceased_name, control_number, remarks, lease_statuses[], days,
+//   has_reservation, limit
+function exportInterments($pdo, array $filters = [], $filename = 'interments_export.csv')
+{
+    [$whereSql, $params] = buildExportWhere($filters);
+
+    // Count first so we can set headers / short-circuit before streaming
+    $countStmt = $pdo->prepare("
+        SELECT COUNT(*)
+        FROM interments i
+        LEFT JOIN graves g ON i.current_grave_id = g.grave_id AND g.deleted_at IS NULL
+        LEFT JOIN blocks b ON g.block_id = b.block_id AND b.deleted_at IS NULL
+        {$whereSql}
+    ");
+    $countStmt->execute($params);
+    $total = (int)$countStmt->fetchColumn();
+
+    if ($total === 0) {
+        $noFilters = empty(array_filter([
+            $filters['statuses']         ?? null,
+            $filters['genders']          ?? null,
+            $filters['start_date']       ?? null,
+            $filters['end_date']         ?? null,
+            $filters['address']          ?? null,
+            $filters['barangays']        ?? null,
+            $filters['block']            ?? null,
+            $filters['block_types']      ?? null,
+            $filters['assistance_types'] ?? null,
+            $filters['contact']          ?? null,
+            $filters['deceased_name']    ?? null,
+            $filters['control_number']   ?? null,
+            $filters['remarks']          ?? null,
+            $filters['lease_statuses']   ?? null,
+            $filters['has_reservation']  ?? null,
+        ]));
+        Response::success(
+            $noFilters
+                ? "Looks like the database is empty."
+                : "No records match the selected filters."
+        );
+        exit;
+    }
+
+    $limit    = !empty($filters['limit']) ? (int)$filters['limit'] : null;
+    $exported = ($limit !== null) ? min($limit, $total) : $total;
+
+    $sql = "
         SELECT
             i.control_number,
             i.deceased_name,
@@ -134,21 +500,29 @@ function exportInterments($pdo, $filename = 'interments_export.csv')
         FROM interments i
         LEFT JOIN graves g ON i.current_grave_id = g.grave_id AND g.deleted_at IS NULL
         LEFT JOIN blocks b ON g.block_id = b.block_id AND b.deleted_at IS NULL
-        WHERE i.deleted_at IS NULL
+        {$whereSql}
         ORDER BY i.interment_id
-    ");
-    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-    if (count($rows) === 0) {
-        Response::success("Looks like the database is empty.");
-        exit;
+    ";
+    if ($limit !== null) {
+        $sql .= " LIMIT " . $limit;
     }
 
-    header('Content-Type: text/csv');
-    header('Content-Disposition: attachment; filename="' . $filename . '"');
-    $output = fopen('php://output', 'w');
-    fputcsv($output, array_keys($rows[0]), ',', '"', '\\');
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute($params);
+    $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    header('Content-Type: text/csv; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('X-Total-Records: ' . $total);
+    header('X-Exported-Records: ' . $exported);
+    if ($limit !== null && $total > $limit) {
+        header('X-Truncated: 1');
+    }
+
+    $output = fopen('php://output', 'w');
+    if (count($rows) > 0) {
+        fputcsv($output, array_keys($rows[0]), ',', '"', '\\');
+    }
     foreach ($rows as $row) {
         $row = array_map(function ($val) {
             return $val === null ? '' : $val;
@@ -617,22 +991,103 @@ function importInterments($pdo, $filePath, $userId)
     }
 }
 
+// GET  = export (with optional filters)
 if ($method === 'GET') {
+    // Parse filters
+    $statuses  = rr_enum_list('status', ['Active', 'Inactive', 'Pending']);
+    $genders   = rr_enum_list('gender', ['Male', 'Female', 'Unknown']);
+    $startDate = rr_iso_date('start_date');
+    $endDate   = rr_iso_date('end_date');
+    $address   = rr_str('address');
+    $barangays = rr_csv_list('barangay');
+    $blockName = rr_str('block');
+    $blockTypes      = rr_enum_list('block_type', [
+        'Niche',
+        'Bone Chamber',
+        'Lawn/Grounds',
+        'Unmapped Area',
+        'Private',
+        'Mausoleum',
+        'Mass Grave',
+        'Cluster',
+        'Block',
+    ]);
+    $assistanceTypes = rr_enum_list('assistance_type', [
+        'Burial',
+        'Transfer the remains of the late',
+        'Other',
+    ]);
+    $contact   = rr_enum('contact', ['has_contact', 'no_contact']);
+    $deceasedName   = rr_str('deceased_name');
+    $controlNumber  = rr_str('control_number');
+    $remarks        = rr_str('remarks');
+    $leaseStatuses  = rr_enum_list('lease_status', ['expired', 'expiring', 'upcoming', 'unknown']);
+    $days           = rr_int('days', 30, 0, 365);
+    $hasReservation = rr_enum('has_reservation', ['yes', 'no']);
+    $limit          = rr_int('limit', null, 1, 1000000);
+
+    if ($startDate !== null && $endDate !== null && $startDate > $endDate) {
+        Response::error("start_date must be before or equal to end_date.", 400);
+    }
+
+    $filters = [
+        'statuses'         => $statuses,
+        'genders'          => $genders,
+        'start_date'       => $startDate,
+        'end_date'         => $endDate,
+        'address'          => $address,
+        'barangays'        => $barangays,
+        'block'            => $blockName,
+        'block_types'      => $blockTypes,
+        'assistance_types' => $assistanceTypes,
+        'contact'          => $contact,
+        'deceased_name'    => $deceasedName,
+        'control_number'   => $controlNumber,
+        'remarks'          => $remarks,
+        'lease_statuses'   => $leaseStatuses,
+        'days'             => $days,
+        'has_reservation'  => $hasReservation,
+        'limit'            => $limit,
+    ];
+
     $now = new DateTime('now', new DateTimeZone(DB_TIMEZONE));
 
     $exportFilename = 'memoria_interments_export_'
         . $now->format('Y-m-d_H-i-s-A')
         . '.csv';
 
-    exportInterments($pdo, $exportFilename);
+    exportInterments($pdo, $filters, $exportFilename);
+
+    // Build a readable filter summary for the audit log
+    $parts = [];
+    if ($statuses)         $parts[] = 'status=' . implode('|', $statuses);
+    if ($genders)          $parts[] = 'gender=' . implode('|', $genders);
+    if ($startDate)        $parts[] = 'start=' . $startDate;
+    if ($endDate)          $parts[] = 'end=' . $endDate;
+    if ($address)          $parts[] = 'address=' . $address;
+    if ($barangays)        $parts[] = 'barangay=' . implode('|', $barangays);
+    if ($blockName)        $parts[] = 'block=' . $blockName;
+    if ($blockTypes)       $parts[] = 'block_type=' . implode('|', $blockTypes);
+    if ($assistanceTypes)  $parts[] = 'assistance_type=' . implode('|', $assistanceTypes);
+    if ($contact)          $parts[] = 'contact=' . $contact;
+    if ($deceasedName)     $parts[] = 'deceased_name=' . $deceasedName;
+    if ($controlNumber)    $parts[] = 'control_number=' . $controlNumber;
+    if ($remarks)          $parts[] = 'remarks=' . $remarks;
+    if ($leaseStatuses)    $parts[] = 'lease_status=' . implode('|', $leaseStatuses);
+    if ($leaseStatuses && $days !== 30) $parts[] = 'days=' . $days;
+    if ($hasReservation)   $parts[] = 'has_reservation=' . $hasReservation;
+    if ($limit)            $parts[] = 'limit=' . $limit;
+
+    $filtersLog = $parts ? ' [' . implode(', ', $parts) . ']' : ' [no filters]';
 
     systemLog(
-        "{$userData['name']} ({$userData['username']}) exported a csv file",
+        "{$userData['name']} ({$userData['username']}) exported a csv file{$filtersLog}",
         $userData['user_id']
     );
     exit;
 }
 
+// POST = import
 if ($method === 'POST') {
     if (!isset($_FILES['csv_file']) || $_FILES['csv_file']['error'] !== UPLOAD_ERR_OK) {
         Response::error("No valid CSV file uploaded.", 400);
