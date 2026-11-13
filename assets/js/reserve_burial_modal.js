@@ -2299,6 +2299,21 @@ const ReserveBurialModal = (() => {
         renderBlockOptions("");
         resetGraveSelectUI();
 
+        // NEW: If the user opened this modal via "+" on an expiring/expired
+        // grave and clicked "Back" without ever seeing the old-occupant step,
+        // there's no oldModeSnapshot yet. Build it from oldOccupantOriginal so
+        // the form shows the original occupant data instead of being blank.
+        if (!oldModeSnapshot && oldOccupantOriginal) {
+            populateOldOccupantForm(oldOccupantOriginal);
+
+            // Match enterOldMode(): burial type starts unset on the old-occupant
+            // step, since the user picks a new destination (or sets Inactive).
+            const typeEl = modalEl.querySelector("#burial_block");
+            if (typeEl) typeEl.value = "";
+
+            oldModeSnapshot = readAllFormFields();
+        }
+
         const savedBlock = oldModeSnapshot?.block || "";
         const savedGrave = oldModeSnapshot?.grave_code || "";
 
@@ -2731,6 +2746,44 @@ const ReserveBurialModal = (() => {
             updateLocationHeaderText(pick(data.deceased_name, "this person"), "");
         } else {
             if (!sameSession) {
+                // NEW: if this grave already has a current occupant (clicked "+"
+                // on an expiring/expired row), populate the old-occupant data
+                // so "Back (Old Occupant)" can restore the original details
+                // instead of showing a blank form.
+                if (activeOldIntermentId) {
+                    oldOccupantOriginal = {
+                        interment_id: activeOldIntermentId,
+                        control_number: pick(data.control_number),
+                        block_name: pick(data.block_name, data.plan_block_name),
+                        grave_code: pick(data.grave_code, data.plan_grave_code),
+                        block_type: pick(data.block_type, data.burial_block),
+                        deceased_name: pick(data.deceased_name),
+                        deceased_sex: pick(data.deceased_sex),
+                        deceased_date_of_birth: pick(data.deceased_date_of_birth),
+                        deceased_date_of_death: pick(data.deceased_date_of_death),
+                        last_known_address: pick(data.last_known_address),
+                        death_certificate: pick(data.death_certificate),
+                        contact_person_name: pick(data.contact_person_name),
+                        contact_person_phone_number: pick(data.contact_person_phone_number),
+                        contact_person_email: pick(data.contact_person_email),
+                        contact_person_address: pick(data.contact_person_address),
+                        contact_person_address_barangay: pick(data.contact_person_address_barangay),
+                        assistance_type: pick(data.assistance_type),
+                        burial_permit_number: pick(data.burial_permit_number),
+                        transfer_permit_number: pick(data.transfer_permit_number),
+                        exhumation_permit_number: pick(data.exhumation_permit_number),
+                        transfer_permit_issued_by: pick(data.transfer_permit_issued_by),
+                        burial_permit_date: pick(data.burial_permit_date),
+                        transfer_permit_date: pick(data.transfer_permit_date),
+                        exhumation_permit_date: pick(data.exhumation_permit_date),
+                        date_buried: pick(data.date_buried),
+                        date_exhumed: pick(data.date_exhumed),
+                        burial_clearance_date: pick(data.burial_clearance_date),
+                        lease_expiration_date: pick(data.lease_expiration_date),
+                        remarks: pick(data.interment_remarks, data.remarks),
+                    };
+                }
+
                 const target = {
                     block_name: pick(data.block_name, data.block),
                     block_type: pick(data.block_type, data.burial_block),
