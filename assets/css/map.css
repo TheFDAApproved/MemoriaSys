@@ -1,10 +1,12 @@
-/* ── BASE LAYOUT ─────────────────────────────────────────── */
+/*  BASE LAYOUT  */
 
-html, body {
+html,
+body {
   height: 100%;
   margin: 0;
   padding: 0;
   overflow-y: auto;
+  font-family: "Inter", sans-serif;
 }
 
 .main {
@@ -13,7 +15,7 @@ html, body {
   background: #f1f5f9;
   display: flex;
   flex-direction: column;
-  min-height: 100vh; 
+  min-height: 100vh;
 }
 
 .mapContainer {
@@ -25,20 +27,20 @@ html, body {
   min-height: 100%;
 }
 
-/* ── MAP CARD ────────────────────────────────────────────── */
+/*  MAP CARD  */
 .mapCard {
   width: 100%;
-  max-width: 1200px;      
-  margin: 0 auto;         
+  max-width: 1200px;
+  margin: 0 auto;
   min-width: 0;
   background-color: #ffffff;
   border-radius: 15px;
-  padding-bottom: 15px; 
-  display: flex;         
-  flex-direction: column; 
-  height: auto;          
-  align-self: flex-start; 
-  margin-bottom: 60px;    
+  padding-bottom: 15px;
+  display: flex;
+  flex-direction: column;
+  height: auto;
+  align-self: flex-start;
+  margin-bottom: 60px;
 }
 
 .mapHeader {
@@ -64,7 +66,7 @@ html, body {
   flex-wrap: wrap;
 }
 
-/* ── BUTTON STYLES ───────────────────────────────────────── */
+/*  BUTTON STYLES  */
 .editBtn,
 .plotBtn,
 .saveBtn,
@@ -120,7 +122,7 @@ html, body {
   background: #16a34a;
 }
 
-/* ── META ROW ────────────────────────────────────────────── */
+/*  META ROW  */
 .mapMeta {
   display: flex;
   justify-content: space-between;
@@ -135,20 +137,20 @@ html, body {
   color: #94a3b8;
 }
 
-/* ── CANVAS & BACKGROUND IMAGE ─────────────────────────── */
+/*  CANVAS & BACKGROUND IMAGE  */
 .mapCanvas {
-  width: calc(100% - 48px) !important; 
+  width: calc(100% - 48px) !important;
   max-width: 1200px;
-  margin: 0 auto !important; 
+  margin: 0 auto !important;
   background-color: #e2e8f0;
   position: relative !important;
-  overflow: hidden !important; 
+  overflow: hidden !important;
   isolation: isolate !important;
   border-radius: 12px;
-  touch-action: none; 
-  aspect-ratio: 2.3 / 1; 
-  min-height: 380px;     
-  flex: none; 
+  touch-action: none;
+  aspect-ratio: 2.3 / 1;
+  min-height: 380px;
+  flex: none;
 }
 
 #mapCamera {
@@ -208,7 +210,7 @@ html, body {
   z-index: 10;
 }
 
-/* ── LEGEND ─────────────────────────────────────────────── */
+/*  LEGEND  */
 .mapLegend {
   display: flex;
   gap: 14px;
@@ -233,7 +235,7 @@ html, body {
   z-index: 10;
 }
 
-/* ── MODAL ───────────────────────────────────────────────── */
+/*  MODAL  */
 .modalOverlay {
   display: none;
   position: fixed;
@@ -486,7 +488,7 @@ html, body {
   touch-action: pan-y;
 }
 
-/* ── RESPONSIVE MEDIA QUERIES ───────────────────────────── */
+/*  RESPONSIVE MEDIA QUERIES  */
 @media (max-width: 600px) {
   .grave-grid {
     grid-template-columns: 1fr;
@@ -494,11 +496,11 @@ html, body {
   .mapCard {
     height: auto;
   }
-  
+
   .mapCanvas {
-    aspect-ratio: auto !important; 
-    height: 350px !important;      
-    width: calc(100% - 32px) !important; 
+    aspect-ratio: auto !important;
+    height: 350px !important;
+    width: calc(100% - 32px) !important;
     margin: 0 auto !important;
     border-radius: 12px !important;
   }
@@ -507,6 +509,6 @@ html, body {
     width: 100% !important;
     margin: 0 !important;
     border-radius: 0 !important;
-    height: 60vh !important; 
+    height: 60vh !important;
   }
 }

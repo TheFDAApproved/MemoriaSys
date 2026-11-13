@@ -1,19 +1,23 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <!-- Viewport and character encoding configuration -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Memoria</title>
 
-    <!-- SEO and Open Graph metadata -->
     <meta
       name="description"
       content="Management system for the Cemetery. Locate plots, monitor leases, and manage notifications."
     />
-    <meta content="/" property="og:url" />
-    <meta property="og:site_name" content="Memoria" />
-    <meta content="#2f3136" name="theme-color" />
     <meta name="author" content="Team DND" />
+    <meta name="theme-color" content="#2f3136" />
+    <meta name="robots" content="index, follow" />
+    <meta name="geo.region" content="PH-CEB" />
+    <meta name="geo.placename" content="Mandaue City" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="/" />
+    <meta property="og:site_name" content="Memoria" />
     <meta property="og:title" content="Memoria | Cemetery Management System" />
     <meta
       property="og:description"
@@ -21,16 +25,21 @@
     />
     <meta
       property="og:image"
-      content="https://static.wikia.nocookie.net/reborn/images/6/67/Sky_Ring_Battle.PNG/revision/latest?cb=20120422065712"
+      content="https://cdn1.iconfinder.com/data/icons/government-buildings-5/504/cemetery-graveyard-tombstone-burial-memorial-512.png"
     />
-    <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="robots" content="index, follow" />
-    <meta name="geo.region" content="PH-CEB" />
-    <meta name="geo.placename" content="Mandaue City" />
-    <title>Map</title>
 
-    <!-- Stylesheet imports -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+    />
+
     <link rel="stylesheet" href="assets/css/root.css" />
     <link
       rel="stylesheet"
@@ -39,35 +48,9 @@
         console.error('Failed to load custom colors. Using default theme.')
       "
     />
-    <link rel="stylesheet" href="assets/css/sidebar.css" />
     <link rel="stylesheet" href="assets/css/map.css" />
 
-    <!-- Google Fonts integration -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
-      rel="stylesheet"
-    />
-
-    <!-- FontAwesome icon library -->
-    <link
-      rel="stylesheet"
-      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
-    />
-
-    <!-- Role-based access control CSS class injector -->
-    <script>
-      if (localStorage.getItem("memoria_role") === "Administrator") {
-        document.documentElement.classList.add("role-admin");
-      }
-      if (localStorage.getItem("memoria_role") === "Office Staff") {
-        document.documentElement.classList.add("role-office");
-      }
-      if (localStorage.getItem("memoria_role") === "Grounds Staff") {
-        document.documentElement.classList.add("role-grounds");
-      }
-    </script>
+    <script src="assets/js/check_user.js"></script>
   </head>
 
   <body>
