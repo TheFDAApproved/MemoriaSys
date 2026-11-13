@@ -173,6 +173,20 @@
     return false;
   }
 
+  // "Can I restore into this field?" — extends isEmptyField to also treat
+  // the phone prefix "+63" as empty so phone fields participate in
+  // countRestorable / restoreAll / activatePreview. Checkbox / radio /
+  // select keep their existing isEmptyField semantics.
+  function isFieldEmptyForRestore(field) {
+    if (!field) return false;
+    var type = (field.type || "").toLowerCase();
+    var tag = field.tagName.toUpperCase();
+    if (type === "checkbox" || type === "radio" || tag === "SELECT") {
+      return isEmptyField(field);
+    }
+    return isEffectivelyEmpty(field, field.value);
+  }
+
   //  Modal snapshot
   // When #burial_modal_overlay gets the 'active' class, we snapshot every
   // field's value. Any field that still matches the snapshot later was
@@ -286,6 +300,12 @@
     if (value === "") return false;
     var type = (field.type || "").toLowerCase();
     if (type === "checkbox") return value === true;
+    var tag = field.tagName.toUpperCase();
+    // Text-like: a saved value that's effectively empty (like the "+63 "
+    // phone prefix) is not a suggestion — restoring it would change nothing.
+    if (tag !== "SELECT" && type !== "checkbox" && type !== "radio") {
+      if (isEffectivelyEmpty(field, value)) return false;
+    }
     return true;
   }
 
@@ -363,7 +383,7 @@
     check();
   }
 
-  // ---------- Save (debounced) ----------
+  // Save (debounced)
   var saveTimers = new Map();
 
   function saveField(field) {
@@ -450,19 +470,36 @@
     Object.keys(draft.fields).forEach(function (fk) {
       var el = findFieldByKey(fk);
       if (!el) return;
-      if (el === anchorField) return;
-      if (!isEmptyField(el)) return;
+      // Note: we do NOT skip the anchor field — it gets a placeholder too
+      // when it's empty, so all empty restorable fields preview uniformly.
+      if (!isFieldEmptyForRestore(el)) return;
       if (anchorForm && !anchorForm.contains(el)) return;
       var tag = el.tagName.toUpperCase();
       var type = (el.type || "").toLowerCase();
       if (tag === "SELECT") return;
       if (type === "checkbox" || type === "radio") return;
       var saved = draft.fields[fk];
-      if (!saved || saved.value === "" || saved.value == null) return;
+      if (!saved) return;
+      // Same suggestion rule used by renderPopup / countRestorable /
+      // restoreAll — keep everything in sync.
+      if (!hasSuggestion(el, saved.value)) return;
+
+      // Phone-prefix (or other effectively-empty) values: the field is
+      // not truly empty (e.g. "+63 "), so a placeholder would never show.
+      // Clear it temporarily so the preview becomes visible, and remember
+      // the original value so revertPreview() can put it back.
+      var originalValue = el.value;
+      var clearedForPreview = false;
+      if (originalValue !== "" && isEffectivelyEmpty(el, originalValue)) {
+        clearedForPreview = true;
+        el.value = "";
+      }
 
       previewState.push({
         field: el,
         originalPlaceholder: el.placeholder || "",
+        originalValue: originalValue,
+        clearedForPreview: clearedForPreview,
       });
       el.placeholder = String(saved.value);
       el.classList.add("autosave-preview");
@@ -474,6 +511,12 @@
       var p = previewState[i];
       p.field.placeholder = p.originalPlaceholder;
       p.field.classList.remove("autosave-preview");
+      // Restore the original value only if the user didn't type while the
+      // preview was showing. If they did, the phone formatter (in
+      // website.js) will re-add the "+63 " prefix on its own.
+      if (p.clearedForPreview && p.field.value === "") {
+        p.field.value = p.originalValue;
+      }
     }
     previewState = [];
   }
@@ -573,10 +616,14 @@
     Object.keys(draft.fields).forEach(function (fk) {
       var el = findFieldByKey(fk);
       if (!el) return;
-      if (!isEmptyField(el)) return;
+      if (!isFieldEmptyForRestore(el)) return;
       if (anchorForm && !anchorForm.contains(el)) return;
       var saved = draft.fields[fk];
       if (!saved) return;
+      // Skip saved entries that would restore nothing (empty string, or a
+      // checkbox saved as `false`). Mirrors hasSuggestion() so the count
+      // always matches what the popup would actually do.
+      if (!hasSuggestion(el, saved.value)) return;
       if (el.tagName.toUpperCase() === "SELECT") {
         var has = false;
         for (var i = 0; i < el.options.length; i++) {
@@ -704,10 +751,13 @@
     Object.keys(draft.fields).forEach(function (fk) {
       var el = findFieldByKey(fk);
       if (!el) return;
-      if (!isEmptyField(el)) return;
+      if (!isFieldEmptyForRestore(el)) return;
       if (anchorForm && !anchorForm.contains(el)) return;
       var saved = draft.fields[fk];
       if (!saved) return;
+      // Skip saved entries that would restore nothing. Keeps restoreAll
+      // consistent with what countRestorable() promised in the popup.
+      if (!hasSuggestion(el, saved.value)) return;
       var item = { field: el, value: saved.value };
       if (el.tagName.toUpperCase() === "SELECT") selectItems.push(item);
       else textItems.push(item);
