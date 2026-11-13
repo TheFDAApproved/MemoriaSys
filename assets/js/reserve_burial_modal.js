@@ -2299,7 +2299,7 @@ const ReserveBurialModal = (() => {
         renderBlockOptions("");
         resetGraveSelectUI();
 
-        // NEW: If the user opened this modal via "+" on an expiring/expired
+        // If the user opened this modal via "+" on an expiring/expired
         // grave and clicked "Back" without ever seeing the old-occupant step,
         // there's no oldModeSnapshot yet. Build it from oldOccupantOriginal so
         // the form shows the original occupant data instead of being blank.
@@ -2746,7 +2746,7 @@ const ReserveBurialModal = (() => {
             updateLocationHeaderText(pick(data.deceased_name, "this person"), "");
         } else {
             if (!sameSession) {
-                // NEW: if this grave already has a current occupant (clicked "+"
+                // if this grave already has a current occupant (clicked "+"
                 // on an expiring/expired row), populate the old-occupant data
                 // so "Back (Old Occupant)" can restore the original details
                 // instead of showing a blank form.
