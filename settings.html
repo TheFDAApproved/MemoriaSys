@@ -136,7 +136,17 @@
                     <div class="systemRowCol">
                         <!-- UI Primary Color -->
                         <div class="systemItem">
-                            <label>UI Primary Color</label>
+                            <label>UI Primary Color
+                                <div class="infoWrap">
+                                    <button class="infoIcon" type="button" aria-label="Save changes reminder"
+                                        aria-expanded="false">
+                                        <i class="fas fa-info-circle"></i>
+                                    </button>
+                                    <div class="infoPopup" role="tooltip">
+                                        Remember to click save changes below
+                                    </div>
+                                </div>
+                            </label>
                             <div class="colorRow">
                                 <input type="color" id="main_color" oninput="updateColorHex(this); applyUIColor(this);">
                                 <div>
@@ -151,6 +161,12 @@
                                     onclick="hexLabel = document.getElementById('main_color_1'); hexLabel.textContent = '#0f172a'; uicolor = document.getElementById('main_color'); uicolor.value = '#0f172a'; applyUIColor(uicolor);">
                                     <i class="fas fa-clock-rotate-left"></i> Reset to default
                                 </button>
+                            </div>
+                        </div>
+
+                        <!-- SMS Automation Toggle -->
+                        <div class="systemItem">
+                            <label for="auto_send_sms_expiring">SMS Automation
                                 <div class="infoWrap">
                                     <button class="infoIcon" type="button" aria-label="Save changes reminder"
                                         aria-expanded="false">
@@ -160,12 +176,7 @@
                                         Remember to click save changes below
                                     </div>
                                 </div>
-                            </div>
-                        </div>
-
-                        <!-- SMS Automation Toggle -->
-                        <div class="systemItem">
-                            <label for="auto_send_sms_expiring">SMS Automation</label>
+                            </label>
                             <div class="toggleRow">
                                 <label class="toggleSwitch">
                                     <input type="checkbox" id="auto_send_sms_expiring">
@@ -503,7 +514,6 @@
                                         <input type="date" id="csv-export-end_date">
                                     </div>
                                 </div>
-                                <p class="csv-export-hint">Same date on both = that single day only.</p>
                                 <p class="csv-export-error" id="csv-export-date-hint" hidden></p>
                             </div>
 
@@ -529,7 +539,6 @@
                                     <label class="csv-export-chip"><input type="checkbox" value="Inactive" checked><span>Inactive</span></label>
                                     <label class="csv-export-chip"><input type="checkbox" value="Pending" checked><span>Pending</span></label>
                                 </div>
-                                <p class="csv-export-hint">Uncheck all or keep all checked to include every status.</p>
                             </div>
 
                             <div class="csv-export-section">
@@ -563,7 +572,6 @@
                                     <label class="csv-export-chip"><input type="checkbox" value="upcoming"><span>Upcoming</span></label>
                                     <label class="csv-export-chip"><input type="checkbox" value="unknown"><span>Unknown</span></label>
                                 </div>
-                                <p class="csv-export-hint">Leave unchecked to include any lease status.</p>
                                 <div class="formGroup" style="margin-top:8px;">
                                     <label for="csv-export-days">Expiring window (days)</label>
                                     <input type="number" id="csv-export-days" min="0" max="365" step="1" placeholder="30" value="30">
@@ -588,7 +596,6 @@
                                     <label class="csv-export-chip"><input type="checkbox" value="Transfer the remains of the late"><span>Transfer</span></label>
                                     <label class="csv-export-chip"><input type="checkbox" value="Other"><span>Other</span></label>
                                 </div>
-                                <p class="csv-export-hint">Leave unchecked to include every type.</p>
                             </div>
                         </div>
 
@@ -622,11 +629,10 @@
                                 </div>
                             </div>
                             <div class="formGroup" style="margin-top:12px;">
-                                <label>Barangay(s)</label>
+                                <label>Barangays</label>
                                 <div class="csv-export-chips csv-export-scroll" id="csv-export-barangay-checkboxes">
                                     <p class="csv-export-hint">Loading barangays…</p>
                                 </div>
-                                <p class="csv-export-hint">Leave unchecked to include every barangay.</p>
                             </div>
                         </div>
 

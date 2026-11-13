@@ -212,28 +212,20 @@ function showImportReportModal(data = {}) {
     if (cancelBtn) cancelBtn.style.display = "none";
 }
 
-// ---------------------------------------------------------------------------
 // App-wide click blocker
-// ---------------------------------------------------------------------------
-// Prevents any click / tap / keypress anywhere in the app — including the
-// parent page's sidebar links — while a long task runs (CSV import, DB
-// restore).
-//
-// What it does:
-//   1. Injects a FULLY TRANSPARENT, empty full-screen div into the PARENT
-//      document (the page that owns the sidebar). It swallows all pointer
-//      events and sets `cursor: wait`. No visual overlay, no dim, no text —
-//      the existing button spinners already communicate "loading".
-//   2. Sets `inert` on the parent shell (#sidebar, #mobileHamburger,
-//      #sidebarBackdrop, .mainContent). `inert` blocks mouse AND keyboard
-//      focus, so Tab / Enter can't reach the sidebar links either.
-//   3. Installs a `beforeunload` guard so reload / tab-close warns the user.
-//
-// Only mutates the parent's DOM at runtime, exactly like applyUIColor above
-// already does with CSS variables. No parent files are edited.
-//
-// Safe to call when settings.html is opened standalone (no parent):
-// the blocker/inert parts are skipped, and only beforeunload remains.
+// Stops clicks, taps, and keyboard input while a long task is running
+// (like a CSV import or DB restore), including clicks on the parent page's sidebar
+
+// Adds an invisible full-screen div to the parent page to catch all clicks
+// and show the "wait" cursor. It doesn't add a visible overlay because the
+// button spinners already show that the app is loading.
+// Makes the parent sidebar and main content inert so they can't be clicked
+// or focused with the keyboard.
+// Adds a beforeunload warning if the user tries to reload or close the tab
+
+// This only changes the parent DOM at runtime, similar to applyUIColor.
+// It works safely if settings.html is opened by itself — the blocker and inert
+// parts are skipped, but the beforeunload warning still runs
 
 let _appLocked = false;
 let _appLockUnloadGuard = null;
@@ -243,7 +235,7 @@ function setAppLock(locked) {
 
     const isIframe = window.parent && window.parent !== window;
 
-    // ---- 1) Transparent click-blocker + inert on the parent shell ----
+    // Transparent click-blocker + inert on the parent shell
     if (isIframe) {
         let parentDoc = null;
         try {
@@ -312,7 +304,7 @@ function setAppLock(locked) {
         }
     }
 
-    // ---- 2) Navigation / reload / tab-close guard ----
+    // Navigation / reload / tab-close guard
     if (_appLocked) {
         if (!_appLockUnloadGuard) {
             _appLockUnloadGuard = (e) => {
