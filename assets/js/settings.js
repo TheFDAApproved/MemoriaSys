@@ -1135,14 +1135,24 @@ document.addEventListener("DOMContentLoaded", () => {
         const hasReservationGroup = document.getElementById("csv-export-has-reservation-radios");
         const assistanceTypeGroup = document.getElementById("csv-export-assistance-type-checkboxes");
         const blockTypeGroup = document.getElementById("csv-export-block-type-checkboxes");
-        const barangayGroup = document.getElementById("csv-export-barangay-checkboxes");
+        // NOTE: barangayGroup is now looked up lazily (see getBarangayGroup)
+        // so the export never reads from a stale / detached element.
 
         const dateHintEl = document.getElementById("csv-export-date-hint");
         const limitHintEl = document.getElementById("csv-export-limit-hint");
 
         // Barangay state
-        let barangayLoaded = false;
+        // Store the in-flight (or already-resolved) promise so concurrent
+        // callers can await the SAME load. Previously a boolean flag let
+        // the export fire before the chips existed.
+        let barangayLoadPromise = null;
         let barangayTextFallback = null;
+
+        // Lazy lookup — always returns the CURRENT element in the DOM.
+        // Important when the panel is re-rendered by a router/template.
+        function getBarangayGroup() {
+            return document.getElementById("csv-export-barangay-checkboxes");
+        }
 
         // ---- Helpers ----
         function setInlineError(el, message) {
@@ -1162,11 +1172,31 @@ document.addEventListener("DOMContentLoaded", () => {
         }
 
         // "All or none checked" => "" (means "all"). Otherwise comma-joined.
+        // Used by status / gender / lease_status / assistance / block_type.
         function readCheckboxGroupParam(container) {
             if (!container) return "";
             const boxes = Array.from(container.querySelectorAll('input[type="checkbox"]'));
-            const checked = boxes.filter(cb => cb.checked).map(cb => cb.value);
+            const checked = boxes.filter(cb => cb.checked).map(cb => cb.value).filter(Boolean);
             if (checked.length === 0 || checked.length === boxes.length) return "";
+            return checked.join(",");
+        }
+
+        // Barangay-specific: ANY checked box means "filter to these".
+        // This fixes the case where only one barangay exists in settings —
+        // the old shared helper treated that single tick as "all = no filter"
+        // and silently dropped the param from the request URL.
+        function readBarangayGroupParam(container) {
+            if (!container) {
+                console.warn("[CSV Export] Barangay container is null");
+                return "";
+            }
+            const boxes = Array.from(container.querySelectorAll('input[type="checkbox"]'));
+            const checked = boxes.filter(cb => cb.checked).map(cb => cb.value).filter(Boolean);
+            console.debug(
+                `[CSV Export] Barangay group: ${boxes.length} total, ${checked.length} checked`,
+                checked
+            );
+            if (checked.length === 0) return "";
             return checked.join(",");
         }
 
@@ -1176,67 +1206,75 @@ document.addEventListener("DOMContentLoaded", () => {
             return el ? el.value.trim() : "";
         }
 
-        // ---- Barangay loader (mirrors reports.js pattern) ----
+        // Barangay loader (mirrors reports.js pattern hehe)
         function renderBarangayCheckboxes(options) {
-            if (!barangayGroup) return;
+            const group = getBarangayGroup();
+            if (!group) return;
             if (options.length === 0) {
-                barangayGroup.innerHTML = '<p class="csv-export-hint">No barangays configured in settings.</p>';
+                group.innerHTML = '<p class="csv-export-hint">No barangays configured in settings.</p>';
                 return;
             }
-            barangayGroup.innerHTML = options
+            group.innerHTML = options
                 .map(b => `
                     <label class="csv-export-chip">
                         <input type="checkbox" value="${escapeHtml(b)}">
                         <span>${escapeHtml(b)}</span>
                     </label>`)
                 .join("");
+            console.debug(`[CSV Export] Rendered ${options.length} barangay checkbox(es)`);
         }
 
         function renderBarangayTextFallback() {
-            if (!barangayGroup) return;
-            barangayGroup.innerHTML = '<p class="csv-export-hint">Could not load barangay list. Enter manually:</p>';
+            const group = getBarangayGroup();
+            if (!group) return;
+            group.innerHTML = '<p class="csv-export-hint">Could not load barangay list. Enter manually:</p>';
             const input = document.createElement("input");
             input.type = "text";
             input.id = "csv-export-barangay-fallback";
             input.placeholder = "e.g. Centro, Bakilid";
             input.style.cssText = "width:100%;margin-top:6px;height:38px;padding:0 12px;border:1px solid #d1d5db;border-radius:6px;font-family:inherit;font-size:14px;color:#1f2937;background:#fff;box-sizing:border-box;";
-            barangayGroup.appendChild(input);
+            group.appendChild(input);
             barangayTextFallback = input;
         }
 
-        async function loadBarangayOptions() {
-            if (!barangayGroup || barangayLoaded) return;
-            barangayLoaded = true;
-            try {
-                const res = await fetch("api/settings", {
-                    credentials: "same-origin",
-                    cache: "no-store",
-                });
-                if (!res.ok) throw new Error("HTTP " + res.status);
-                const json = await res.json();
-                const list = Array.isArray(json?.data) ? json.data : [];
-                const setting = list.find(s => s && s.setting_key === "barangay_options");
+        function loadBarangayOptions() {
+            if (!getBarangayGroup()) return Promise.resolve();
+            if (barangayLoadPromise) return barangayLoadPromise;
 
-                let options = [];
-                if (setting && setting.setting_value) {
-                    const raw = String(setting.setting_value).trim();
-                    try {
-                        const parsed = JSON.parse(raw);
-                        if (Array.isArray(parsed)) {
-                            options = parsed.filter(x => typeof x === "string" && x.trim() !== "");
+            barangayLoadPromise = (async () => {
+                try {
+                    const res = await fetch("api/settings", {
+                        credentials: "same-origin",
+                        cache: "no-store",
+                    });
+                    if (!res.ok) throw new Error("HTTP " + res.status);
+                    const json = await res.json();
+                    const list = Array.isArray(json?.data) ? json.data : [];
+                    const setting = list.find(s => s && s.setting_key === "barangay_options");
+
+                    let options = [];
+                    if (setting && setting.setting_value) {
+                        const raw = String(setting.setting_value).trim();
+                        try {
+                            const parsed = JSON.parse(raw);
+                            if (Array.isArray(parsed)) {
+                                options = parsed.filter(x => typeof x === "string" && x.trim() !== "");
+                            }
+                        } catch {
+                            options = raw.split(",").map(s => s.trim()).filter(Boolean);
                         }
-                    } catch {
-                        options = raw.split(",").map(s => s.trim()).filter(Boolean);
                     }
+                    renderBarangayCheckboxes(options);
+                } catch (err) {
+                    console.error("Failed to load barangay options:", err);
+                    renderBarangayTextFallback();
                 }
-                renderBarangayCheckboxes(options);
-            } catch (err) {
-                console.error("Failed to load barangay options:", err);
-                renderBarangayTextFallback();
-            }
+            })();
+
+            return barangayLoadPromise;
         }
 
-        // ---- Validation ----
+        // Validation
         function validateDateRange() {
             if (!startDateEl || !endDateEl) return true;
             const s = startDateEl.value.trim();
@@ -1283,9 +1321,11 @@ document.addEventListener("DOMContentLoaded", () => {
             return true;
         }
 
-        // ---- URL builder ----
+        // URL builder
         function buildExportUrl() {
             const params = new URLSearchParams();
+
+            params.set("_t", String(Date.now()));
 
             const startDate = startDateEl?.value.trim() || "";
             const endDate = endDateEl?.value.trim() || "";
@@ -1333,7 +1373,8 @@ document.addEventListener("DOMContentLoaded", () => {
             const address = addressEl?.value.trim() || "";
             if (address) params.set("address", address);
 
-            const barangayCsv = readCheckboxGroupParam(barangayGroup);
+            // Barangay uses readBarangayGroupParam: ANY checked box is a filter.
+            const barangayCsv = readBarangayGroupParam(getBarangayGroup());
             if (barangayCsv) {
                 params.set("barangay", barangayCsv);
             } else if (barangayTextFallback) {
@@ -1373,7 +1414,7 @@ document.addEventListener("DOMContentLoaded", () => {
             });
 
             // Lease status, assistance type, block type, barangay default to "all unchecked"
-            [leaseStatusGroup, assistanceTypeGroup, blockTypeGroup, barangayGroup]
+            [leaseStatusGroup, assistanceTypeGroup, blockTypeGroup, getBarangayGroup()]
                 .filter(Boolean)
                 .forEach(grp => {
                     grp.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.checked = false);
@@ -1392,17 +1433,43 @@ document.addEventListener("DOMContentLoaded", () => {
             setInlineError(limitHintEl, "");
         }
 
-        // ---- Export ----
+        // Export hehe
         async function runExport() {
             if (submitBtn.disabled) return;
             if (!validateFilters()) return;
 
-            const url = buildExportUrl();
-            const originalHTML = submitBtn.innerHTML;
+            // Make sure the barangay chips have finished loading before we
+            // build the URL. Without this, a fast first click can read an
+            // empty #csv-export-barangay-checkboxes and silently drop the
+            // user's barangay selection from the request.
             submitBtn.disabled = true;
+            const originalHTML = submitBtn.innerHTML;
             submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Exporting…';
 
             try {
+                await loadBarangayOptions();
+
+                // Defensive: if the container has no checkboxes after the
+                // awaited load, surface it loudly. That means the panel was
+                // re-rendered (or the settings response was empty) and the
+                // user's ticks can't be read.
+                const group = getBarangayGroup();
+                if (group) {
+                    const boxCount = group.querySelectorAll('input[type="checkbox"]').length;
+                    if (boxCount === 0 && !barangayTextFallback) {
+                        console.warn(
+                            "[CSV Export] Barangay container has 0 checkboxes after load. " +
+                            "Any user ticks will be missing from the URL. Re-fetching settings…"
+                        );
+                        // Reset the promise so we actually retry the fetch
+                        barangayLoadPromise = null;
+                        await loadBarangayOptions();
+                    }
+                }
+
+                const url = buildExportUrl();
+                console.debug("[CSV Export] Fetching:", url);
+
                 const response = await fetch(url, { method: "GET", credentials: "same-origin" });
                 const contentType = (response.headers.get("Content-Type") || "").toLowerCase();
 
@@ -1459,11 +1526,19 @@ document.addEventListener("DOMContentLoaded", () => {
             }
         }
 
-        // ---- Wire everything up ----
+        // Wire everything up
         exportBtn?.addEventListener("click", () => setPanelOpen(panel?.hidden));
         closeBtn?.addEventListener("click", () => setPanelOpen(false));
         resetBtn?.addEventListener("click", resetFilters);
-        submitBtn?.addEventListener("click", runExport);
+
+        // preventDefault guards against the button being type="submit" inside a <form>.
+        // If that were true, clicking Export would fire BOTH the fetch AND a native
+        // form GET that would land with no filters — the classic "1st click = all rows,
+        // 2nd click = filtered" pattern.
+        submitBtn?.addEventListener("click", (e) => {
+            e.preventDefault();
+            runExport();
+        });
 
         startDateEl?.addEventListener("change", validateDateRange);
         endDateEl?.addEventListener("change", validateDateRange);

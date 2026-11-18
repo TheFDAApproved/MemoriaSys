@@ -437,29 +437,11 @@ function exportInterments($pdo, array $filters = [], $filename = 'interments_exp
     $total = (int)$countStmt->fetchColumn();
 
     if ($total === 0) {
-        $noFilters = empty(array_filter([
-            $filters['statuses']         ?? null,
-            $filters['genders']          ?? null,
-            $filters['start_date']       ?? null,
-            $filters['end_date']         ?? null,
-            $filters['address']          ?? null,
-            $filters['barangays']        ?? null,
-            $filters['block']            ?? null,
-            $filters['block_types']      ?? null,
-            $filters['assistance_types'] ?? null,
-            $filters['contact']          ?? null,
-            $filters['deceased_name']    ?? null,
-            $filters['control_number']   ?? null,
-            $filters['remarks']          ?? null,
-            $filters['lease_statuses']   ?? null,
-            $filters['has_reservation']  ?? null,
-        ]));
-        Response::success(
-            $noFilters
-                ? "Looks like the database is empty."
-                : "No records match the selected filters."
-        );
-        exit;
+        header('Content-Type: text/csv; charset=UTF-8');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        header('X-Total-Records: 0');
+        Response::success("No records match the selected filters.");
     }
 
     $limit    = !empty($filters['limit']) ? (int)$filters['limit'] : null;
