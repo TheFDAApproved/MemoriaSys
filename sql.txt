@@ -140,12 +140,6 @@ CREATE TABLE blocks (
     FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
 
--- INSERT INTO `blocks` (`block_id`, `block_name`, `block_type`, `image_link`, `coordinates`, `rows`, `cols`, `rotation`, `remarks`, `created_at`, `updated_at`, `deleted_at`, `created_by`, `updated_by`, `active_block_name`) VALUES
--- (1, 'Block A', 'Niche', 'https://lh3.googleusercontent.com/pw/AP1GczPm8PoMTq8qseByrs9OFdn1PQxXTjSVp2-4zdU_dPqfgbL_7MP2VHg7M9xO4oTsMxRpy5jAcK3Hs--jiOBX8-R44gjfW9s8BRhvWZDujo_Zl0hVw4CScO0tTzO3TDKZ4TWOiVxPEQD9pD5D8oIujUMj=w1380-h777-s-no-gm?authuser=0', '[{\"x\": 66, \"y\": 125}, {\"x\": 160, \"y\": 125}, {\"x\": 160, \"y\": 393}, {\"x\": 66, \"y\": 393}]', 26, 26, 0.000000, NULL, '2026-11-04 22:56:40', '2026-11-04 22:58:44', NULL, 1, 1, 'Block A'),
--- (2, 'Block B', 'Niche', 'https://lh3.googleusercontent.com/pw/AP1GczNCs0UwooAs0ZcT4_LeawrsCIUoEI_ghJZWOdPHHNUVORPYh-2_8yk7iCuIBHigSImk2k8ZoMWvP_hS5WFZ0XqYZm9bM0KW7FPNvS3g2V8oUHTYhprFJ0xM4xZFOWNsfROTEHMeBbNjcW23BMCFRjbJ=w1380-h777-s-no-gm?authuser=0', '[{\"x\": 318, \"y\": 101}, {\"x\": 389, \"y\": 101}, {\"x\": 389, \"y\": 414}, {\"x\": 318, \"y\": 414}]', 26, 26, 0.000000, NULL, '2026-11-04 22:58:10', '2026-11-04 22:59:36', NULL, 1, 1, 'Block B'),
--- (3, 'Block C', 'Niche', 'https://lh3.googleusercontent.com/pw/AP1GczO05pIrAMC-hAscxFlq1B_CubjwhGtLA9BUmmdOhqKpP7Y5_1Gr52I8i5yOLX2_EQA8HIA2t6v9Eq1YFWJhKDb05kZZiVmHCskVQJ1-Hb26RZISLdLmADsB6sh6Mhm3224PaTTcADVVzVFvwG47KCCF=w1380-h777-s-no-gm?authuser=0', '[{\"x\": 402, \"y\": 105}, {\"x\": 506, \"y\": 105}, {\"x\": 506, \"y\": 410}, {\"x\": 402, \"y\": 410}]', 26, 26, 0.000000, NULL, '2026-11-04 22:58:52', '2026-11-04 22:59:49', NULL, 1, 1, 'Block C');
-
-
 --  GRAVES (individual slots inside a block)
 --  Status is manual: 'Vacant', 'Occupied', or 'Other'.
 --  Grave_code: Block name-rowletter-colnumber
@@ -470,8 +464,9 @@ INSERT INTO `settings` (`setting_id`, `setting_key`, `setting_value`, `descripti
 (33, 'people_title_1', 'OIC, Department of General Services', 'Report Signatory 1 Title', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
 (34, 'people_name_2', 'Ar. Maria Aileen A. Paragsa', 'Report Signatory 2 Name', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
 (35, 'people_title_2', 'Admin Division Chief', 'Report Signatory 2 Title', '2026-10-11 19:09:11', '2026-10-11 19:09:20', NULL, 1, 1),
-(36, 'cemetery_map_images', 'cemetery_map_image.png', 'For the cemetery map backgound image', '2026-11-04 22:50:13', '2026-11-04 22:50:13', NULL, '1', '1');
-
+(36, 'cemetery_map_images', 'cemetery_map_image.png', 'For the cemetery map backgound image', '2026-11-04 22:50:13', '2026-11-04 22:50:13', NULL, '1', '1'),
+(37, 'barangay_options', '["Alang-alang", "Bakilid", "Banilad", "Basak", "Cabancalan", "Cambaro", "Canduman", "Casuntingan", "Casili", "Centro", "Cubacub", "Guizo", "Ibabao-Estancia", "Jagobiao", "Labogon", "Looc", "Maguikay", "Mantuyong", "Opao", "Pakna-an", "Pagsabungan", "Subangdaku", "Tabok", "Tingub", "Tipolo", "Umapad"]', 'Barangay Options', '2026-11-04 22:50:13', '2026-11-04 22:50:13', NULL, '1', '1'),
+(38, 'auto_send_sms_expiring', '0', 'Enable SMS Automation alerts every 2 mins', '2026-11-04 22:50:13', '2026-11-04 22:50:13', NULL, '1', '1');
 
 --  PAYMENTS
 CREATE TABLE payments (
