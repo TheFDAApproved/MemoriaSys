@@ -106,8 +106,6 @@ CREATE TABLE users (
     FOREIGN KEY (updated_by) REFERENCES users(user_id) ON DELETE SET NULL
 );
 
-INSERT INTO `users` (`user_id`, `username`, `role`, `status`, `email`, `phone_number`, `password_hash`, `name`, `session_token`, `created_at`, `updated_at`, `deleted_at`, `created_by`, `updated_by`) VALUES (NULL, 'admin', 'Administrator', 'Verified', 'admin@gmail.com', '+639293456789', '$2y$12$YtdLBOCGz5.WcnxtHGPBx.eg4yRaijZUBMOYuw9GVAxkp670BXW0y', 'Administrator', NULL, '2026-10-11 01:37:40', '2026-10-11 01:37:57', NULL, NULL, NULL);
-
 --  BLOCKS (sections / areas)
 CREATE TABLE blocks (
     block_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -331,18 +329,10 @@ CREATE TABLE reservations (
     active_old_interment_id INT
         GENERATED ALWAYS AS (CASE WHEN reservation_state = 'Active' THEN old_interment_id ELSE NULL END) STORED,
 
-    CONSTRAINT uk_active_pending_interment UNIQUE (active_pending_interment_id),
-    CONSTRAINT uk_active_target_grave      UNIQUE (active_target_grave_id),
-    CONSTRAINT uk_active_old_interment     UNIQUE (active_old_interment_id),
-
-    -- Foreign keys
-    FOREIGN KEY (pending_interment_id) REFERENCES interments(interment_id) ON DELETE RESTRICT,
-    FOREIGN KEY (target_grave_id)      REFERENCES graves(grave_id)          ON DELETE RESTRICT,
-    FOREIGN KEY (old_interment_id)     REFERENCES interments(interment_id)  ON DELETE RESTRICT,
-    FOREIGN KEY (old_new_grave_id)     REFERENCES graves(grave_id)          ON DELETE RESTRICT,
-    FOREIGN KEY (actioned_by)          REFERENCES users(user_id)            ON DELETE SET NULL,
-    FOREIGN KEY (created_by)           REFERENCES users(user_id)            ON DELETE SET NULL,
-    FOREIGN KEY (updated_by)           REFERENCES users(user_id)            ON DELETE SET NULL,
+    -- ----------------------------------------------------------------
+    -- CHECK constraints must come FIRST among table-level constraints
+    -- for MariaDB 10.4 to parse them correctly.
+    -- ----------------------------------------------------------------
 
     -- If O is not set, nothing about O is set. If O is set, its new
     -- status must be decided.
@@ -363,7 +353,23 @@ CREATE TABLE reservations (
     -- O's destination must differ from the target grave.
     CONSTRAINT chk_old_new_grave_not_target CHECK (
         old_new_grave_id IS NULL OR old_new_grave_id <> target_grave_id
-    )
+    ),
+
+    -- ----------------------------------------------------------------
+    -- Uniqueness + foreign keys after the CHECK constraints
+    -- ----------------------------------------------------------------
+    CONSTRAINT uk_active_pending_interment UNIQUE (active_pending_interment_id),
+    CONSTRAINT uk_active_target_grave      UNIQUE (active_target_grave_id),
+    CONSTRAINT uk_active_old_interment     UNIQUE (active_old_interment_id),
+
+    -- Foreign keys
+    FOREIGN KEY (pending_interment_id) REFERENCES interments(interment_id) ON DELETE RESTRICT,
+    FOREIGN KEY (target_grave_id)      REFERENCES graves(grave_id)          ON DELETE RESTRICT,
+    FOREIGN KEY (old_interment_id)     REFERENCES interments(interment_id)  ON DELETE RESTRICT,
+    FOREIGN KEY (old_new_grave_id)     REFERENCES graves(grave_id)          ON DELETE RESTRICT,
+    FOREIGN KEY (actioned_by)          REFERENCES users(user_id)            ON DELETE SET NULL,
+    FOREIGN KEY (created_by)           REFERENCES users(user_id)            ON DELETE SET NULL,
+    FOREIGN KEY (updated_by)           REFERENCES users(user_id)            ON DELETE SET NULL
 );
 
 
@@ -549,7 +555,14 @@ CREATE TABLE sms_notifications (
             CASE WHEN status = 'Sent' THEN
                 CONCAT(
                     interment_id, ':', notification_type, ':',
-                    COALESCE(DATE_FORMAT(lease_expiration_date_at_send, '%Y-%m-%d'), 'NULL'), ':',
+                    COALESCE(
+                        CONCAT(
+                            YEAR(lease_expiration_date_at_send), '-',
+                            LPAD(MONTH(lease_expiration_date_at_send), 2, '0'), '-',
+                            LPAD(DAY(lease_expiration_date_at_send), 2, '0')
+                        ),
+                        'NULL'
+                    ), ':',
                     COALESCE(days_before_expiry, -1)
                 )
             ELSE NULL END
