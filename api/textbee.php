@@ -38,7 +38,7 @@ function sendSmsViaTextBee($phoneNumber, $message, $include_cemetery_name = true
 {
     global $pdo;
 
-    // --- 1. Normalize phone number input to an array ---
+    //Normalize phone number input to an array
     $phoneNumbers = is_array($phoneNumber) ? $phoneNumber : [$phoneNumber];
 
     // Format and validate each number
@@ -111,7 +111,7 @@ function sendSmsViaTextBee($phoneNumber, $message, $include_cemetery_name = true
             return ['success' => false, 'error' => $reason];
         }
 
-        // --- 2. Use the correct account-level endpoint ---
+        // Use the correct account-level endpoint
         $url = "https://api.textbee.dev/api/v1/gateway/send-sms";
 
         // Fetch cemetery name (unchanged)
@@ -125,7 +125,7 @@ function sendSmsViaTextBee($phoneNumber, $message, $include_cemetery_name = true
             $message = $message . "\n\n- From " . $cemetery_name;
         }
 
-        // --- 3. Build the correct JSON payload ---
+        // Build the correct JSON payload
         $payloadData = [
             "recipients" => $formattedNumbers,   // Correct field name
             "message"    => $message,            // Correct field name
