@@ -258,10 +258,6 @@
                                             <input type="file" id="header" accept="image/png"
                                                 onchange="previewImage(this, 'preview_header')">
                                         </label>
-                                        <button class="btn resetBtn" type="button" title="Reset to default header"
-                                            onclick="var x = document.getElementById('preview_header'); x.onerror = function () {this.onerror = null; this.src = 'assets/images/header.png'; console.error('Failed to load dynamic logo. Using default logo.',); }; x.src = 'api/images/header.png';refreshImages();">
-                                            <i class="fas fa-rotate-left"></i>
-                                        </button>
                                         <div class="infoWrap">
                                             <button class="infoIcon" type="button" aria-label="Remember to hard refresh"
                                                 aria-expanded="false">
@@ -289,10 +285,6 @@
                                             <input type="file" id="footer" accept="image/png"
                                                 onchange="previewImage(this, 'preview_footer')">
                                         </label>
-                                        <button class="btn resetBtn" type="button" title="Reset to default footer"
-                                            onclick="var x = document.getElementById('preview_footer'); x.onerror = function () {this.onerror = null; this.src = 'assets/images/footer.png'; console.error('Failed to load dynamic logo. Using default logo.',);}; x.src = 'api/images/footer.png'; refreshImages();">
-                                            <i class="fas fa-rotate-left"></i>
-                                        </button>
                                         <div class="infoWrap">
                                             <button class="infoIcon" type="button" aria-label="Remember to hard refresh"
                                                 aria-expanded="false">
@@ -329,10 +321,6 @@
                                             <input type="file" id="cemetery_map_image" accept="image/png"
                                                 onchange="previewImage(this, 'preview_cemetery_map_image')">
                                         </label>
-                                        <button class="btn resetBtn" type="button" title="Reset to default header"
-                                            onclick="var x = document.getElementById('preview_cemetery_map_image',); x.onerror = function () {this.onerror = null; this.src = 'assets/images/cemetery_map_image.png'; console.error('Failed to load dynamic logo. Using default logo.',); }; x.src = 'api/images/cemetery_map_image.png'; refreshImages();">
-                                            <i class="fas fa-rotate-left"></i>
-                                        </button>
                                         <div class="infoWrap">
                                             <button class="infoIcon" type="button" aria-label="Remember to hard refresh"
                                                 aria-expanded="false">
