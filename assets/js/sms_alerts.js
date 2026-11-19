@@ -85,7 +85,7 @@
     const snap = row.lease_expiration_date_at_send;
     const curr = row.current_lease_expiration_date;
     if (!snap || !curr || snap === curr) return "";
-    return ` <span class="smsTagInfo" title="Lease renewed after this reminder was queued (now ${escapeHtml(curr)})">Renewed</span>`;
+    return ` <span class="smsTagInfo" title="Lease renewed after this reminder was queued (now ${escapeHtml(curr)})">Changed: (${formatShortDate(curr)})</span>`;
   }
 
   function stageLabel(stage) {
