@@ -6,7 +6,23 @@ require_once 'textbee.php';
 // Helper to keep the lease reminder message format consistent across generation, sync, and sending.
 function buildLeaseExpiringMessage(string $deceasedName, string $leaseExpirationDate): string
 {
-    return "Reminder: The lease for {$deceasedName} at the cemetery is due on {$leaseExpirationDate}. Please contact the office.";
+    $leaseExpirationDate = formatLeaseDateForSms($leaseExpirationDate);
+    return "Greetings! This is a reminder for the lease for {$deceasedName} at the cemetery is due on {$leaseExpirationDate}. Please contact the office.";
+}
+
+function formatLeaseDateForSms(?string $leaseExpirationDate): string
+{
+    if (empty($leaseExpirationDate)) {
+        return '';
+    }
+
+    $timestamp = strtotime($leaseExpirationDate);
+
+    if ($timestamp === false) {
+        return (string)$leaseExpirationDate;
+    }
+
+    return date('F j, Y', $timestamp);
 }
 
 // Synchronize all queued (Pending / Failed) notifications with the live interments table.
