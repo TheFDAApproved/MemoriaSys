@@ -3014,7 +3014,7 @@ const ReserveBurialModal = (() => {
             }
 
             if (field.id === "control_number" || field.id === "control_no") {
-                field.readOnly = mode === "view" || mode === "old";
+                field.readOnly = true; // mode === "view" || mode === "old";
                 field.disabled = false;
                 if (field.hasAttribute("placeholder"))
                     field.removeAttribute("placeholder");

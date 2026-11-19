@@ -1081,7 +1081,7 @@ const BurialModal = (() => {
         });
 
         const controlNo = $("control_number");
-        if (controlNo) controlNo.readOnly = !editable;
+        if (controlNo) controlNo.readOnly = true;
 
         updateBurialTypePlaceholder();
     }
