@@ -1792,3 +1792,8 @@ footer {
         scroll-behavior: auto !important;
     }
 }
+
+#qr_code {
+    width: 150px;
+    height: 150px;
+}
