@@ -472,6 +472,8 @@ async function saveSiteContent(event) {
 
     const form = document.getElementById("site_content_form");
     const restoreSaving = setSavingState(true, { form });
+    
+    let saveSucceeded = false;
 
     try {
         let response;
@@ -504,6 +506,8 @@ async function saveSiteContent(event) {
 
         await showSavedSummary(settings);
 
+        saveSucceeded = true; 
+
         if (typeof window.loadSiteContent === "function") {
             window.loadSiteContent();
         }
@@ -516,6 +520,9 @@ async function saveSiteContent(event) {
             }
         }
     } finally {
+
+        if (saveSucceeded) markFormClean(); 
+
         restoreSaving();
 
         // Refresh image previews so they reflect the saved files
@@ -641,3 +648,64 @@ window.rebuildDropdownList = rebuildDropdownList;
 window.removeOption = removeOption;
 window.saveSiteContent = saveSiteContent;
 window.showSavedSummary = showSavedSummary;
+
+
+//    Unsaved changes guard (reload)
+
+let hasUnsavedChanges = false;
+
+function markFormDirty() {
+    hasUnsavedChanges = true;
+}
+
+function markFormClean() {
+    hasUnsavedChanges = false;
+}
+
+function hasFormUnsavedChanges() {
+    return hasUnsavedChanges;
+}
+
+function onBeforeUnload(event) {
+    if (!hasUnsavedChanges) return;
+    event.preventDefault();
+    event.returnValue = ""; // required by older browsers
+    return "";
+}
+
+function wireUnsavedChangesGuard() {
+    const form = document.getElementById("site_content_form");
+    if (form && form.dataset.unsavedGuard !== "1") {
+        form.dataset.unsavedGuard = "1";
+        // "input"/"change" only fire for real user edits, never for
+        // programmatic .value = ... assignments, so loading settings
+        // into the form won't mark it dirty.
+        form.addEventListener("input", markFormDirty);
+        form.addEventListener("change", markFormDirty);
+    }
+
+    // Add / remove list rows also count as changes
+    document.addEventListener("click", (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        if (!target) return;
+        const btn = target.closest("button");
+        if (!btn) return;
+        const id = btn.id || "";
+        if (id.startsWith("add_") || btn.classList.contains("dangerBtn")) {
+            markFormDirty();
+        }
+    });
+
+    window.addEventListener("beforeunload", onBeforeUnload);
+}
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", wireUnsavedChangesGuard);
+} else {
+    wireUnsavedChangesGuard();
+}
+
+// Expose for other scripts / inline handlers
+window.markFormDirty = markFormDirty;
+window.markFormClean = markFormClean;
+window.hasFormUnsavedChanges = hasFormUnsavedChanges;

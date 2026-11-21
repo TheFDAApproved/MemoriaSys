@@ -1,5 +1,80 @@
 const EXCEL_API = "api/csv";
 
+//    Unsaved changes guard 
+let hasUnsavedChanges = false;      // form/profile edits
+let hasOpenExportPanel = false;     // CSV export panel visibility
+
+function shouldWarnOnLeave() {
+    return hasUnsavedChanges || hasOpenExportPanel;
+}
+
+function markFormDirty() {
+    hasUnsavedChanges = true;
+}
+
+function markFormClean() {
+    hasUnsavedChanges = false;
+}
+
+function hasFormUnsavedChanges() {
+    return hasUnsavedChanges;
+}
+
+// Called by setPanelOpen() inside the CSV export IIFE.
+// Kept separate from markFormDirty() so saving one thing doesn't
+// silently drop the other's warning.
+function setExportPanelDirty(open) {
+    hasOpenExportPanel = Boolean(open);
+}
+
+function onUnsavedBeforeUnload(event) {
+    if (!shouldWarnOnLeave()) return;
+    event.preventDefault();
+    event.returnValue = ""; // required by older browsers
+    return "";
+}
+
+function wireUnsavedChangesGuard() {
+    // System configuration form — main editable form on this page.
+    const systemForm = document.getElementById("system_config_form");
+    if (systemForm && systemForm.dataset.unsavedGuard !== "1") {
+        systemForm.dataset.unsavedGuard = "1";
+        systemForm.addEventListener("input", markFormDirty);
+        systemForm.addEventListener("change", markFormDirty);
+    }
+
+    // Profile fields — only editable while in "edit" mode.
+    document.querySelectorAll(".profileField").forEach((field) => {
+        if (field.dataset.unsavedGuard === "1") return;
+        field.dataset.unsavedGuard = "1";
+        field.addEventListener("input", markFormDirty);
+        field.addEventListener("change", markFormDirty);
+    });
+
+    // Password fields belong to the same profile form.
+    ["new_pass", "confirm_pass"].forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el || el.dataset.unsavedGuard === "1") return;
+        el.dataset.unsavedGuard = "1";
+        el.addEventListener("input", markFormDirty);
+        el.addEventListener("change", markFormDirty);
+    });
+
+    window.addEventListener("beforeunload", onUnsavedBeforeUnload);
+}
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", wireUnsavedChangesGuard);
+} else {
+    wireUnsavedChangesGuard();
+}
+
+// Expose for inline handlers / other scripts
+window.markFormDirty = markFormDirty;
+window.markFormClean = markFormClean;
+window.hasFormUnsavedChanges = hasFormUnsavedChanges;
+window.setExportPanelDirty = setExportPanelDirty;
+
 function updateColorHex(input) {
     if (!input) return;
     const hexLabel = document.getElementById("main_color_1");
@@ -667,6 +742,7 @@ document.addEventListener("DOMContentLoaded", () => {
         if (cp) cp.value = "";
 
         setProfileMode("view");
+        markFormClean();
     });
 
     saveChangesBtn?.addEventListener("click", async () => {
@@ -688,6 +764,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
             snapshotProfile();
             setProfileMode("view");
+            markFormClean();
         } catch (err) {
             console.error("Save Changes failed:", err);
             showAlertTOP(
@@ -976,6 +1053,7 @@ document.addEventListener("DOMContentLoaded", () => {
             window.main_mainColor = mainColorEntry?.value ?? "";
 
             showAlertTOP("Settings saved successfully.", "success");
+            markFormClean();
         } catch (err) {
             console.error("Save Configuration failed:", err);
             showAlertTOP(
@@ -1154,7 +1232,7 @@ document.addEventListener("DOMContentLoaded", () => {
             return document.getElementById("csv-export-barangay-checkboxes");
         }
 
-        // ---- Helpers ----
+        // Helpers
         function setInlineError(el, message) {
             if (!el) return;
             el.textContent = message || "";
@@ -1166,6 +1244,12 @@ document.addEventListener("DOMContentLoaded", () => {
             const isOpen = Boolean(open);
             panel.hidden = !isOpen;
             exportBtn.setAttribute("aria-expanded", isOpen ? "true" : "false");
+
+            // Warn on reload/close while the export filters are open.
+            if (typeof setExportPanelDirty === "function") {
+                setExportPanelDirty(isOpen);
+            }
+
             if (isOpen) {
                 panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
             }
